@@ -102,6 +102,10 @@
       <AdditionalDependencies>vulkan-1.lib;glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(SolutionDir)extern\glfw-3.3.8-win64\lib-vc2022;C:\VulkanSDK\1.3.261.1\Lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
+    <PostBuildEvent>
+      <Command>C:/VulkanSDK/1.3.261.1/Bin/glslc.exe assets/shaders/VertexShader.vert -o $(OutDir)assets/shaders/bin/VertexShader.spv
+C:/VulkanSDK/1.3.261.1/Bin/glslc.exe assets/shaders/FragmentShader.frag -o $(OutDir)assets/shaders/bin/FragmentShader.spv</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -130,6 +134,10 @@
       <AdditionalDependencies>vulkan-1.lib;glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(SolutionDir)extern\glfw-3.3.8-win64\lib-vc2022;C:\VulkanSDK\1.3.261.1\Lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
+    <PostBuildEvent>
+      <Command>C:/VulkanSDK/1.3.261.1/Bin/glslc.exe assets/shaders/VertexShader.vert -o $(OutDir)assets/shaders/bin/VertexShader.spv
+C:/VulkanSDK/1.3.261.1/Bin/glslc.exe assets/shaders/FragmentShader.frag -o $(OutDir)assets/shaders/bin/FragmentShader.spv</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="source\Allocator.cpp" />
@@ -138,6 +146,10 @@
   <ItemGroup>
     <ClInclude Include="include\Allocator.h" />
     <ClInclude Include="include\VkMath.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="assets\shaders\FragmentShader.frag" />
+    <None Include="assets\shaders\VertexShader.vert" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
