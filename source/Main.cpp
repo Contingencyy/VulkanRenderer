@@ -3,6 +3,7 @@
 #include "GLFW/glfw3.h"
 
 #include "Allocator.h"
+#include "Logger.h"
 
 #include <assert.h>
 #include <cstring>
@@ -21,7 +22,7 @@ static std::vector<char> ReadFile(const std::string& filepath)
 	std::ifstream file(filepath, std::ios::ate | std::ios::binary);
 	if (VK_VERIFY_NOT(!file.is_open()))
 	{
-		printf("ERROR: Could not open file: %s\n", filepath.c_str());
+		LOG_ERR("FILEIO", "Could not open file: {}", filepath);
 	}
 
 	size_t file_size = (size_t)file.tellg();
@@ -38,7 +39,7 @@ static inline void VkCheckResult(VkResult result)
 {
 	if (result != VK_SUCCESS)
 	{
-		printf("[Vulkan] ERROR: %s (%i)\n", string_VkResult(result), result);
+		LOG_ERR("Vulkan", "{} {}", string_VkResult(result), result);
 		VK_ASSERT(result == VK_SUCCESS);
 	}
 }
@@ -113,7 +114,22 @@ static std::vector<const char*> GetRequiredExtensions()
 static VKAPI_ATTR VkBool32 VKAPI_CALL VkDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
 	VkDebugUtilsMessageTypeFlagsEXT type, const VkDebugUtilsMessengerCallbackDataEXT* callback_data, void* user_data)
 {
-	printf("[Vulkan Validation Layer] %s\n", callback_data->pMessage);
+	switch (severity)
+	{
+	case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
+		LOG_VERBOSE("Vulkan validation layer", callback_data->pMessage);
+		break;
+	case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
+		LOG_INFO("Vulkan validation layer", callback_data->pMessage);
+		break;
+	case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
+		LOG_WARN("Vulkan validation layer", callback_data->pMessage);
+		break;
+	case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
+		LOG_ERR("Vulkan validation layer", callback_data->pMessage);
+		break;
+	}
+
 	return VK_FALSE;
 }
 
@@ -163,12 +179,12 @@ QueueFamilyIndices FindQueueFamilies(VkPhysicalDevice device)
 
 	if (VK_VERIFY_NOT(!indices.graphics_family.has_value()))
 	{
-		printf("[Vulkan] ERROR: No graphics queue family found\n");
+		LOG_ERR("Vulkan", "No graphics queue family found");
 	}
 
 	if (VK_VERIFY_NOT(!indices.present_family.has_value()))
 	{
-		printf("[Vulkan] ERROR: No present queue family found\n");
+		LOG_ERR("Vulkan", "No present queue family found");
 	}
 
 	return indices;
@@ -647,8 +663,7 @@ static void InitVulkan()
 		vkEnumeratePhysicalDevices(s_instance, &device_count, nullptr);
 		if (VK_VERIFY_NOT(device_count == 0))
 		{
-			// TODO: Log error, no GPU devices found
-			printf("[Vulkan] ERROR: No GPU devices found\n");
+			LOG_ERR("Vulkan", "No GPU devices found");
 		}
 
 		std::vector<VkPhysicalDevice> devices(device_count);
@@ -692,8 +707,7 @@ static void InitVulkan()
 
 		if (VK_VERIFY_NOT(s_physical_device == VK_NULL_HANDLE))
 		{
-			// TODO: Log error, no suitable GPU devices found
-			printf("[Vulkan] ERROR: No suitable GPU devices found\n");
+			LOG_ERR("Vulkan", "No suitable GPU device found");
 		}
 	}
 
