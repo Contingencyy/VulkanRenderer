@@ -69,7 +69,3 @@ namespace Logger
 #define LOG_INFO(...) GET_MACRO(__VA_ARGS__, LOG_INFO_ARGS_, LOG_INFO_)(__VA_ARGS__)
 #define LOG_WARN(...) GET_MACRO(__VA_ARGS__, LOG_WARN_ARGS_, LOG_WARN_)(__VA_ARGS__)
 #define LOG_ERR(...) GET_MACRO(__VA_ARGS__, LOG_ERR_ARGS_, LOG_ERR_)(__VA_ARGS__)
-
-//#define LOG_INFO(sender, msg) Logger::Log(Logger::LogSeverity_Info, sender, msg)
-//#define LOG_WARN(sender, msg) Logger::Log(Logger::LogSeverity_Warning, sender, msg)
-//#define LOG_ERR(sender, msg) Logger::Log(Logger::LogSeverity_Error, sender, msg)
