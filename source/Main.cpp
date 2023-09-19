@@ -2,12 +2,13 @@
 #include "vulkan/vk_enum_string_helper.h"
 #include "GLFW/glfw3.h"
 
-#include "Allocator.h"
 #include "Logger.h"
+#include "VkMath.h"
 
 #include <assert.h>
 #include <cstring>
 #include <vector>
+#include <array>
 #include <optional>
 #include <set>
 #include <algorithm>
@@ -39,7 +40,7 @@ static inline void VkCheckResult(VkResult result)
 {
 	if (result != VK_SUCCESS)
 	{
-		LOG_ERR("Vulkan", "{} {}", string_VkResult(result), result);
+		LOG_ERR("Vulkan", "{} {}", string_VkResult(result));
 		VK_ASSERT(result == VK_SUCCESS);
 	}
 }
@@ -57,7 +58,7 @@ static const bool s_enable_validation_layers = true;
 #else
 static const bool s_enable_validation_layers = false;
 #endif
-static std::vector<const char*> s_device_extensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
+static std::vector<const char*> s_device_extensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_EXT_SHADER_OBJECT_EXTENSION_NAME };
 static VkInstance s_instance = VK_NULL_HANDLE;
 static VkDebugUtilsMessengerEXT s_debug_messenger = VK_NULL_HANDLE;
 static VkPhysicalDevice s_physical_device = VK_NULL_HANDLE;
@@ -65,22 +66,63 @@ static VkDevice s_device = VK_NULL_HANDLE;
 static VkQueue s_graphics_queue = VK_NULL_HANDLE;
 static VkSurfaceKHR s_surface = VK_NULL_HANDLE;
 static VkQueue s_present_queue = VK_NULL_HANDLE;
-static VkSwapchainKHR s_swapchain;
+static VkSwapchainKHR s_swapchain = VK_NULL_HANDLE;
 static std::vector<VkImage> s_swapchain_images;
 static std::vector<VkImageView> s_swapchain_image_views;
-static VkFormat s_swapchain_format;
+static VkFormat s_swapchain_format = VK_FORMAT_UNDEFINED;
 static VkExtent2D s_swapchain_extent;
-static VkRenderPass s_render_pass;
-static VkPipelineLayout s_pipeline_layout;
-static VkPipeline s_graphics_pipeline;
+static VkRenderPass s_render_pass = VK_NULL_HANDLE;
+static VkPipelineLayout s_pipeline_layout = VK_NULL_HANDLE;
+static VkPipeline s_graphics_pipeline = VK_NULL_HANDLE;
 static std::vector<VkFramebuffer> s_swapchain_frame_buffers;
-static VkCommandPool s_command_pool;
+static VkCommandPool s_command_pool = VK_NULL_HANDLE;
+static VkBuffer s_vertex_buffer;
+static VkDeviceMemory s_vertex_buffer_memory;
 static std::vector<VkCommandBuffer> s_command_buffers;
 static std::vector<VkSemaphore> s_image_available_semaphores;
 static std::vector<VkSemaphore> s_render_finished_semaphores;
 static std::vector<VkFence> s_in_flight_fences;
 static uint32_t s_current_frame = 0;
 static bool s_framebuffer_resized = false;
+
+struct Vertex
+{
+	VkMath::Vec2 pos;
+	VkMath::Vec3 color;
+
+	static VkVertexInputBindingDescription GetBindingDescription()
+	{
+		VkVertexInputBindingDescription binding_desc = {};
+		binding_desc.binding = 0;
+		binding_desc.stride = sizeof(Vertex);
+		binding_desc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+		return binding_desc;
+	}
+
+	static std::array<VkVertexInputAttributeDescription, 2> GetAttributeDescription()
+	{
+		std::array<VkVertexInputAttributeDescription, 2> attribute_desc = {};
+		attribute_desc[0].binding = 0;
+		attribute_desc[0].location = 0;
+		attribute_desc[0].format = VK_FORMAT_R32G32_SFLOAT;
+		attribute_desc[0].offset = offsetof(Vertex, pos);
+
+		attribute_desc[1].binding = 0;
+		attribute_desc[1].location = 1;
+		attribute_desc[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+		attribute_desc[1].offset = offsetof(Vertex, color);
+
+		return attribute_desc;
+	}
+};
+
+static const std::vector<Vertex> s_vertices =
+{
+	{{ 0.0f, -0.5f }, { 1.0f, 1.0f, 1.0f }},
+	{{ 0.5f, 0.5f }, { 0.0f, 1.0f, 0.0f }},
+	{{ -0.5f, 0.5f }, { 0.0f, 0.0f, 1.0f }}
+};
 
 static void FramebufferResizeCallback(GLFWwindow* window, int width, int height)
 {
@@ -394,6 +436,103 @@ static void CreateFramebuffers()
 	}
 }
 
+static void CreateCommandPool()
+{
+	QueueFamilyIndices queue_family_indices = FindQueueFamilies(s_physical_device);
+
+	VkCommandPoolCreateInfo pool_info = {};
+	pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+	pool_info.queueFamilyIndex = queue_family_indices.graphics_family.value();
+
+	VkCheckResult(vkCreateCommandPool(s_device, &pool_info, nullptr, &s_command_pool));
+}
+
+static uint32_t FindMemoryType(uint32_t type_filter, VkMemoryPropertyFlags mem_properties)
+{
+	VkPhysicalDeviceMemoryProperties device_mem_properties = {};
+	vkGetPhysicalDeviceMemoryProperties(s_physical_device, &device_mem_properties);
+
+	for (uint32_t i = 0; i < device_mem_properties.memoryTypeCount; ++i)
+	{
+		if (type_filter & (1 << i) &&
+			(device_mem_properties.memoryTypes[i].propertyFlags & mem_properties) == mem_properties)
+		{
+			return i;
+		}
+	}
+
+	LOG_ERR("Vulkan", "Failed to find suitable memory type");
+	VK_ASSERT(false);
+}
+
+static void CreateVertexBuffer()
+{
+	VkBufferCreateInfo buffer_info = {};
+	buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	buffer_info.size = sizeof(s_vertices[0]) * s_vertices.size();
+	buffer_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+	buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	VkCheckResult(vkCreateBuffer(s_device, &buffer_info, nullptr, &s_vertex_buffer));
+
+	VkMemoryRequirements mem_require = {};
+	vkGetBufferMemoryRequirements(s_device, s_vertex_buffer, &mem_require);
+
+	VkMemoryAllocateInfo alloc_info = {};
+	alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	alloc_info.allocationSize = mem_require.size;
+	alloc_info.memoryTypeIndex = FindMemoryType(mem_require.memoryTypeBits,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+	VkCheckResult(vkAllocateMemory(s_device, &alloc_info, nullptr, &s_vertex_buffer_memory));
+	VkCheckResult(vkBindBufferMemory(s_device, s_vertex_buffer, s_vertex_buffer_memory, 0));
+
+	// NOTE: The driver may or may not have immediately copied this over to buffer memory (e.g. caching)
+	// or writes to the buffer are not visible in the mapped memory yet.
+	// To deal with this problem, you either have to use a memory heap that is host coherent (VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
+	// or call vkFlushMappedMemoryRanges after writing to the mapped memory and then calling vkInvalidateMappedMemoryRanges before reading from it
+	// The transfer of data to the GPU happens in the background and the specification states it is guaranteed to be complete as of the next call to vkQueueSubmit
+	void* ptr;
+	VkCheckResult(vkMapMemory(s_device, s_vertex_buffer_memory, 0, buffer_info.size, 0, &ptr));
+	memcpy(ptr, s_vertices.data(), (size_t)buffer_info.size);
+	vkUnmapMemory(s_device, s_vertex_buffer_memory);
+}
+
+static void CreateCommandBuffers()
+{
+	s_command_buffers.resize(MAX_FRAMES_IN_FLIGHT);
+
+	VkCommandBufferAllocateInfo alloc_info = {};
+	alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	alloc_info.commandPool = s_command_pool;
+	alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	alloc_info.commandBufferCount = (uint32_t)s_command_buffers.size();
+
+	VkCheckResult(vkAllocateCommandBuffers(s_device, &alloc_info, s_command_buffers.data()));
+}
+
+static void CreateSyncObjects()
+{
+	s_image_available_semaphores.resize(MAX_FRAMES_IN_FLIGHT);
+	s_render_finished_semaphores.resize(MAX_FRAMES_IN_FLIGHT);
+	s_in_flight_fences.resize(MAX_FRAMES_IN_FLIGHT);
+
+	VkSemaphoreCreateInfo semaphore_info = {};
+	semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+	VkFenceCreateInfo fence_info = {};
+	fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+	{
+		VkCheckResult(vkCreateSemaphore(s_device, &semaphore_info, nullptr, &s_image_available_semaphores[i]));
+		VkCheckResult(vkCreateSemaphore(s_device, &semaphore_info, nullptr, &s_render_finished_semaphores[i]));
+		VkCheckResult(vkCreateFence(s_device, &fence_info, nullptr, &s_in_flight_fences[i]));
+	}
+}
+
 static void DestroySwapChain()
 {
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
@@ -504,12 +643,15 @@ static void CreateGraphicsPipeline()
 
 	// TODO: Vertex pulling, we won't need vertex input layouts, or maybe even mesh shaders
 	// https://www.khronos.org/blog/mesh-shading-for-vulkan
+	auto binding_desc = Vertex::GetBindingDescription();
+	auto attribute_desc = Vertex::GetAttributeDescription();
+
 	VkPipelineVertexInputStateCreateInfo vertex_input_info = {};
 	vertex_input_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-	vertex_input_info.vertexBindingDescriptionCount = 0;
-	vertex_input_info.pVertexBindingDescriptions = nullptr;
-	vertex_input_info.vertexAttributeDescriptionCount = 0;
-	vertex_input_info.pVertexAttributeDescriptions = nullptr;
+	vertex_input_info.vertexBindingDescriptionCount = 1;
+	vertex_input_info.pVertexBindingDescriptions = &binding_desc;
+	vertex_input_info.vertexAttributeDescriptionCount = (uint32_t)attribute_desc.size();
+	vertex_input_info.pVertexAttributeDescriptions = attribute_desc.data();
 
 	VkPipelineInputAssemblyStateCreateInfo input_assembly_info = {};
 	input_assembly_info.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -636,6 +778,10 @@ static void RecordCommandBuffer(VkCommandBuffer command_buffer, uint32_t image_i
 	vkCmdBeginRenderPass(command_buffer, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
 	vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, s_graphics_pipeline);
 
+	VkBuffer vertex_buffers[] = { s_vertex_buffer };
+	VkDeviceSize offsets[] = { 0 };
+	vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_buffers, offsets);
+
 	VkViewport viewport = {};
 	viewport.x = 0.0f;
 	viewport.y = 0.0f;
@@ -650,7 +796,7 @@ static void RecordCommandBuffer(VkCommandBuffer command_buffer, uint32_t image_i
 	scissor.extent = s_swapchain_extent;
 	vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
-	vkCmdDraw(command_buffer, 3, 1, 0, 0);
+	vkCmdDraw(command_buffer, (uint32_t)s_vertices.size(), 1, 0, 0);
 	vkCmdEndRenderPass(command_buffer);
 
 	VkCheckResult(vkEndCommandBuffer(command_buffer));
@@ -694,11 +840,11 @@ static void RenderFrame()
 	submit_info.commandBufferCount = 1;
 	submit_info.pCommandBuffers = &s_command_buffers[s_current_frame];
 
-	VkCheckResult(vkQueueSubmit(s_graphics_queue, 1, &submit_info, s_in_flight_fences[s_current_frame]));
-
 	VkSemaphore signal_semaphores[] = { s_render_finished_semaphores[s_current_frame] };
 	submit_info.signalSemaphoreCount = 1;
 	submit_info.pSignalSemaphores = signal_semaphores;
+
+	VkCheckResult(vkQueueSubmit(s_graphics_queue, 1, &submit_info, s_in_flight_fences[s_current_frame]));
 
 	// Present
 	VkPresentInfoKHR present_info = {};
@@ -739,7 +885,7 @@ static void InitVulkan()
 		app_info.applicationVersion = VK_MAKE_VERSION(0, 0, 1);
 		app_info.pEngineName = "No Engine";
 		app_info.engineVersion = VK_MAKE_VERSION(0, 0, 1);
-		app_info.apiVersion = VK_API_VERSION_1_0;
+		app_info.apiVersion = VK_API_VERSION_1_3;
 
 		VkInstanceCreateInfo instance_create_info = {};
 		instance_create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -928,70 +1074,17 @@ static void InitVulkan()
 		vkGetDeviceQueue(s_device, queue_family_indices.present_family.value(), 0, &s_present_queue);
 	}
 
-	// ---------------------------------------------------------------------------------------------------
-	// Create render passes and graphics pipelines
+	CreateSwapChain();
+	CreateImageViews();
 
 	CreateRenderPass();
 	CreateGraphicsPipeline();
-
-	// ---------------------------------------------------------------------------------------------------
-	// Create the swap chain, image views and frame buffers
-
-	CreateSwapChain();
-	CreateImageViews();
 	CreateFramebuffers();
 
-	// ---------------------------------------------------------------------------------------------------
-	// Create command pools
-
-	{
-		QueueFamilyIndices queue_family_indices = FindQueueFamilies(s_physical_device);
-
-		VkCommandPoolCreateInfo pool_info = {};
-		pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-		pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-		pool_info.queueFamilyIndex = queue_family_indices.graphics_family.value();
-
-		VkCheckResult(vkCreateCommandPool(s_device, &pool_info, nullptr, &s_command_pool));
-	}
-
-	// ---------------------------------------------------------------------------------------------------
-	// Create command buffers
-
-	{
-		s_command_buffers.resize(MAX_FRAMES_IN_FLIGHT);
-
-		VkCommandBufferAllocateInfo alloc_info = {};
-		alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-		alloc_info.commandPool = s_command_pool;
-		alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-		alloc_info.commandBufferCount = (uint32_t)s_command_buffers.size();
-
-		VkCheckResult(vkAllocateCommandBuffers(s_device, &alloc_info, s_command_buffers.data()));
-	}
-
-	// ---------------------------------------------------------------------------------------------------
-	// Create fences and semaphores
-
-	{
-		s_image_available_semaphores.resize(MAX_FRAMES_IN_FLIGHT);
-		s_render_finished_semaphores.resize(MAX_FRAMES_IN_FLIGHT);
-		s_in_flight_fences.resize(MAX_FRAMES_IN_FLIGHT);
-
-		VkSemaphoreCreateInfo semaphore_info = {};
-		semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-
-		VkFenceCreateInfo fence_info = {};
-		fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-		fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-
-		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-		{
-			VkCheckResult(vkCreateSemaphore(s_device, &semaphore_info, nullptr, &s_image_available_semaphores[i]));
-			VkCheckResult(vkCreateSemaphore(s_device, &semaphore_info, nullptr, &s_render_finished_semaphores[i]));
-			VkCheckResult(vkCreateFence(s_device, &fence_info, nullptr, &s_in_flight_fences[i]));
-		}
-	}
+	CreateCommandPool();
+	CreateVertexBuffer();
+	CreateCommandBuffers();
+	CreateSyncObjects();
 }
 
 static void ExitVulkan()
@@ -1004,6 +1097,8 @@ static void ExitVulkan()
 		vkDestroySemaphore(s_device, s_render_finished_semaphores[i], nullptr);
 		vkDestroySemaphore(s_device, s_image_available_semaphores[i], nullptr);
 	}
+	vkDestroyBuffer(s_device, s_vertex_buffer, nullptr);
+	vkFreeMemory(s_device, s_vertex_buffer_memory, nullptr);
 	// Destroying the command pool will also destroy any command buffers associated with that pool
 	vkDestroyCommandPool(s_device, s_command_pool, nullptr);
 	vkDestroyRenderPass(s_device, s_render_pass, nullptr);
