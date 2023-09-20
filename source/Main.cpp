@@ -78,6 +78,8 @@ static std::vector<VkFramebuffer> s_swapchain_frame_buffers;
 static VkCommandPool s_command_pool = VK_NULL_HANDLE;
 static VkBuffer s_vertex_buffer;
 static VkDeviceMemory s_vertex_buffer_memory;
+static VkBuffer s_index_buffer;
+static VkDeviceMemory s_index_buffer_memory;
 static std::vector<VkCommandBuffer> s_command_buffers;
 static std::vector<VkSemaphore> s_image_available_semaphores;
 static std::vector<VkSemaphore> s_render_finished_semaphores;
@@ -119,9 +121,15 @@ struct Vertex
 
 static const std::vector<Vertex> s_vertices =
 {
-	{{ 0.0f, -0.5f }, { 1.0f, 1.0f, 1.0f }},
-	{{ 0.5f, 0.5f }, { 0.0f, 1.0f, 0.0f }},
-	{{ -0.5f, 0.5f }, { 0.0f, 0.0f, 1.0f }}
+	{{ -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f }},
+	{{  0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f }},
+	{{  0.5f,  0.5f }, { 0.0f, 0.0f, 1.0f }},
+	{{ -0.5f,  0.5f }, { 1.0f, 1.0f, 1.0f }}
+};
+
+static const std::vector<uint32_t> s_indices =
+{
+	0, 1, 2, 2, 3, 0
 };
 
 static void FramebufferResizeCallback(GLFWwindow* window, int width, int height)
@@ -466,27 +474,71 @@ static uint32_t FindMemoryType(uint32_t type_filter, VkMemoryPropertyFlags mem_p
 	VK_ASSERT(false);
 }
 
-static void CreateVertexBuffer()
+static void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags mem_flags, VkBuffer& buffer, VkDeviceMemory& device_memory)
 {
 	VkBufferCreateInfo buffer_info = {};
 	buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	buffer_info.size = sizeof(s_vertices[0]) * s_vertices.size();
-	buffer_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+	buffer_info.size = size;
+	buffer_info.usage = usage;
 	buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-	VkCheckResult(vkCreateBuffer(s_device, &buffer_info, nullptr, &s_vertex_buffer));
+	VkCheckResult(vkCreateBuffer(s_device, &buffer_info, nullptr, &buffer));
 
-	VkMemoryRequirements mem_require = {};
-	vkGetBufferMemoryRequirements(s_device, s_vertex_buffer, &mem_require);
+	VkMemoryRequirements mem_requirements = {};
+	vkGetBufferMemoryRequirements(s_device, buffer, &mem_requirements);
 
 	VkMemoryAllocateInfo alloc_info = {};
 	alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	alloc_info.allocationSize = mem_require.size;
-	alloc_info.memoryTypeIndex = FindMemoryType(mem_require.memoryTypeBits,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	alloc_info.allocationSize = mem_requirements.size;
+	alloc_info.memoryTypeIndex = FindMemoryType(mem_requirements.memoryTypeBits, mem_flags);
 
-	VkCheckResult(vkAllocateMemory(s_device, &alloc_info, nullptr, &s_vertex_buffer_memory));
-	VkCheckResult(vkBindBufferMemory(s_device, s_vertex_buffer, s_vertex_buffer_memory, 0));
+	VkCheckResult(vkAllocateMemory(s_device, &alloc_info, nullptr, &device_memory));
+	VkCheckResult(vkBindBufferMemory(s_device, buffer, device_memory, 0));
+}
+
+static void CopyBuffer(VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size)
+{
+	VkCommandBufferAllocateInfo alloc_info = {};
+	alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	alloc_info.commandPool = s_command_pool;
+	alloc_info.commandBufferCount = 1;
+
+	VkCommandBuffer command_buffer;
+	VkCheckResult(vkAllocateCommandBuffers(s_device, &alloc_info, &command_buffer));
+
+	VkCommandBufferBeginInfo begin_info = {};
+	begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	VkCheckResult(vkBeginCommandBuffer(command_buffer, &begin_info));
+
+	VkBufferCopy copy_region = {};
+	copy_region.srcOffset = 0;
+	copy_region.dstOffset = 0;
+	copy_region.size = size;
+	vkCmdCopyBuffer(command_buffer, src_buffer, dst_buffer, 1, &copy_region);
+
+	VkCheckResult(vkEndCommandBuffer(command_buffer));
+
+	VkSubmitInfo submit_info = {};
+	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit_info.commandBufferCount = 1;
+	submit_info.pCommandBuffers = &command_buffer;
+	VkCheckResult(vkQueueSubmit(s_graphics_queue, 1, &submit_info, VK_NULL_HANDLE));
+	VkCheckResult(vkQueueWaitIdle(s_graphics_queue));
+
+	vkFreeCommandBuffers(s_device, s_command_pool, 1, &command_buffer);
+}
+
+static void CreateVertexBuffer()
+{
+	VkDeviceSize buffer_size = sizeof(s_vertices[0]) * s_vertices.size();
+	
+	// Staging buffer
+	VkBuffer staging_buffer;
+	VkDeviceMemory staging_buffer_memory;
+	CreateBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, staging_buffer, staging_buffer_memory);
 
 	// NOTE: The driver may or may not have immediately copied this over to buffer memory (e.g. caching)
 	// or writes to the buffer are not visible in the mapped memory yet.
@@ -494,9 +546,46 @@ static void CreateVertexBuffer()
 	// or call vkFlushMappedMemoryRanges after writing to the mapped memory and then calling vkInvalidateMappedMemoryRanges before reading from it
 	// The transfer of data to the GPU happens in the background and the specification states it is guaranteed to be complete as of the next call to vkQueueSubmit
 	void* ptr;
-	VkCheckResult(vkMapMemory(s_device, s_vertex_buffer_memory, 0, buffer_info.size, 0, &ptr));
-	memcpy(ptr, s_vertices.data(), (size_t)buffer_info.size);
-	vkUnmapMemory(s_device, s_vertex_buffer_memory);
+	VkCheckResult(vkMapMemory(s_device, staging_buffer_memory, 0, buffer_size, 0, &ptr));
+	memcpy(ptr, s_vertices.data(), (size_t)buffer_size);
+	vkUnmapMemory(s_device, staging_buffer_memory);
+
+	// Device local buffer
+	CreateBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, s_vertex_buffer, s_vertex_buffer_memory);
+	CopyBuffer(staging_buffer, s_vertex_buffer, buffer_size);
+
+	vkDestroyBuffer(s_device, staging_buffer, nullptr);
+	vkFreeMemory(s_device, staging_buffer_memory, nullptr);
+}
+
+static void CreateIndexBuffer()
+{
+	VkDeviceSize buffer_size = sizeof(s_indices[0]) * s_indices.size();
+
+	// Staging buffer
+	VkBuffer staging_buffer;
+	VkDeviceMemory staging_buffer_memory;
+	CreateBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, staging_buffer, staging_buffer_memory);
+
+	// NOTE: The driver may or may not have immediately copied this over to buffer memory (e.g. caching)
+	// or writes to the buffer are not visible in the mapped memory yet.
+	// To deal with this problem, you either have to use a memory heap that is host coherent (VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
+	// or call vkFlushMappedMemoryRanges after writing to the mapped memory and then calling vkInvalidateMappedMemoryRanges before reading from it
+	// The transfer of data to the GPU happens in the background and the specification states it is guaranteed to be complete as of the next call to vkQueueSubmit
+	void* ptr;
+	VkCheckResult(vkMapMemory(s_device, staging_buffer_memory, 0, buffer_size, 0, &ptr));
+	memcpy(ptr, s_indices.data(), (size_t)buffer_size);
+	vkUnmapMemory(s_device, staging_buffer_memory);
+
+	// Device local buffer
+	CreateBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, s_index_buffer, s_index_buffer_memory);
+	CopyBuffer(staging_buffer, s_index_buffer, buffer_size);
+
+	vkDestroyBuffer(s_device, staging_buffer, nullptr);
+	vkFreeMemory(s_device, staging_buffer_memory, nullptr);
 }
 
 static void CreateCommandBuffers()
@@ -781,6 +870,7 @@ static void RecordCommandBuffer(VkCommandBuffer command_buffer, uint32_t image_i
 	VkBuffer vertex_buffers[] = { s_vertex_buffer };
 	VkDeviceSize offsets[] = { 0 };
 	vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_buffers, offsets);
+	vkCmdBindIndexBuffer(command_buffer, s_index_buffer, 0, VK_INDEX_TYPE_UINT32);
 
 	VkViewport viewport = {};
 	viewport.x = 0.0f;
@@ -790,13 +880,13 @@ static void RecordCommandBuffer(VkCommandBuffer command_buffer, uint32_t image_i
 	viewport.minDepth = 0.0f;
 	viewport.maxDepth = 1.0f;
 	vkCmdSetViewport(command_buffer, 0, 1, &viewport);
-
+	
 	VkRect2D scissor = {};
 	scissor.offset = { 0, 0 };
 	scissor.extent = s_swapchain_extent;
 	vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
-	vkCmdDraw(command_buffer, (uint32_t)s_vertices.size(), 1, 0, 0);
+	vkCmdDrawIndexed(command_buffer, (uint32_t)s_indices.size(), 1, 0, 0, 0);
 	vkCmdEndRenderPass(command_buffer);
 
 	VkCheckResult(vkEndCommandBuffer(command_buffer));
@@ -1083,6 +1173,7 @@ static void InitVulkan()
 
 	CreateCommandPool();
 	CreateVertexBuffer();
+	CreateIndexBuffer();
 	CreateCommandBuffers();
 	CreateSyncObjects();
 }
@@ -1097,6 +1188,8 @@ static void ExitVulkan()
 		vkDestroySemaphore(s_device, s_render_finished_semaphores[i], nullptr);
 		vkDestroySemaphore(s_device, s_image_available_semaphores[i], nullptr);
 	}
+	vkDestroyBuffer(s_device, s_index_buffer, nullptr);
+	vkFreeMemory(s_device, s_index_buffer_memory, nullptr);
 	vkDestroyBuffer(s_device, s_vertex_buffer, nullptr);
 	vkFreeMemory(s_device, s_vertex_buffer_memory, nullptr);
 	// Destroying the command pool will also destroy any command buffers associated with that pool
