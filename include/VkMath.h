@@ -172,4 +172,60 @@ namespace VkMath
 		return Vec4(v.x * s, v.y * s, v.z * s, v.w * s);
 	}
 
+	// -----------------------------------------------------------------------------
+	// Mat4
+
+	struct Mat4
+	{
+		Mat4()
+		{
+			c0.x = 1.0f;
+			c0.y = 1.0f;
+			c0.z = 1.0f;
+			c0.w = 1.0f;
+		}
+
+		union
+		{
+			float m[4][4] = { 0 };
+			Vec4 c0, c1, c2, c3;
+		};
+	};
+
+	static inline Mat4 Mat4Transpose(const Mat4& m)
+	{
+		Mat4 result;
+		result.m[0][1] = m.m[1][0];
+		result.m[0][2] = m.m[2][0];
+		result.m[0][3] = m.m[3][0];
+		result.m[1][0] = m.m[0][1];
+		result.m[1][2] = m.m[2][1];
+		result.m[1][3] = m.m[3][1];
+		result.m[2][0] = m.m[0][2];
+		result.m[2][1] = m.m[1][2];
+		result.m[2][3] = m.m[3][2];
+		result.m[3][0] = m.m[0][3];
+		result.m[3][1] = m.m[1][3];
+		result.m[3][2] = m.m[2][3];
+
+		return result;
+	}
+
+	static inline Vec4 Mat4MulVec4(const Mat4& m, const Vec4& v)
+	{
+		Mat4 t = Mat4Transpose(m);
+		Vec4 result;
+		result.x = t.c0.x * v.x + t.c1.x * v.y + t.c2.x * v.z + t.c3.x * v.w;
+		result.y = t.c0.y * v.x + t.c1.y * v.y + t.c2.y * v.z + t.c3.y * v.w;
+		result.z = t.c0.z * v.x + t.c1.z * v.y + t.c2.z * v.z + t.c3.z * v.w;
+		result.w = t.c0.w * v.x + t.c1.w * v.y + t.c2.w * v.z + t.c3.w * v.w;
+
+		return result;
+	}
+
+	static inline Mat4 Mat4Rotate(const Mat4& m, float rad, const Vec3& axis)
+	{
+
+	}
+
 }
