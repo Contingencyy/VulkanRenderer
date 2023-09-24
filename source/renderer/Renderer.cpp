@@ -23,10 +23,10 @@
 #include <algorithm>
 #include <fstream>
 #include <chrono>
+#include <exception>
 
 #define VK_ASSERT(x) assert(x)
-#define VK_VERIFY(x) (VK_ASSERT(x), x)
-#define VK_VERIFY_NOT(x) (VK_ASSERT(!(x)), x)
+#define VK_EXCEPT(...) auto logged_msg = LOG_ERR(__VA_ARGS__); throw std::runtime_error(logged_msg)
 
 namespace Renderer
 {
@@ -35,7 +35,8 @@ namespace Renderer
 #ifdef _DEBUG
 	static const bool s_enable_validation_layers = true;
 #else
-	static const bool s_enable_validation_layers = false;
+	static const bool s_enable_validation_layers = true;
+	//static const bool s_enable_validation_layers = false;
 #endif
 
 	struct Data
@@ -153,9 +154,9 @@ namespace Renderer
 	static std::vector<char> ReadFile(const std::string& filepath)
 	{
 		std::ifstream file(filepath, std::ios::ate | std::ios::binary);
-		if (VK_VERIFY_NOT(!file.is_open()))
+		if (!file.is_open())
 		{
-			LOG_ERR("FILEIO", "Could not open file: {}", filepath);
+			VK_EXCEPT("FILEIO", "Could not open file: {}", filepath);
 		}
 
 		size_t file_size = (size_t)file.tellg();
@@ -172,8 +173,7 @@ namespace Renderer
 	{
 		if (result != VK_SUCCESS)
 		{
-			LOG_ERR("Vulkan", "{} {}", string_VkResult(result));
-			VK_ASSERT(result == VK_SUCCESS);
+			VK_EXCEPT("Vulkan", "{} {}", string_VkResult(result));
 		}
 	}
 
@@ -260,14 +260,14 @@ namespace Renderer
 			i++;
 		}
 
-		if (VK_VERIFY_NOT(!indices.graphics_family.has_value()))
+		if (!indices.graphics_family.has_value())
 		{
-			LOG_ERR("Vulkan", "No graphics queue family found");
+			VK_EXCEPT("Vulkan", "No graphics queue family found");
 		}
 
-		if (VK_VERIFY_NOT(!indices.present_family.has_value()))
+		if (!indices.present_family.has_value())
 		{
-			LOG_ERR("Vulkan", "No present queue family found");
+			VK_EXCEPT("Vulkan", "No present queue family found");
 		}
 
 		return indices;
@@ -319,7 +319,7 @@ namespace Renderer
 			return available_formats[0];
 		}
 
-		LOG_ERR("Vulkan", "Swapchain does not have any formats");
+		VK_EXCEPT("Vulkan", "Swapchain does not have any formats");
 		VkSurfaceFormatKHR default_format = {};
 		default_format.format = VK_FORMAT_UNDEFINED;
 		default_format.colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
@@ -504,7 +504,7 @@ namespace Renderer
 			}
 		}
 
-		LOG_ERR("Vulkan", "Failed to find a supported format");
+		VK_EXCEPT("Vulkan", "Failed to find a supported format");
 	}
 
 	static VkFormat FindDepthFormat()
@@ -569,7 +569,7 @@ namespace Renderer
 			}
 		}
 
-		LOG_ERR("Vulkan", "Failed to find suitable memory type");
+		VK_EXCEPT("Vulkan", "Failed to find suitable memory type");
 		VK_ASSERT(false);
 	}
 
@@ -738,7 +738,7 @@ namespace Renderer
 
 		if (!pixels)
 		{
-			LOG_ERR("Vulkan", "Failed to load texture data from file: {}", "assets/textures/statue.jpg");
+			VK_EXCEPT("Vulkan", "Failed to load texture data from file: {}", "assets/textures/statue.jpg");
 		}
 
 		VkBuffer staging_buffer;
@@ -1007,6 +1007,11 @@ namespace Renderer
 			vkDestroyFramebuffer(rend.device, rend.swapchain_framebuffers[i], nullptr);
 			vkDestroyImageView(rend.device, rend.swapchain_image_views[i], nullptr);
 		}
+		
+		vkDestroyImageView(rend.device, rend.depth_image_view, nullptr);
+		vkDestroyImage(rend.device, rend.depth_image, nullptr);
+		vkFreeMemory(rend.device, rend.depth_image_memory, nullptr);
+
 		vkDestroySwapchainKHR(rend.device, rend.swapchain, nullptr);
 	}
 
@@ -1421,10 +1426,12 @@ namespace Renderer
 				create_info.pUserData = nullptr;
 
 				auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(rend.instance, "vkCreateDebugUtilsMessengerEXT");
-				if (VK_VERIFY(func))
+				if (!func)
 				{
-					VkCheckResult(func(rend.instance, &create_info, nullptr, &rend.debug_messenger));
+					VK_EXCEPT("Vulkan", "Could not find function pointer for vkCreateDebugUtilsMessengerEXT");
 				}
+
+				VkCheckResult(func(rend.instance, &create_info, nullptr, &rend.debug_messenger));
 			}
 		}
 
@@ -1441,9 +1448,9 @@ namespace Renderer
 		{
 			uint32_t device_count = 0;
 			vkEnumeratePhysicalDevices(rend.instance, &device_count, nullptr);
-			if (VK_VERIFY_NOT(device_count == 0))
+			if (device_count == 0)
 			{
-				LOG_ERR("Vulkan", "No GPU devices found");
+				VK_EXCEPT("Vulkan", "No GPU devices found");
 			}
 
 			std::vector<VkPhysicalDevice> devices(device_count);
@@ -1486,9 +1493,9 @@ namespace Renderer
 				}
 			}
 
-			if (VK_VERIFY_NOT(rend.physical_device == VK_NULL_HANDLE))
+			if (rend.physical_device == VK_NULL_HANDLE)
 			{
-				LOG_ERR("Vulkan", "No suitable GPU device found");
+				VK_EXCEPT("Vulkan", "No suitable GPU device found");
 			}
 		}
 
@@ -1590,19 +1597,16 @@ namespace Renderer
 		vkDestroyDescriptorSetLayout(rend.device, rend.descriptor_set_layout, nullptr);
 		vkDestroyPipelineLayout(rend.device, rend.pipeline_layout, nullptr);
 		DestroySwapChain();
-		// NOTE: Need to destroy the depth buffer AFTER the frame buffers were destroyed,
-		// otherwise the depth buffer is still referenced by the frame buffers and not destroyed
-		vkDestroyImageView(rend.device, rend.depth_image_view, nullptr);
-		vkDestroyImage(rend.device, rend.depth_image, nullptr);
-		vkFreeMemory(rend.device, rend.depth_image_memory, nullptr);
 		vkDestroyDevice(rend.device, nullptr);
 		if (s_enable_validation_layers)
 		{
 			auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(rend.instance, "vkDestroyDebugUtilsMessengerEXT");
-			if (VK_VERIFY(func))
+			if (!func)
 			{
-				func(rend.instance, rend.debug_messenger, nullptr);
+				VK_EXCEPT("Vulkan", "Could not find function pointer vkDestroyDebugUtilsMessengerEXT");
 			}
+
+			func(rend.instance, rend.debug_messenger, nullptr);
 		}
 		vkDestroySurfaceKHR(rend.instance, rend.surface, nullptr);
 		vkDestroyInstance(rend.instance, nullptr);

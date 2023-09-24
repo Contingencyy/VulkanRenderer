@@ -32,23 +32,27 @@ namespace Logger
 		}
 	}
 
-	static void Log(LogSeverity severity, const std::string& sender, const std::string& msg)
+	static const std::string& Log(LogSeverity severity, const std::string& sender, const std::string& msg)
 	{
+		std::string console_msg;
 		if (severity >= LOG_MINIMUM_LEVEL)
 		{
-			std::string console_msg = SeverityToString(severity) + std::format(" [{}] ", sender) + msg + "\n";
+			console_msg = SeverityToString(severity) + std::format(" [{}] ", sender) + msg + "\n";
 			printf(console_msg.c_str());
 		}
+		return console_msg;
 	}
 
 	template<typename... TArgs>
-	static void Log(LogSeverity severity, const std::string& sender, const std::string& msg, TArgs&&... args)
+	static const std::string& Log(LogSeverity severity, const std::string& sender, const std::string& msg, TArgs&&... args)
 	{
+		std::string console_msg;
 		if (severity > LOG_MINIMUM_LEVEL)
 		{
-			std::string console_msg = SeverityToString(severity) + std::format(" [{}] ", sender) + std::vformat(msg, std::make_format_args(args...)) + "\n";
+			console_msg = SeverityToString(severity) + std::format(" [{}] ", sender) + std::vformat(msg, std::make_format_args(args...)) + "\n";
 			printf(console_msg.c_str());
 		}
+		return console_msg;
 	}
 
 }
