@@ -150,12 +150,14 @@ C:/VulkanSDK/1.3.261.1/Bin/glslc.exe assets/shaders/FragmentShader.frag -o $(Out
     <ClCompile Include="source\Application.cpp" />
     <ClCompile Include="source\Main.cpp" />
     <ClCompile Include="source\renderer\Renderer.cpp" />
+    <ClCompile Include="source\renderer\VulkanBackend.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\Allocator.h" />
     <ClInclude Include="include\Application.h" />
     <ClInclude Include="include\Logger.h" />
     <ClInclude Include="include\renderer\Renderer.h" />
+    <ClInclude Include="include\renderer\VulkanBackend.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="assets\shaders\FragmentShader.frag" />

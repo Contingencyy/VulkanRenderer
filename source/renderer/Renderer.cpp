@@ -1,4 +1,5 @@
 #include "renderer/Renderer.h"
+#include "renderer/VulkanBackend.h"
 #include "Logger.h"
 
 #include "vulkan/vulkan.h"
@@ -25,49 +26,19 @@
 #include <chrono>
 #include <exception>
 
-#define VK_ASSERT(x) assert(x)
-#define VK_EXCEPT(...) auto logged_msg = LOG_ERR(__VA_ARGS__); throw std::runtime_error(logged_msg)
-
 namespace Renderer
 {
-
-	const uint32_t MAX_FRAMES_IN_FLIGHT = 2;
-#ifdef _DEBUG
-	static const bool s_enable_validation_layers = true;
-#else
-	static const bool s_enable_validation_layers = true;
-	//static const bool s_enable_validation_layers = false;
-#endif
 
 	struct Data
 	{
 		::GLFWwindow* window = nullptr;
 
-		std::vector<const char*> validation_layers = { "VK_LAYER_KHRONOS_validation" };
-		std::vector<const char*> device_extensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_EXT_SHADER_OBJECT_EXTENSION_NAME };
-		VkInstance instance = VK_NULL_HANDLE;
-		VkDebugUtilsMessengerEXT debug_messenger = VK_NULL_HANDLE;
-		VkPhysicalDevice physical_device = VK_NULL_HANDLE;
-		VkDevice device = VK_NULL_HANDLE;
-		VkQueue graphics_queue = VK_NULL_HANDLE;
-		VkSurfaceKHR surface = VK_NULL_HANDLE;
-		VkQueue present_queue = VK_NULL_HANDLE;
-		VkSwapchainKHR swapchain = VK_NULL_HANDLE;
-		std::vector<VkImage> swapchain_images;
-		std::vector<VkImageView> swapchain_image_views;
-		VkFormat swapchain_format = VK_FORMAT_UNDEFINED;
-		VkExtent2D swapchain_extent;
 		VkRenderPass render_pass = VK_NULL_HANDLE;
 		VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
 		VkDescriptorPool descriptor_pool = VK_NULL_HANDLE;
 		std::vector<VkDescriptorSet> descriptor_sets;
 		VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
 		VkPipeline graphics_pipeline = VK_NULL_HANDLE;
-		std::vector<VkFramebuffer> swapchain_framebuffers;
-		VkImage depth_image = VK_NULL_HANDLE;
-		VkDeviceMemory depth_image_memory = VK_NULL_HANDLE;
-		VkImageView depth_image_view = VK_NULL_HANDLE;
-		VkCommandPool command_pool = VK_NULL_HANDLE;
 		VkBuffer vertex_buffer = VK_NULL_HANDLE;
 		VkDeviceMemory vertex_buffer_memory = VK_NULL_HANDLE;
 		VkBuffer index_buffer = VK_NULL_HANDLE;
@@ -169,297 +140,16 @@ namespace Renderer
 		return buffer;
 	}
 
-	static inline void VkCheckResult(VkResult result)
-	{
-		if (result != VK_SUCCESS)
-		{
-			VK_EXCEPT("Vulkan", "{} {}", string_VkResult(result));
-		}
-	}
-
-	static std::vector<const char*> GetRequiredExtensions()
-	{
-		uint32_t glfw_extension_count = 0;
-		const char** glfw_extensions;
-		glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extension_count);
-
-		std::vector<const char*> extensions(glfw_extensions, glfw_extensions + glfw_extension_count);
-
-		if (s_enable_validation_layers)
-		{
-			extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-		}
-
-		return extensions;
-	}
-
-	static VKAPI_ATTR VkBool32 VKAPI_CALL VkDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
-		VkDebugUtilsMessageTypeFlagsEXT type, const VkDebugUtilsMessengerCallbackDataEXT* callback_data, void* user_data)
-	{
-		(void)type; (void)user_data;
-		switch (severity)
-		{
-		case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
-			LOG_VERBOSE("Vulkan validation layer", callback_data->pMessage);
-			break;
-		case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
-			LOG_INFO("Vulkan validation layer", callback_data->pMessage);
-			break;
-		case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
-			LOG_WARN("Vulkan validation layer", callback_data->pMessage);
-			break;
-		case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
-			LOG_ERR("Vulkan validation layer", callback_data->pMessage);
-			break;
-		}
-
-		return VK_FALSE;
-	}
-
-	struct QueueFamilyIndices
-	{
-		std::optional<uint32_t> graphics_family;
-		std::optional<uint32_t> present_family;
-	};
-
-	QueueFamilyIndices FindQueueFamilies(VkPhysicalDevice device)
-	{
-		QueueFamilyIndices indices;
-
-		uint32_t queue_family_count = 0;
-		vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count, nullptr);
-
-		std::vector<VkQueueFamilyProperties> queue_families(queue_family_count);
-		vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count, queue_families.data());
-
-		int i = 0;
-		for (const auto& queue_family : queue_families)
-		{
-			// Check queue for graphics capabilities
-			if (queue_family.queueFlags & VK_QUEUE_GRAPHICS_BIT)
-			{
-				indices.graphics_family = i;
-			}
-
-			// Check queue for present capabilities
-			VkBool32 present_supported = false;
-			VkCheckResult(vkGetPhysicalDeviceSurfaceSupportKHR(device, i, rend.surface, &present_supported));
-
-			if (present_supported)
-			{
-				indices.present_family = i;
-			}
-
-			// Early-out if we found a graphics and a present queue family
-			if (indices.graphics_family.has_value() &&
-				indices.present_family.has_value())
-			{
-				break;
-			}
-
-			i++;
-		}
-
-		if (!indices.graphics_family.has_value())
-		{
-			VK_EXCEPT("Vulkan", "No graphics queue family found");
-		}
-
-		if (!indices.present_family.has_value())
-		{
-			VK_EXCEPT("Vulkan", "No present queue family found");
-		}
-
-		return indices;
-	}
-
-	struct SwapChainSupportDetails
-	{
-		VkSurfaceCapabilitiesKHR capabilities;
-		std::vector<VkSurfaceFormatKHR> formats;
-		std::vector<VkPresentModeKHR> present_modes;
-	};
-
-	static SwapChainSupportDetails QuerySwapChainSupport(VkPhysicalDevice device)
-	{
-		SwapChainSupportDetails swapchain_details;
-		VkCheckResult(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, rend.surface, &swapchain_details.capabilities));
-
-		uint32_t format_count = 0;
-		vkGetPhysicalDeviceSurfaceFormatsKHR(device, rend.surface, &format_count, nullptr);
-
-		if (format_count != 0)
-		{
-			swapchain_details.formats.resize(format_count);
-			VkCheckResult(vkGetPhysicalDeviceSurfaceFormatsKHR(device, rend.surface, &format_count, swapchain_details.formats.data()));
-		}
-
-		uint32_t present_mode_count = 0;
-		VkCheckResult(vkGetPhysicalDeviceSurfacePresentModesKHR(device, rend.surface, &present_mode_count, nullptr));
-
-		if (present_mode_count != 0)
-		{
-			swapchain_details.present_modes.resize(present_mode_count);
-			VkCheckResult(vkGetPhysicalDeviceSurfacePresentModesKHR(device, rend.surface, &present_mode_count, swapchain_details.present_modes.data()));
-		}
-
-		return swapchain_details;
-	}
-
-	static VkSurfaceFormatKHR ChooseSwapChainFormat(const std::vector<VkSurfaceFormatKHR>& available_formats)
-	{
-		for (const auto& available_format : available_formats)
-		{
-			if (available_format.format == VK_FORMAT_B8G8R8A8_SRGB &&
-				available_format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
-			{
-				return available_format;
-			}
-
-			return available_formats[0];
-		}
-
-		VK_EXCEPT("Vulkan", "Swapchain does not have any formats");
-		VkSurfaceFormatKHR default_format = {};
-		default_format.format = VK_FORMAT_UNDEFINED;
-		default_format.colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
-		return default_format;
-	}
-
-	static VkPresentModeKHR ChooseSwapChainPresentMode(const std::vector<VkPresentModeKHR>& available_present_modes)
-	{
-		for (const auto& available_present_mode : available_present_modes)
-		{
-			if (available_present_mode == VK_PRESENT_MODE_MAILBOX_KHR)
-			{
-				return available_present_mode;
-			}
-		}
-
-		return VK_PRESENT_MODE_FIFO_KHR;
-	}
-
-	static VkExtent2D ChooseSwapChainExtent(const VkSurfaceCapabilitiesKHR& capabilities)
-	{
-		if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max())
-		{
-			return capabilities.currentExtent;
-		}
-		else
-		{
-			int width, height;
-			glfwGetFramebufferSize(rend.window, &width, &height);
-
-			VkExtent2D actual_extent =
-			{
-				(uint32_t)width,
-				(uint32_t)height
-			};
-
-			actual_extent.width = std::clamp(actual_extent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
-			actual_extent.height = std::clamp(actual_extent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
-
-			return actual_extent;
-		}
-	}
-
-	static void CreateSwapChain()
-	{
-		SwapChainSupportDetails swapchain_support = QuerySwapChainSupport(rend.physical_device);
-
-		VkSurfaceFormatKHR surface_format = ChooseSwapChainFormat(swapchain_support.formats);
-		VkPresentModeKHR present_mode = ChooseSwapChainPresentMode(swapchain_support.present_modes);
-		VkExtent2D extent = ChooseSwapChainExtent(swapchain_support.capabilities);
-
-		uint32_t image_count = swapchain_support.capabilities.minImageCount;
-		if (swapchain_support.capabilities.maxImageCount > 0 && image_count > swapchain_support.capabilities.maxImageCount)
-		{
-			image_count = swapchain_support.capabilities.maxImageCount;
-		}
-
-		VkSwapchainCreateInfoKHR create_info = {};
-		create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-		create_info.surface = rend.surface;
-		create_info.minImageCount = image_count;
-		create_info.imageFormat = surface_format.format;
-		create_info.imageColorSpace = surface_format.colorSpace;
-		create_info.imageExtent = extent;
-		create_info.imageArrayLayers = 1;
-		// TODO: We set the VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT here because we want to render to the swap chain image
-		// later on we change this to VK_IMAGE_USAGE_TRANSFER_DST_BIT to simply copy a texture to it
-		create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-
-		QueueFamilyIndices indices = FindQueueFamilies(rend.physical_device);
-		uint32_t queue_family_indices[] = { indices.graphics_family.value(), indices.present_family.value() };
-
-		if (indices.graphics_family != indices.present_family)
-		{
-			// NOTE: VK_SHARING_MODE_CONCURRENT specifies that swap chain images are shared between multiple queue families without explicit ownership
-			create_info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
-			create_info.queueFamilyIndexCount = 2;
-			create_info.pQueueFamilyIndices = queue_family_indices;
-		}
-		else
-		{
-			// NOTE: VK_SHARING_MODE_EXCLUSIVE specifies that swap chain images are owned by a single queue family and ownership must be explicitly transferred
-			create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-			create_info.queueFamilyIndexCount = 0;
-			create_info.pQueueFamilyIndices = nullptr;
-		}
-
-		create_info.preTransform = swapchain_support.capabilities.currentTransform;
-		create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-		create_info.presentMode = present_mode;
-		create_info.clipped = VK_TRUE;
-		create_info.oldSwapchain = VK_NULL_HANDLE;
-
-		VkCheckResult(vkCreateSwapchainKHR(rend.device, &create_info, nullptr, &rend.swapchain));
-		VkCheckResult(vkGetSwapchainImagesKHR(rend.device, rend.swapchain, &image_count, nullptr));
-		rend.swapchain_images.resize(image_count);
-		VkCheckResult(vkGetSwapchainImagesKHR(rend.device, rend.swapchain, &image_count, rend.swapchain_images.data()));
-
-		rend.swapchain_format = surface_format.format;
-		rend.swapchain_extent = extent;
-	}
-
-	static VkImageView CreateImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect_flags)
-	{
-		VkImageViewCreateInfo view_info = {};
-		view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-		view_info.image = image;
-		view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-		view_info.format = format;
-		view_info.subresourceRange.aspectMask = aspect_flags;
-		view_info.subresourceRange.baseMipLevel = 0;
-		view_info.subresourceRange.levelCount = 1;
-		view_info.subresourceRange.baseArrayLayer = 0;
-		view_info.subresourceRange.layerCount = 1;
-
-		VkImageView image_view;
-		VkCheckResult(vkCreateImageView(rend.device, &view_info, nullptr, &image_view));
-
-		return image_view;
-	}
-
-	static void CreateImageViews()
-	{
-		rend.swapchain_image_views.resize(rend.swapchain_images.size());
-		for (size_t i = 0; i < rend.swapchain_images.size(); ++i)
-		{
-			rend.swapchain_image_views[i] = CreateImageView(rend.swapchain_images[i], rend.swapchain_format, VK_IMAGE_ASPECT_COLOR_BIT);
-		}
-	}
-
 	static void CreateFramebuffers()
 	{
-		rend.swapchain_framebuffers.resize(rend.swapchain_image_views.size());
+		vk_inst.swapchain.framebuffers.resize(vk_inst.swapchain.image_views.size());
 
-		for (size_t i = 0; i < rend.swapchain_image_views.size(); ++i)
+		for (size_t i = 0; i < vk_inst.swapchain.image_views.size(); ++i)
 		{
 			std::array<VkImageView, 2> attachments
 			{
-				rend.swapchain_image_views[i],
-				rend.depth_image_view
+				vk_inst.swapchain.image_views[i],
+				vk_inst.swapchain.depth_image_view
 			};
 
 			VkFramebufferCreateInfo frame_buffer_info = {};
@@ -467,187 +157,17 @@ namespace Renderer
 			frame_buffer_info.renderPass = rend.render_pass;
 			frame_buffer_info.attachmentCount = (uint32_t)attachments.size();
 			frame_buffer_info.pAttachments = attachments.data();
-			frame_buffer_info.width = rend.swapchain_extent.width;
-			frame_buffer_info.height = rend.swapchain_extent.height;
+			frame_buffer_info.width = vk_inst.swapchain.extent.width;
+			frame_buffer_info.height = vk_inst.swapchain.extent.height;
 			frame_buffer_info.layers = 1;
 
-			VkCheckResult(vkCreateFramebuffer(rend.device, &frame_buffer_info, nullptr, &rend.swapchain_framebuffers[i]));
+			VkCheckResult(vkCreateFramebuffer(vk_inst.device, &frame_buffer_info, nullptr, &vk_inst.swapchain.framebuffers[i]));
 		}
-	}
-
-	static void CreateCommandPool()
-	{
-		QueueFamilyIndices queue_family_indices = FindQueueFamilies(rend.physical_device);
-
-		VkCommandPoolCreateInfo pool_info = {};
-		pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-		pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-		pool_info.queueFamilyIndex = queue_family_indices.graphics_family.value();
-
-		VkCheckResult(vkCreateCommandPool(rend.device, &pool_info, nullptr, &rend.command_pool));
-	}
-
-	static VkFormat FindSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features)
-	{
-		for (VkFormat format : candidates)
-		{
-			VkFormatProperties props;
-			vkGetPhysicalDeviceFormatProperties(rend.physical_device, format, &props);
-
-			if (tiling == VK_IMAGE_TILING_LINEAR && (props.linearTilingFeatures & features) == features)
-			{
-				return format;
-			}
-			else if (tiling == VK_IMAGE_TILING_OPTIMAL && (props.optimalTilingFeatures & features) == features)
-			{
-				return format;
-			}
-		}
-
-		VK_EXCEPT("Vulkan", "Failed to find a supported format");
-	}
-
-	static VkFormat FindDepthFormat()
-	{
-		return FindSupportedFormat(
-			{ VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT },
-			VK_IMAGE_TILING_OPTIMAL,
-			VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
-		);
-	}
-
-	static bool HasStencilComponent(VkFormat format)
-	{
-		return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
-	}
-
-	static VkCommandBuffer BeginSingleTimeCommands()
-	{
-		VkCommandBufferAllocateInfo alloc_info = {};
-		alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-		alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-		alloc_info.commandPool = rend.command_pool;
-		alloc_info.commandBufferCount = 1;
-
-		VkCommandBuffer command_buffer;
-		VkCheckResult(vkAllocateCommandBuffers(rend.device, &alloc_info, &command_buffer));
-
-		VkCommandBufferBeginInfo begin_info = {};
-		begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-		begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-		VkCheckResult(vkBeginCommandBuffer(command_buffer, &begin_info));
-		return command_buffer;
-	}
-
-	static void EndSingleTimeCommands(VkCommandBuffer command_buffer)
-	{
-		VkCheckResult(vkEndCommandBuffer(command_buffer));
-
-		VkSubmitInfo submit_info = {};
-		submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-		submit_info.commandBufferCount = 1;
-		submit_info.pCommandBuffers = &command_buffer;
-
-		VkCheckResult(vkQueueSubmit(rend.graphics_queue, 1, &submit_info, VK_NULL_HANDLE));
-		VkCheckResult(vkQueueWaitIdle(rend.graphics_queue));
-
-		vkFreeCommandBuffers(rend.device, rend.command_pool, 1, &command_buffer);
-	}
-
-	static uint32_t FindMemoryType(uint32_t type_filter, VkMemoryPropertyFlags mem_properties)
-	{
-		VkPhysicalDeviceMemoryProperties device_mem_properties = {};
-		vkGetPhysicalDeviceMemoryProperties(rend.physical_device, &device_mem_properties);
-
-		for (uint32_t i = 0; i < device_mem_properties.memoryTypeCount; ++i)
-		{
-			if (type_filter & (1 << i) &&
-				(device_mem_properties.memoryTypes[i].propertyFlags & mem_properties) == mem_properties)
-			{
-				return i;
-			}
-		}
-
-		VK_EXCEPT("Vulkan", "Failed to find suitable memory type");
-		VK_ASSERT(false);
-	}
-
-	static void TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout)
-	{
-		VkCommandBuffer command_buffer = BeginSingleTimeCommands();
-
-		VkImageMemoryBarrier barrier = {};
-		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		barrier.oldLayout = old_layout;
-		barrier.newLayout = new_layout;
-		// NOTE: Used to transfer ownership of the resource if EXCLUSIVE flag is used
-		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.image = image;
-
-		if (new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-		{
-			barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-			if (HasStencilComponent(format))
-			{
-				barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
-			}
-		}
-		else
-		{
-			barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		}
-		barrier.subresourceRange.baseMipLevel = 0;
-		barrier.subresourceRange.levelCount = 1;
-		barrier.subresourceRange.baseArrayLayer = 0;
-		barrier.subresourceRange.layerCount = 1;
-
-		VkPipelineStageFlags src_stage;
-		VkPipelineStageFlags dst_stage;
-
-		// TODO: This can be written much nicer, old_layout defines what goes into srcAccessMask and src_stage
-		// and new_layout defines what goes into dstAccessMask and dst_stage, no need for these weird if combinations
-		if (old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
-		{
-			barrier.srcAccessMask = 0;
-			barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-
-			src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-			dst_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-		}
-		else if (old_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
-		{
-			barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-			barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-			src_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-			dst_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-		}
-		else if (old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-		{
-			barrier.srcAccessMask = 0;
-			barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-
-			src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-			dst_stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-		}
-
-		vkCmdPipelineBarrier(
-			command_buffer,
-			src_stage, dst_stage,
-			0,
-			0, nullptr,
-			0, nullptr,
-			1, &barrier
-		);
-
-		EndSingleTimeCommands(command_buffer);
 	}
 
 	static void CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height)
 	{
-		VkCommandBuffer command_buffer = BeginSingleTimeCommands();
+		VkCommandBuffer command_buffer = VulkanBackend::BeginSingleTimeCommands();
 
 		VkBufferImageCopy region = {};
 		region.bufferOffset = 0;
@@ -662,71 +182,7 @@ namespace Renderer
 
 		vkCmdCopyBufferToImage(command_buffer, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
-		EndSingleTimeCommands(command_buffer);
-	}
-
-	static void CreateImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
-		VkMemoryPropertyFlags memory_flags, VkImage& image, VkDeviceMemory& image_memory)
-	{
-		VkImageCreateInfo image_info = {};
-		image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-		image_info.imageType = VK_IMAGE_TYPE_2D;
-		image_info.extent.width = width;
-		image_info.extent.height = height;
-		image_info.extent.depth = 1;
-		image_info.mipLevels = 1;
-		image_info.arrayLayers = 1;
-		image_info.format = format;
-		image_info.tiling = tiling;
-		image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		image_info.usage = usage;
-		image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-		image_info.samples = VK_SAMPLE_COUNT_1_BIT;
-		image_info.flags = 0;
-
-		VkCheckResult(vkCreateImage(rend.device, &image_info, nullptr, &image));
-
-		VkMemoryRequirements mem_requirements = {};
-		vkGetImageMemoryRequirements(rend.device, image, &mem_requirements);
-
-		VkMemoryAllocateInfo alloc_info = {};
-		alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-		alloc_info.allocationSize = mem_requirements.size;
-		alloc_info.memoryTypeIndex = FindMemoryType(mem_requirements.memoryTypeBits, memory_flags);
-
-		VkCheckResult(vkAllocateMemory(rend.device, &alloc_info, nullptr, &image_memory));
-		VkCheckResult(vkBindImageMemory(rend.device, image, image_memory, 0));
-	}
-
-	static void CreateDepthResources()
-	{
-		VkFormat depth_format = FindDepthFormat();
-		CreateImage(rend.swapchain_extent.width, rend.swapchain_extent.height, depth_format, VK_IMAGE_TILING_OPTIMAL,
-			VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, rend.depth_image, rend.depth_image_memory);
-		rend.depth_image_view = CreateImageView(rend.depth_image, depth_format, VK_IMAGE_ASPECT_DEPTH_BIT);
-		TransitionImageLayout(rend.depth_image, depth_format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-	}
-
-	static void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags mem_flags, VkBuffer& buffer, VkDeviceMemory& device_memory)
-	{
-		VkBufferCreateInfo buffer_info = {};
-		buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-		buffer_info.size = size;
-		buffer_info.usage = usage;
-		buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-		VkCheckResult(vkCreateBuffer(rend.device, &buffer_info, nullptr, &buffer));
-
-		VkMemoryRequirements mem_requirements = {};
-		vkGetBufferMemoryRequirements(rend.device, buffer, &mem_requirements);
-
-		VkMemoryAllocateInfo alloc_info = {};
-		alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-		alloc_info.allocationSize = mem_requirements.size;
-		alloc_info.memoryTypeIndex = FindMemoryType(mem_requirements.memoryTypeBits, mem_flags);
-
-		VkCheckResult(vkAllocateMemory(rend.device, &alloc_info, nullptr, &device_memory));
-		VkCheckResult(vkBindBufferMemory(rend.device, buffer, device_memory, 0));
+		VulkanBackend::EndSingleTimeCommands(command_buffer);
 	}
 
 	static void CreateTextureImage()
@@ -743,35 +199,35 @@ namespace Renderer
 
 		VkBuffer staging_buffer;
 		VkDeviceMemory staging_buffer_memory;
-		CreateBuffer(image_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+		VulkanBackend::CreateBuffer(image_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 			| VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, staging_buffer, staging_buffer_memory);
 
 		void* data;
-		VkCheckResult(vkMapMemory(rend.device, staging_buffer_memory, 0, image_size, 0, &data));
+		VkCheckResult(vkMapMemory(vk_inst.device, staging_buffer_memory, 0, image_size, 0, &data));
 		memcpy(data, pixels, (size_t)image_size);
-		vkUnmapMemory(rend.device, staging_buffer_memory);
+		vkUnmapMemory(vk_inst.device, staging_buffer_memory);
 
 		stbi_image_free(pixels);
 
-		CreateImage(width, height, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+		VulkanBackend::CreateImage(width, height, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT |
 			VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, rend.texture_image, rend.texture_image_memory);
-		TransitionImageLayout(rend.texture_image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+		VulkanBackend::TransitionImageLayout(rend.texture_image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 		CopyBufferToImage(staging_buffer, rend.texture_image, (uint32_t)width, (uint32_t)height);
-		TransitionImageLayout(rend.texture_image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+		VulkanBackend::TransitionImageLayout(rend.texture_image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-		vkDestroyBuffer(rend.device, staging_buffer, nullptr);
-		vkFreeMemory(rend.device, staging_buffer_memory, nullptr);
+		vkDestroyBuffer(vk_inst.device, staging_buffer, nullptr);
+		vkFreeMemory(vk_inst.device, staging_buffer_memory, nullptr);
 	}
 
 	static void CreateTextureImageView()
 	{
-		rend.texture_image_view = CreateImageView(rend.texture_image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
+		rend.texture_image_view = VulkanBackend::CreateImageView(rend.texture_image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
 	}
 
 	static void CreateTextureSampler()
 	{
 		VkPhysicalDeviceProperties properties = {};
-		vkGetPhysicalDeviceProperties(rend.physical_device, &properties);
+		vkGetPhysicalDeviceProperties(vk_inst.physical_device, &properties);
 
 		VkSamplerCreateInfo sampler_info = {};
 		sampler_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -793,12 +249,12 @@ namespace Renderer
 		sampler_info.minLod = 0.0f;
 		sampler_info.maxLod = 0.0f;
 
-		VkCheckResult(vkCreateSampler(rend.device, &sampler_info, nullptr, &rend.texture_sampler));
+		VkCheckResult(vkCreateSampler(vk_inst.device, &sampler_info, nullptr, &rend.texture_sampler));
 	}
 
 	static void CopyBuffer(VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size)
 	{
-		VkCommandBuffer command_buffer = BeginSingleTimeCommands();
+		VkCommandBuffer command_buffer = VulkanBackend::BeginSingleTimeCommands();
 
 		VkBufferCopy copy_region = {};
 		copy_region.srcOffset = 0;
@@ -806,7 +262,7 @@ namespace Renderer
 		copy_region.size = size;
 		vkCmdCopyBuffer(command_buffer, src_buffer, dst_buffer, 1, &copy_region);
 
-		EndSingleTimeCommands(command_buffer);
+		VulkanBackend::EndSingleTimeCommands(command_buffer);
 	}
 
 	static void CreateVertexBuffer()
@@ -816,7 +272,7 @@ namespace Renderer
 		// Staging buffer
 		VkBuffer staging_buffer;
 		VkDeviceMemory staging_buffer_memory;
-		CreateBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+		VulkanBackend::CreateBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
 			VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, staging_buffer, staging_buffer_memory);
 
 		// NOTE: The driver may or may not have immediately copied this over to buffer memory (e.g. caching)
@@ -825,17 +281,17 @@ namespace Renderer
 		// or call vkFlushMappedMemoryRanges after writing to the mapped memory and then calling vkInvalidateMappedMemoryRanges before reading from it
 		// The transfer of data to the GPU happens in the background and the specification states it is guaranteed to be complete as of the next call to vkQueueSubmit
 		void* ptr;
-		VkCheckResult(vkMapMemory(rend.device, staging_buffer_memory, 0, buffer_size, 0, &ptr));
+		VkCheckResult(vkMapMemory(vk_inst.device, staging_buffer_memory, 0, buffer_size, 0, &ptr));
 		memcpy(ptr, s_vertices.data(), (size_t)buffer_size);
-		vkUnmapMemory(rend.device, staging_buffer_memory);
+		vkUnmapMemory(vk_inst.device, staging_buffer_memory);
 
 		// Device local buffer
-		CreateBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+		VulkanBackend::CreateBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, rend.vertex_buffer, rend.vertex_buffer_memory);
 		CopyBuffer(staging_buffer, rend.vertex_buffer, buffer_size);
 
-		vkDestroyBuffer(rend.device, staging_buffer, nullptr);
-		vkFreeMemory(rend.device, staging_buffer_memory, nullptr);
+		vkDestroyBuffer(vk_inst.device, staging_buffer, nullptr);
+		vkFreeMemory(vk_inst.device, staging_buffer_memory, nullptr);
 	}
 
 	static void CreateIndexBuffer()
@@ -845,7 +301,7 @@ namespace Renderer
 		// Staging buffer
 		VkBuffer staging_buffer;
 		VkDeviceMemory staging_buffer_memory;
-		CreateBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+		VulkanBackend::CreateBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
 			VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, staging_buffer, staging_buffer_memory);
 
 		// NOTE: The driver may or may not have immediately copied this over to buffer memory (e.g. caching)
@@ -854,32 +310,32 @@ namespace Renderer
 		// or call vkFlushMappedMemoryRanges after writing to the mapped memory and then calling vkInvalidateMappedMemoryRanges before reading from it
 		// The transfer of data to the GPU happens in the background and the specification states it is guaranteed to be complete as of the next call to vkQueueSubmit
 		void* ptr;
-		VkCheckResult(vkMapMemory(rend.device, staging_buffer_memory, 0, buffer_size, 0, &ptr));
+		VkCheckResult(vkMapMemory(vk_inst.device, staging_buffer_memory, 0, buffer_size, 0, &ptr));
 		memcpy(ptr, s_indices.data(), (size_t)buffer_size);
-		vkUnmapMemory(rend.device, staging_buffer_memory);
+		vkUnmapMemory(vk_inst.device, staging_buffer_memory);
 
 		// Device local buffer
-		CreateBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+		VulkanBackend::CreateBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, rend.index_buffer, rend.index_buffer_memory);
 		CopyBuffer(staging_buffer, rend.index_buffer, buffer_size);
 
-		vkDestroyBuffer(rend.device, staging_buffer, nullptr);
-		vkFreeMemory(rend.device, staging_buffer_memory, nullptr);
+		vkDestroyBuffer(vk_inst.device, staging_buffer, nullptr);
+		vkFreeMemory(vk_inst.device, staging_buffer_memory, nullptr);
 	}
 
 	static void CreateUniformBuffers()
 	{
-		rend.uniform_buffers.resize(MAX_FRAMES_IN_FLIGHT);
-		rend.uniform_buffers_memory.resize(MAX_FRAMES_IN_FLIGHT);
-		rend.uniform_buffers_mapped.resize(MAX_FRAMES_IN_FLIGHT);
+		rend.uniform_buffers.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
+		rend.uniform_buffers_memory.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
+		rend.uniform_buffers_mapped.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
 
 		VkDeviceSize buffer_size = sizeof(UniformBufferObject);
 
-		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
-			CreateBuffer(buffer_size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+			VulkanBackend::CreateBuffer(buffer_size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
 				VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, rend.uniform_buffers[i], rend.uniform_buffers_memory[i]);
-			VkCheckResult(vkMapMemory(rend.device, rend.uniform_buffers_memory[i], 0, buffer_size, 0, &rend.uniform_buffers_mapped[i]));
+			VkCheckResult(vkMapMemory(vk_inst.device, rend.uniform_buffers_memory[i], 0, buffer_size, 0, &rend.uniform_buffers_mapped[i]));
 		}
 	}
 
@@ -893,7 +349,7 @@ namespace Renderer
 		UniformBufferObject ubo = {};
 		ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
 		ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-		ubo.proj = glm::perspective(glm::radians(45.0f), rend.swapchain_extent.width / (float)rend.swapchain_extent.height, 0.1f, 10.0f);
+		ubo.proj = glm::perspective(glm::radians(45.0f), vk_inst.swapchain.extent.width / (float)vk_inst.swapchain.extent.height, 0.1f, 10.0f);
 		ubo.proj[1][1] *= -1.0f;
 
 		memcpy(rend.uniform_buffers_mapped[current_image], &ubo, sizeof(ubo));
@@ -903,34 +359,34 @@ namespace Renderer
 	{
 		std::array<VkDescriptorPoolSize, 2> pool_sizes = {};
 		pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		pool_sizes[0].descriptorCount = MAX_FRAMES_IN_FLIGHT;
+		pool_sizes[0].descriptorCount = VulkanInstance::MAX_FRAMES_IN_FLIGHT;
 		pool_sizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		pool_sizes[1].descriptorCount = MAX_FRAMES_IN_FLIGHT;
+		pool_sizes[1].descriptorCount = VulkanInstance::MAX_FRAMES_IN_FLIGHT;
 
 		VkDescriptorPoolCreateInfo pool_info = {};
 		pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 		pool_info.poolSizeCount = (uint32_t)pool_sizes.size();
 		pool_info.pPoolSizes = pool_sizes.data();
-		pool_info.maxSets = MAX_FRAMES_IN_FLIGHT;
+		pool_info.maxSets = VulkanInstance::MAX_FRAMES_IN_FLIGHT;
 		// Note: Flag to determine if individual descriptors can be freed: VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT
 
-		VkCheckResult(vkCreateDescriptorPool(rend.device, &pool_info, nullptr, &rend.descriptor_pool));
+		VkCheckResult(vkCreateDescriptorPool(vk_inst.device, &pool_info, nullptr, &rend.descriptor_pool));
 	}
 
 	static void CreateDescriptorSets()
 	{
-		std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, rend.descriptor_set_layout);
+		std::vector<VkDescriptorSetLayout> layouts(VulkanInstance::MAX_FRAMES_IN_FLIGHT, rend.descriptor_set_layout);
 
 		VkDescriptorSetAllocateInfo alloc_info = {};
 		alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 		alloc_info.descriptorPool = rend.descriptor_pool;
-		alloc_info.descriptorSetCount = MAX_FRAMES_IN_FLIGHT;
+		alloc_info.descriptorSetCount = VulkanInstance::MAX_FRAMES_IN_FLIGHT;
 		alloc_info.pSetLayouts = layouts.data();
 
-		rend.descriptor_sets.resize(MAX_FRAMES_IN_FLIGHT);
-		VkCheckResult(vkAllocateDescriptorSets(rend.device, &alloc_info, rend.descriptor_sets.data()));
+		rend.descriptor_sets.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
+		VkCheckResult(vkAllocateDescriptorSets(vk_inst.device, &alloc_info, rend.descriptor_sets.data()));
 
-		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
 			VkDescriptorBufferInfo buffer_info = {};
 			buffer_info.buffer = rend.uniform_buffers[i];
@@ -962,28 +418,28 @@ namespace Renderer
 			descriptor_writes[1].descriptorCount = 1;
 			descriptor_writes[1].pImageInfo = &image_info;
 
-			vkUpdateDescriptorSets(rend.device, (uint32_t)descriptor_writes.size(), descriptor_writes.data(), 0, nullptr);
+			vkUpdateDescriptorSets(vk_inst.device, (uint32_t)descriptor_writes.size(), descriptor_writes.data(), 0, nullptr);
 		}
 	}
 
 	static void CreateCommandBuffers()
 	{
-		rend.command_buffers.resize(MAX_FRAMES_IN_FLIGHT);
+		rend.command_buffers.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
 
 		VkCommandBufferAllocateInfo alloc_info = {};
 		alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-		alloc_info.commandPool = rend.command_pool;
+		alloc_info.commandPool = vk_inst.cmd_pools.graphics;
 		alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 		alloc_info.commandBufferCount = (uint32_t)rend.command_buffers.size();
 
-		VkCheckResult(vkAllocateCommandBuffers(rend.device, &alloc_info, rend.command_buffers.data()));
+		VkCheckResult(vkAllocateCommandBuffers(vk_inst.device, &alloc_info, rend.command_buffers.data()));
 	}
 
 	static void CreateSyncObjects()
 	{
-		rend.image_available_semaphores.resize(MAX_FRAMES_IN_FLIGHT);
-		rend.render_finished_semaphores.resize(MAX_FRAMES_IN_FLIGHT);
-		rend.in_flight_fences.resize(MAX_FRAMES_IN_FLIGHT);
+		rend.image_available_semaphores.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
+		rend.render_finished_semaphores.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
+		rend.in_flight_fences.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
 
 		VkSemaphoreCreateInfo semaphore_info = {};
 		semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -992,47 +448,12 @@ namespace Renderer
 		fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 		fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
-			VkCheckResult(vkCreateSemaphore(rend.device, &semaphore_info, nullptr, &rend.image_available_semaphores[i]));
-			VkCheckResult(vkCreateSemaphore(rend.device, &semaphore_info, nullptr, &rend.render_finished_semaphores[i]));
-			VkCheckResult(vkCreateFence(rend.device, &fence_info, nullptr, &rend.in_flight_fences[i]));
+			VkCheckResult(vkCreateSemaphore(vk_inst.device, &semaphore_info, nullptr, &rend.image_available_semaphores[i]));
+			VkCheckResult(vkCreateSemaphore(vk_inst.device, &semaphore_info, nullptr, &rend.render_finished_semaphores[i]));
+			VkCheckResult(vkCreateFence(vk_inst.device, &fence_info, nullptr, &rend.in_flight_fences[i]));
 		}
-	}
-
-	static void DestroySwapChain()
-	{
-		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-		{
-			vkDestroyFramebuffer(rend.device, rend.swapchain_framebuffers[i], nullptr);
-			vkDestroyImageView(rend.device, rend.swapchain_image_views[i], nullptr);
-		}
-		
-		vkDestroyImageView(rend.device, rend.depth_image_view, nullptr);
-		vkDestroyImage(rend.device, rend.depth_image, nullptr);
-		vkFreeMemory(rend.device, rend.depth_image_memory, nullptr);
-
-		vkDestroySwapchainKHR(rend.device, rend.swapchain, nullptr);
-	}
-
-	static void RecreateSwapChain()
-	{
-		int width = 0, height = 0;
-		glfwGetFramebufferSize(rend.window, &width, &height);
-		while (width == 0 || height == 0)
-		{
-			glfwGetFramebufferSize(rend.window, &width, &height);
-			glfwWaitEvents();
-		}
-
-		vkDeviceWaitIdle(rend.device);
-
-		DestroySwapChain();
-
-		CreateSwapChain();
-		CreateImageViews();
-		CreateDepthResources();
-		CreateFramebuffers();
 	}
 
 	static VkShaderModule CreateShaderModule(const std::vector<char>& code)
@@ -1043,7 +464,7 @@ namespace Renderer
 		create_info.pCode = reinterpret_cast<const uint32_t*>(code.data());
 
 		VkShaderModule shader_module;
-		VkCheckResult(vkCreateShaderModule(rend.device, &create_info, nullptr, &shader_module));
+		VkCheckResult(vkCreateShaderModule(vk_inst.device, &create_info, nullptr, &shader_module));
 
 		return shader_module;
 	}
@@ -1051,7 +472,7 @@ namespace Renderer
 	static void CreateRenderPass()
 	{
 		VkAttachmentDescription color_attachment = {};
-		color_attachment.format = rend.swapchain_format;
+		color_attachment.format = vk_inst.swapchain.format;
 		color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
 		color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 		color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -1059,9 +480,9 @@ namespace Renderer
 		color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 		color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		color_attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
+		
 		VkAttachmentDescription depth_attachment = {};
-		depth_attachment.format = FindDepthFormat();
+		depth_attachment.format = VulkanBackend::FindDepthFormat();
 		depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
 		depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 		depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -1102,7 +523,7 @@ namespace Renderer
 		render_pass_info.dependencyCount = 1;
 		render_pass_info.pDependencies = &dependency;
 
-		VkCheckResult(vkCreateRenderPass(rend.device, &render_pass_info, nullptr, &rend.render_pass));
+		VkCheckResult(vkCreateRenderPass(vk_inst.device, &render_pass_info, nullptr, &rend.render_pass));
 	}
 
 	static void CreateDescriptorSetLayout()
@@ -1127,7 +548,7 @@ namespace Renderer
 		layout_info.bindingCount = (uint32_t)bindings.size();
 		layout_info.pBindings = bindings.data();
 
-		VkCheckResult(vkCreateDescriptorSetLayout(rend.device, &layout_info, nullptr, &rend.descriptor_set_layout));
+		VkCheckResult(vkCreateDescriptorSetLayout(vk_inst.device, &layout_info, nullptr, &rend.descriptor_set_layout));
 	}
 
 	static void CreateGraphicsPipeline()
@@ -1251,7 +672,7 @@ namespace Renderer
 		pipeline_layout_info.pushConstantRangeCount = 0;
 		pipeline_layout_info.pPushConstantRanges = nullptr;
 
-		VkCheckResult(vkCreatePipelineLayout(rend.device, &pipeline_layout_info, nullptr, &rend.pipeline_layout));
+		VkCheckResult(vkCreatePipelineLayout(vk_inst.device, &pipeline_layout_info, nullptr, &rend.pipeline_layout));
 
 		VkGraphicsPipelineCreateInfo pipeline_info = {};
 		pipeline_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -1271,10 +692,10 @@ namespace Renderer
 		pipeline_info.basePipelineHandle = VK_NULL_HANDLE;
 		pipeline_info.basePipelineIndex = -1;
 
-		VkCheckResult(vkCreateGraphicsPipelines(rend.device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &rend.graphics_pipeline));
+		VkCheckResult(vkCreateGraphicsPipelines(vk_inst.device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &rend.graphics_pipeline));
 
-		vkDestroyShaderModule(rend.device, frag_shader_module, nullptr);
-		vkDestroyShaderModule(rend.device, vert_shader_module, nullptr);
+		vkDestroyShaderModule(vk_inst.device, frag_shader_module, nullptr);
+		vkDestroyShaderModule(vk_inst.device, vert_shader_module, nullptr);
 	}
 
 	static void RecordCommandBuffer(VkCommandBuffer command_buffer, uint32_t image_index)
@@ -1289,11 +710,11 @@ namespace Renderer
 		VkRenderPassBeginInfo render_pass_info = {};
 		render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 		render_pass_info.renderPass = rend.render_pass;
-		render_pass_info.framebuffer = rend.swapchain_framebuffers[image_index];
+		render_pass_info.framebuffer = vk_inst.swapchain.framebuffers[image_index];
 		// NOTE: Define the render area, which defines where shader loads and stores will take place
 		// Pixels outside this region will have undefined values
 		render_pass_info.renderArea.offset = { 0, 0 };
-		render_pass_info.renderArea.extent = rend.swapchain_extent;
+		render_pass_info.renderArea.extent = vk_inst.swapchain.extent;
 
 		std::array<VkClearValue, 2> clear_values = {};
 		clear_values[0].color = { { 0.0f, 0.0f, 0.0f, 1.0f } };
@@ -1315,15 +736,15 @@ namespace Renderer
 		VkViewport viewport = {};
 		viewport.x = 0.0f;
 		viewport.y = 0.0f;
-		viewport.width = (float)rend.swapchain_extent.width;
-		viewport.height = (float)rend.swapchain_extent.height;
+		viewport.width = (float)vk_inst.swapchain.extent.width;
+		viewport.height = (float)vk_inst.swapchain.extent.height;
 		viewport.minDepth = 0.0f;
 		viewport.maxDepth = 1.0f;
 		vkCmdSetViewport(command_buffer, 0, 1, &viewport);
 
 		VkRect2D scissor = {};
 		scissor.offset = { 0, 0 };
-		scissor.extent = rend.swapchain_extent;
+		scissor.extent = vk_inst.swapchain.extent;
 		vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
 		// Descriptor sets
@@ -1340,219 +761,12 @@ namespace Renderer
 	void Init(::GLFWwindow* window)
 	{
 		rend.window = window;
-
-		// ---------------------------------------------------------------------------------------------------
-		// Create vulkan instance
-
-		{
-			VkApplicationInfo app_info = {};
-			app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-			app_info.pApplicationName = "VulkanRenderer";
-			app_info.applicationVersion = VK_MAKE_VERSION(0, 0, 1);
-			app_info.pEngineName = "No Engine";
-			app_info.engineVersion = VK_MAKE_VERSION(0, 0, 1);
-			app_info.apiVersion = VK_API_VERSION_1_3;
-
-			VkInstanceCreateInfo instance_create_info = {};
-			instance_create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-			instance_create_info.pApplicationInfo = &app_info;
-
-			std::vector<const char*> required_extensions = GetRequiredExtensions();
-			instance_create_info.enabledExtensionCount = (uint32_t)required_extensions.size();
-			instance_create_info.ppEnabledExtensionNames = required_extensions.data();
-
-			if (s_enable_validation_layers)
-			{
-				instance_create_info.enabledLayerCount = (uint32_t)rend.validation_layers.size();
-				instance_create_info.ppEnabledLayerNames = rend.validation_layers.data();
-
-				// Init debug messenger for vulkan instance creation
-				VkDebugUtilsMessengerCreateInfoEXT debug_messenger_create_info = {};
-				debug_messenger_create_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-				debug_messenger_create_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-					VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-				debug_messenger_create_info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-					VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-				debug_messenger_create_info.pfnUserCallback = VkDebugCallback;
-				debug_messenger_create_info.pUserData = nullptr;
-				instance_create_info.pNext = (VkDebugUtilsMessengerCreateInfoEXT*)&debug_messenger_create_info;
-			}
-
-			VkCheckResult(vkCreateInstance(&instance_create_info, nullptr, &rend.instance));
-		}
-
-
-		// ---------------------------------------------------------------------------------------------------
-		// Enable validation layer for vulkan instance creation
-
-		{
-			if (s_enable_validation_layers)
-			{
-				// ---------------------------------------------------------------------------------------------------
-				// Enable validation layers
-
-				uint32_t layer_count = 0;
-				VkCheckResult(vkEnumerateInstanceLayerProperties(&layer_count, nullptr));
-
-				std::vector<VkLayerProperties> available_layers(layer_count);
-				VkCheckResult(vkEnumerateInstanceLayerProperties(&layer_count, available_layers.data()));
-
-				for (const auto& validation_layer : rend.validation_layers)
-				{
-					bool layer_found = false;
-
-					for (const auto& available_layer : available_layers)
-					{
-						if (strcmp(validation_layer, available_layer.layerName) == 0)
-						{
-							layer_found = true;
-							break;
-						}
-					}
-
-					VK_ASSERT(layer_found);
-				}
-
-				// ---------------------------------------------------------------------------------------------------
-				// Create debug messenger with custom message callback
-
-				VkDebugUtilsMessengerCreateInfoEXT create_info = {};
-				create_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-				create_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-					VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-				create_info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-					VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-				create_info.pfnUserCallback = VkDebugCallback;
-				create_info.pUserData = nullptr;
-
-				auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(rend.instance, "vkCreateDebugUtilsMessengerEXT");
-				if (!func)
-				{
-					VK_EXCEPT("Vulkan", "Could not find function pointer for vkCreateDebugUtilsMessengerEXT");
-				}
-
-				VkCheckResult(func(rend.instance, &create_info, nullptr, &rend.debug_messenger));
-			}
-		}
-
-		// ---------------------------------------------------------------------------------------------------
-		// Create surface
-
-		{
-			VkCheckResult(glfwCreateWindowSurface(rend.instance, rend.window, nullptr, &rend.surface));
-		}
-
-		// ---------------------------------------------------------------------------------------------------
-		// Select GPU device
-
-		{
-			uint32_t device_count = 0;
-			vkEnumeratePhysicalDevices(rend.instance, &device_count, nullptr);
-			if (device_count == 0)
-			{
-				VK_EXCEPT("Vulkan", "No GPU devices found");
-			}
-
-			std::vector<VkPhysicalDevice> devices(device_count);
-			vkEnumeratePhysicalDevices(rend.instance, &device_count, devices.data());
-
-			for (const auto& device : devices)
-			{
-				VkPhysicalDeviceProperties device_properties;
-				vkGetPhysicalDeviceProperties(device, &device_properties);
-
-				VkPhysicalDeviceFeatures device_features;
-				vkGetPhysicalDeviceFeatures(device, &device_features);
-
-				uint32_t extension_count = 0;
-				vkEnumerateDeviceExtensionProperties(device, nullptr, &extension_count, nullptr);
-
-				std::vector<VkExtensionProperties> available_extensions(extension_count);
-				vkEnumerateDeviceExtensionProperties(device, nullptr, &extension_count, available_extensions.data());
-
-				std::set<std::string> required_extensions(rend.device_extensions.begin(), rend.device_extensions.end());
-
-				for (const auto& extension : available_extensions)
-				{
-					required_extensions.erase(extension.extensionName);
-				}
-
-				bool swapchain_suitable = false;
-				if (required_extensions.empty())
-				{
-					SwapChainSupportDetails swapchain_support = QuerySwapChainSupport(device);
-					swapchain_suitable = !swapchain_support.formats.empty() && !swapchain_support.present_modes.empty();
-				}
-
-				if (device_properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU &&
-					required_extensions.empty() && swapchain_suitable &&
-					device_features.samplerAnisotropy)
-				{
-					rend.physical_device = device;
-					break;
-				}
-			}
-
-			if (rend.physical_device == VK_NULL_HANDLE)
-			{
-				VK_EXCEPT("Vulkan", "No suitable GPU device found");
-			}
-		}
-
-		// ---------------------------------------------------------------------------------------------------
-		// Create logical device and queues per queue family
-
-		{
-			QueueFamilyIndices queue_family_indices = FindQueueFamilies(rend.physical_device);
-
-			std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
-			std::set<uint32_t> unique_queue_families = { queue_family_indices.graphics_family.value(), queue_family_indices.present_family.value() };
-			float queue_priority = 1.0;
-
-			for (uint32_t queue_family : unique_queue_families)
-			{
-				VkDeviceQueueCreateInfo& queue_create_info = queue_create_infos.emplace_back();
-				queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-				queue_create_info.queueFamilyIndex = queue_family;
-				queue_create_info.queueCount = 1;
-				queue_create_info.pQueuePriorities = &queue_priority;
-			}
-
-			// Note: We will fill this later when we need specific features
-			VkPhysicalDeviceFeatures device_features = {};
-			device_features.samplerAnisotropy = VK_TRUE;
-
-			VkDeviceCreateInfo device_create_info = {};
-			device_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-			device_create_info.pQueueCreateInfos = queue_create_infos.data();
-			device_create_info.queueCreateInfoCount = (uint32_t)queue_create_infos.size();
-			device_create_info.pEnabledFeatures = &device_features;
-			device_create_info.ppEnabledExtensionNames = rend.device_extensions.data();
-			device_create_info.enabledExtensionCount = (uint32_t)rend.device_extensions.size();
-			if (s_enable_validation_layers)
-			{
-				device_create_info.enabledLayerCount = (uint32_t)rend.validation_layers.size();
-				device_create_info.ppEnabledLayerNames = rend.validation_layers.data();
-			}
-			else
-			{
-				device_create_info.enabledLayerCount = 0;
-			}
-
-			VkCheckResult(vkCreateDevice(rend.physical_device, &device_create_info, nullptr, &rend.device));
-			vkGetDeviceQueue(rend.device, queue_family_indices.graphics_family.value(), 0, &rend.graphics_queue);
-			vkGetDeviceQueue(rend.device, queue_family_indices.present_family.value(), 0, &rend.present_queue);
-		}
-
-		CreateSwapChain();
-		CreateImageViews();
+		VulkanBackend::Init(window);
 
 		CreateRenderPass();
 		CreateDescriptorSetLayout();
 		CreateGraphicsPipeline();
 
-		CreateCommandPool();
-		CreateDepthResources();
 		CreateFramebuffers();
 		CreateTextureImage();
 		CreateTextureImageView();
@@ -1568,62 +782,50 @@ namespace Renderer
 
 	void Exit()
 	{
-		vkDeviceWaitIdle(rend.device);
+		vkDeviceWaitIdle(vk_inst.device);
 
-		vkDestroySampler(rend.device, rend.texture_sampler, nullptr);
-		vkDestroyImageView(rend.device, rend.texture_image_view, nullptr);
-		vkDestroyImage(rend.device, rend.texture_image, nullptr);
-		vkFreeMemory(rend.device, rend.texture_image_memory, nullptr);
-		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+		vkDestroySampler(vk_inst.device, rend.texture_sampler, nullptr);
+		vkDestroyImageView(vk_inst.device, rend.texture_image_view, nullptr);
+		vkDestroyImage(vk_inst.device, rend.texture_image, nullptr);
+		vkFreeMemory(vk_inst.device, rend.texture_image_memory, nullptr);
+		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
-			vkDestroyFence(rend.device, rend.in_flight_fences[i], nullptr);
-			vkDestroySemaphore(rend.device, rend.render_finished_semaphores[i], nullptr);
-			vkDestroySemaphore(rend.device, rend.image_available_semaphores[i], nullptr);
+			vkDestroyFence(vk_inst.device, rend.in_flight_fences[i], nullptr);
+			vkDestroySemaphore(vk_inst.device, rend.render_finished_semaphores[i], nullptr);
+			vkDestroySemaphore(vk_inst.device, rend.image_available_semaphores[i], nullptr);
 		}
-		vkDestroyBuffer(rend.device, rend.index_buffer, nullptr);
-		vkFreeMemory(rend.device, rend.index_buffer_memory, nullptr);
-		vkDestroyBuffer(rend.device, rend.vertex_buffer, nullptr);
-		vkFreeMemory(rend.device, rend.vertex_buffer_memory, nullptr);
+		vkDestroyBuffer(vk_inst.device, rend.index_buffer, nullptr);
+		vkFreeMemory(vk_inst.device, rend.index_buffer_memory, nullptr);
+		vkDestroyBuffer(vk_inst.device, rend.vertex_buffer, nullptr);
+		vkFreeMemory(vk_inst.device, rend.vertex_buffer_memory, nullptr);
 		// Destroying the command pool will also destroy any command buffers associated with that pool
-		vkDestroyCommandPool(rend.device, rend.command_pool, nullptr);
-		vkDestroyRenderPass(rend.device, rend.render_pass, nullptr);
-		vkDestroyPipeline(rend.device, rend.graphics_pipeline, nullptr);
-		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+		vkDestroyRenderPass(vk_inst.device, rend.render_pass, nullptr);
+		vkDestroyPipeline(vk_inst.device, rend.graphics_pipeline, nullptr);
+		for (size_t i = 0; i < VulkanInstance::VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
-			vkDestroyBuffer(rend.device, rend.uniform_buffers[i], nullptr);
-			vkFreeMemory(rend.device, rend.uniform_buffers_memory[i], nullptr);
+			vkDestroyBuffer(vk_inst.device, rend.uniform_buffers[i], nullptr);
+			vkFreeMemory(vk_inst.device, rend.uniform_buffers_memory[i], nullptr);
 		}
-		vkDestroyDescriptorPool(rend.device, rend.descriptor_pool, nullptr);
-		vkDestroyDescriptorSetLayout(rend.device, rend.descriptor_set_layout, nullptr);
-		vkDestroyPipelineLayout(rend.device, rend.pipeline_layout, nullptr);
-		DestroySwapChain();
-		vkDestroyDevice(rend.device, nullptr);
-		if (s_enable_validation_layers)
-		{
-			auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(rend.instance, "vkDestroyDebugUtilsMessengerEXT");
-			if (!func)
-			{
-				VK_EXCEPT("Vulkan", "Could not find function pointer vkDestroyDebugUtilsMessengerEXT");
-			}
+		vkDestroyDescriptorPool(vk_inst.device, rend.descriptor_pool, nullptr);
+		vkDestroyDescriptorSetLayout(vk_inst.device, rend.descriptor_set_layout, nullptr);
+		vkDestroyPipelineLayout(vk_inst.device, rend.pipeline_layout, nullptr);
 
-			func(rend.instance, rend.debug_messenger, nullptr);
-		}
-		vkDestroySurfaceKHR(rend.instance, rend.surface, nullptr);
-		vkDestroyInstance(rend.instance, nullptr);
+		VulkanBackend::Exit();
 	}
 
 	void RenderFrame()
 	{
 		// Wait for completion of all rendering on the GPU
-		vkWaitForFences(rend.device, 1, &rend.in_flight_fences[rend.current_frame], VK_TRUE, UINT64_MAX);
+		vkWaitForFences(vk_inst.device, 1, &rend.in_flight_fences[rend.current_frame], VK_TRUE, UINT64_MAX);
 
 		// Get an available image index from the swap chain
 		uint32_t image_index;
-		VkResult image_result = vkAcquireNextImageKHR(rend.device, rend.swapchain, UINT64_MAX, rend.image_available_semaphores[rend.current_frame], VK_NULL_HANDLE, &image_index);
+		VkResult image_result = vkAcquireNextImageKHR(vk_inst.device, vk_inst.swapchain.swapchain, UINT64_MAX, rend.image_available_semaphores[rend.current_frame], VK_NULL_HANDLE, &image_index);
 
 		if (image_result == VK_ERROR_OUT_OF_DATE_KHR)
 		{
-			RecreateSwapChain();
+			VulkanBackend::RecreateSwapChain();
+			CreateFramebuffers();
 			return;
 		}
 		else if (image_result != VK_SUCCESS && image_result != VK_SUBOPTIMAL_KHR)
@@ -1632,7 +834,7 @@ namespace Renderer
 		}
 
 		// Reset the fence
-		vkResetFences(rend.device, 1, &rend.in_flight_fences[rend.current_frame]);
+		vkResetFences(vk_inst.device, 1, &rend.in_flight_fences[rend.current_frame]);
 
 		// Reset and record the command buffer
 		vkResetCommandBuffer(rend.command_buffers[rend.current_frame], 0);
@@ -1657,7 +859,7 @@ namespace Renderer
 		submit_info.signalSemaphoreCount = 1;
 		submit_info.pSignalSemaphores = signal_semaphores;
 
-		VkCheckResult(vkQueueSubmit(rend.graphics_queue, 1, &submit_info, rend.in_flight_fences[rend.current_frame]));
+		VkCheckResult(vkQueueSubmit(vk_inst.queues.graphics, 1, &submit_info, rend.in_flight_fences[rend.current_frame]));
 
 		// Present
 		VkPresentInfoKHR present_info = {};
@@ -1665,25 +867,26 @@ namespace Renderer
 		present_info.waitSemaphoreCount = 1;
 		present_info.pWaitSemaphores = signal_semaphores;
 
-		VkSwapchainKHR swapchains[] = { rend.swapchain };
+		VkSwapchainKHR swapchains[] = { vk_inst.swapchain.swapchain };
 		present_info.swapchainCount = 1;
 		present_info.pSwapchains = swapchains;
 		present_info.pImageIndices = &image_index;
 		present_info.pResults = nullptr;
 
-		VkResult present_result = vkQueuePresentKHR(rend.graphics_queue, &present_info);
+		VkResult present_result = vkQueuePresentKHR(vk_inst.queues.graphics, &present_info);
 
 		if (present_result == VK_ERROR_OUT_OF_DATE_KHR || present_result == VK_SUBOPTIMAL_KHR || rend.framebuffer_resized)
 		{
 			rend.framebuffer_resized = false;
-			RecreateSwapChain();
+			VulkanBackend::RecreateSwapChain();
+			CreateFramebuffers();
 		}
 		else
 		{
 			VkCheckResult(present_result);
 		}
 
-		rend.current_frame = (rend.current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
+		rend.current_frame = (rend.current_frame + 1) % VulkanInstance::MAX_FRAMES_IN_FLIGHT;
 	}
 
 }
