@@ -1,5 +1,5 @@
 #include "renderer/VulkanBackend.h"
-#include "Logger.h"
+#include "Common.h"
 
 #include "GLFW/glfw3.h"
 
@@ -242,12 +242,17 @@ namespace VulkanBackend
 			VkPhysicalDeviceProperties device_properties;
 			vkGetPhysicalDeviceProperties(device, &device_properties);
 
+			vk_inst.device_properties.max_descriptors_uniform_buffers = device_properties.limits.maxDescriptorSetUniformBuffers;
+			vk_inst.device_properties.max_descriptors_storage_buffers = device_properties.limits.maxDescriptorSetStorageBuffers;
+			vk_inst.device_properties.max_descriptors_combined_image_samplers = device_properties.limits.maxDescriptorSetSampledImages;
+			vk_inst.device_properties.min_uniform_buffer_offset_alignment = device_properties.limits.minUniformBufferOffsetAlignment;
+
 			VkPhysicalDeviceFeatures device_features;
 			vkGetPhysicalDeviceFeatures(device, &device_features);
 
 			uint32_t extension_count = 0;
 			vkEnumerateDeviceExtensionProperties(device, nullptr, &extension_count, nullptr);
-
+			
 			std::vector<VkExtensionProperties> available_extensions(extension_count);
 			vkEnumerateDeviceExtensionProperties(device, nullptr, &extension_count, available_extensions.data());
 
@@ -265,9 +270,24 @@ namespace VulkanBackend
 				swapchain_suitable = !swapchain_support.formats.empty() && !swapchain_support.present_modes.empty();
 			}
 
+			VkPhysicalDeviceDescriptorIndexingFeatures descriptor_indexing_features = {};
+			descriptor_indexing_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
+
+			VkPhysicalDeviceFeatures2 device_features2 = {};
+			device_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+			device_features2.pNext = &descriptor_indexing_features;
+			vkGetPhysicalDeviceFeatures2(device, &device_features2);
+
 			if (device_properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU &&
 				required_extensions.empty() && swapchain_suitable &&
-				device_features.samplerAnisotropy)
+				device_features.samplerAnisotropy &&
+				descriptor_indexing_features.shaderUniformBufferArrayNonUniformIndexing &&
+				descriptor_indexing_features.descriptorBindingUniformBufferUpdateAfterBind &&
+				descriptor_indexing_features.shaderStorageBufferArrayNonUniformIndexing &&
+				descriptor_indexing_features.descriptorBindingStorageBufferUpdateAfterBind &&
+				descriptor_indexing_features.shaderSampledImageArrayNonUniformIndexing &&
+				descriptor_indexing_features.descriptorBindingSampledImageUpdateAfterBind &&
+				descriptor_indexing_features.descriptorBindingPartiallyBound)
 			{
 				vk_inst.physical_device = device;
 				break;
@@ -297,17 +317,24 @@ namespace VulkanBackend
 			queue_create_info.pQueuePriorities = &queue_priority;
 		}
 
-		// Note: We will fill this later when we need specific features
-		VkPhysicalDeviceFeatures device_features = {};
-		device_features.samplerAnisotropy = VK_TRUE;
-
 		VkDeviceCreateInfo device_create_info = {};
 		device_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 		device_create_info.pQueueCreateInfos = queue_create_infos.data();
 		device_create_info.queueCreateInfoCount = (uint32_t)queue_create_infos.size();
-		device_create_info.pEnabledFeatures = &device_features;
 		device_create_info.ppEnabledExtensionNames = vk_inst.extensions.data();
 		device_create_info.enabledExtensionCount = (uint32_t)vk_inst.extensions.size();
+
+		// Request additional features to be enabled
+		VkPhysicalDeviceDescriptorIndexingFeatures descriptor_indexing_features = {};
+		descriptor_indexing_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
+
+		VkPhysicalDeviceFeatures2 device_features2 = {};
+		device_features2.features.samplerAnisotropy = VK_TRUE;
+		device_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+		device_features2.pNext = &descriptor_indexing_features;
+		vkGetPhysicalDeviceFeatures2(vk_inst.physical_device, &device_features2);
+		device_create_info.pNext = &device_features2;
+
 		if (VulkanInstance::ENABLE_VALIDATION_LAYERS)
 		{
 			device_create_info.enabledLayerCount = (uint32_t)vk_inst.debug.validation_layers.size();
@@ -454,7 +481,7 @@ namespace VulkanBackend
 		vk_inst.swapchain.image_views.resize(vk_inst.swapchain.images.size());
 		for (size_t i = 0; i < vk_inst.swapchain.images.size(); ++i)
 		{
-			vk_inst.swapchain.image_views[i] = CreateImageView(vk_inst.swapchain.images[i], vk_inst.swapchain.format, VK_IMAGE_ASPECT_COLOR_BIT);
+			CreateImageView(vk_inst.swapchain.images[i], vk_inst.swapchain.format, VK_IMAGE_ASPECT_COLOR_BIT, vk_inst.swapchain.image_views[i]);
 		}
 	}
 
@@ -503,7 +530,7 @@ namespace VulkanBackend
 		VkFormat depth_format = FindDepthFormat();
 		CreateImage(vk_inst.swapchain.extent.width, vk_inst.swapchain.extent.height, depth_format, VK_IMAGE_TILING_OPTIMAL,
 			VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vk_inst.swapchain.depth_image, vk_inst.swapchain.depth_image_memory);
-		vk_inst.swapchain.depth_image_view = VulkanBackend::CreateImageView(vk_inst.swapchain.depth_image, depth_format, VK_IMAGE_ASPECT_DEPTH_BIT);
+		VulkanBackend::CreateImageView(vk_inst.swapchain.depth_image, depth_format, VK_IMAGE_ASPECT_DEPTH_BIT, vk_inst.swapchain.depth_image_view);
 		TransitionImageLayout(vk_inst.swapchain.depth_image, depth_format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 	}
 
@@ -633,7 +660,7 @@ namespace VulkanBackend
 		VkCheckResult(vkBindImageMemory(vk_inst.device, image, image_memory, 0));
 	}
 
-	VkImageView CreateImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect_flags)
+	void CreateImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect_flags, VkImageView& image_view)
 	{
 		VkImageViewCreateInfo view_info = {};
 		view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -646,10 +673,7 @@ namespace VulkanBackend
 		view_info.subresourceRange.baseArrayLayer = 0;
 		view_info.subresourceRange.layerCount = 1;
 
-		VkImageView image_view;
 		VkCheckResult(vkCreateImageView(vk_inst.device, &view_info, nullptr, &image_view));
-
-		return image_view;
 	}
 
 	VkFormat FindDepthFormat()

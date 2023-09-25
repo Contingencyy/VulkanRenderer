@@ -5,9 +5,6 @@
 
 #include <vector>
 
-#define VK_ASSERT(x) assert(x)
-#define VK_EXCEPT(...) auto logged_msg = LOG_ERR(__VA_ARGS__); throw std::runtime_error(logged_msg)
-
 inline void VkCheckResult(VkResult result);
 
 typedef struct GLFWwindow;
@@ -27,7 +24,22 @@ struct VulkanInstance
 	VkPhysicalDevice physical_device = VK_NULL_HANDLE;
 	VkDevice device = VK_NULL_HANDLE;
 
-	std::vector<const char*> extensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_EXT_SHADER_OBJECT_EXTENSION_NAME };
+	struct DeviceProperties
+	{
+		uint32_t max_descriptors_uniform_buffers = 0;
+		uint32_t max_descriptors_storage_buffers = 0;
+		uint32_t max_descriptors_combined_image_samplers = 0;
+		uint32_t min_uniform_buffer_offset_alignment = 0;
+	} device_properties;
+
+	std::vector<const char*> extensions =
+	{
+		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+		VK_EXT_SHADER_OBJECT_EXTENSION_NAME,
+		VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
+		VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME,
+		VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME
+	};
 
 	struct Swapchain
 	{
@@ -87,7 +99,7 @@ namespace VulkanBackend
 	void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags mem_flags, VkBuffer& buffer, VkDeviceMemory& device_memory);
 	void CreateImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
 		VkMemoryPropertyFlags memory_flags, VkImage& image, VkDeviceMemory& image_memory);
-	VkImageView CreateImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect_flags);
+	void CreateImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect_flags, VkImageView& image_view);
 	VkFormat FindDepthFormat();
 
 	VkCommandBuffer BeginSingleTimeCommands();
