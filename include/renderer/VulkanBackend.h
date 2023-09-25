@@ -48,6 +48,11 @@ struct VulkanInstance
 		VkDebugUtilsMessengerEXT debug_messenger = VK_NULL_HANDLE;
 	} debug;
 
+	struct DeviceProperties
+	{
+		uint32_t max_anisotropy;
+	} device_props;
+
 	struct DescriptorSizes
 	{
 		size_t uniform_buffer;
@@ -105,10 +110,23 @@ namespace VulkanBackend
 	void RecreateSwapChain();
 
 	void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags mem_flags, VkBuffer& buffer, VkDeviceMemory& device_memory);
+	void CreateStagingBuffer(VkDeviceSize size, VkBuffer& buffer, VkDeviceMemory& device_memory, void** data_ptr);
+	void CreateVertexBuffer(VkDeviceSize size, VkBuffer& buffer, VkDeviceMemory& device_memory);
+	void CreateIndexBuffer(VkDeviceSize size, VkBuffer& buffer, VkDeviceMemory& device_memory);
+
+	void DestroyBuffer(VkBuffer buffer, VkDeviceMemory device_memory, void* data_ptr = nullptr);
+
+	void WriteBuffer(void* dst_ptr, void* src_ptr, VkDeviceSize size);
+	void CopyBuffer(VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size, VkDeviceSize src_offset = 0, VkDeviceSize dst_offset = 0);
+
 	void CreateImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
 		VkMemoryPropertyFlags memory_flags, VkImage& image, VkDeviceMemory& image_memory);
 	void CreateImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect_flags, VkImageView& image_view);
+
+	void CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height, VkDeviceSize src_offset = 0);
+	
 	VkFormat FindDepthFormat();
+	uint32_t FindMemoryType(uint32_t type_filter, VkMemoryPropertyFlags mem_properties);
 
 	VkCommandBuffer BeginSingleTimeCommands();
 	void EndSingleTimeCommands(VkCommandBuffer command_buffer);

@@ -8,6 +8,12 @@ template<typename TResource>
 class ResourceSlotmap
 {
 public:
+	struct ReservedResource
+	{
+		ResourceHandle_t handle;
+		TResource* resource;
+	};
+
 	static constexpr size_t DEFAULT_SLOTMAP_CAPACITY = 1000;
 
 private:
@@ -34,14 +40,13 @@ public:
 	const ResourceSlotmap& operator=(const ResourceSlotmap& other) = delete;
 	ResourceSlotmap&& operator=(ResourceSlotmap&& other) = delete;
 
-	ResourceHandle_t Insert(const TResource& resource)
+	ReservedResource Reserve()
 	{
-		ResourceHandle_t handle = AllocateSlot();
-
-		Slot& slot = m_slots[handle.index];
-		slot.resource = resource;
-
-		return handle;
+		ReservedResource result = {};
+		result.handle = AllocateSlot();
+		result.resource = &m_slots[result.handle.index].resource;
+		
+		return result;
 	}
 
 	TResource* Find(ResourceHandle_t handle)

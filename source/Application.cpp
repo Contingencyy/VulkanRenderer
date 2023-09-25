@@ -51,6 +51,7 @@ namespace Application
 		CreateWindow();
 		Renderer::Init(data.window);
 
+		Assets::Init();
 		Assets::LoadTexture("assets/textures/statue.jpg", "statue");
 
 		data.is_running = true;
@@ -59,6 +60,8 @@ namespace Application
 	void Exit()
 	{
 		data.is_running = false;
+
+		Assets::Exit();
 
 		Renderer::Exit();
 		DestroyWindow();

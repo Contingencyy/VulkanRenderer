@@ -4,6 +4,9 @@
 namespace Assets
 {
 
+	void Init();
+	void Exit();
+
 	void LoadTexture(const char* filepath, const char* name);
 	ResourceHandle_t GetTexture(const char* name);
 

@@ -70,6 +70,16 @@ namespace Assets
 		cgltf_load_buffers(&options, data, filepath);
 	}
 
+	void Init()
+	{
+		// TODO: Load default assets, if necessary
+	}
+
+	void Exit()
+	{
+		// TODO: Release all assets, both on the CPU and GPU
+	}
+
 	void LoadTexture(const char* filepath, const char* name)
 	{
 		ReadImageResult image = ReadImage(filepath);

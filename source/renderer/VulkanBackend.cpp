@@ -301,6 +301,8 @@ namespace VulkanBackend
 			{
 				vk_inst.physical_device = device;
 
+				vk_inst.device_props.max_anisotropy = device_properties2.properties.limits.maxSamplerAnisotropy;
+
 				vk_inst.descriptor_sizes.uniform_buffer = descriptor_buffer_properties.uniformBufferDescriptorSize;
 				vk_inst.descriptor_sizes.storage_buffer = descriptor_buffer_properties.storageBufferDescriptorSize;
 				vk_inst.descriptor_sizes.combined_image_sampler = descriptor_buffer_properties.combinedImageSamplerDescriptorSize;
@@ -619,23 +621,6 @@ namespace VulkanBackend
 		CreateDepthResources();
 	}
 
-	static uint32_t FindMemoryType(uint32_t type_filter, VkMemoryPropertyFlags mem_properties)
-	{
-		VkPhysicalDeviceMemoryProperties device_mem_properties = {};
-		vkGetPhysicalDeviceMemoryProperties(vk_inst.physical_device, &device_mem_properties);
-
-		for (uint32_t i = 0; i < device_mem_properties.memoryTypeCount; ++i)
-		{
-			if (type_filter & (1 << i) &&
-				(device_mem_properties.memoryTypes[i].propertyFlags & mem_properties) == mem_properties)
-			{
-				return i;
-			}
-		}
-
-		VK_EXCEPT("Vulkan", "Failed to find suitable memory type");
-	}
-
 	void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags mem_flags, VkBuffer& buffer, VkDeviceMemory& device_memory)
 	{
 		VkBufferCreateInfo buffer_info = {};
@@ -656,6 +641,55 @@ namespace VulkanBackend
 
 		VkCheckResult(vkAllocateMemory(vk_inst.device, &alloc_info, nullptr, &device_memory));
 		VkCheckResult(vkBindBufferMemory(vk_inst.device, buffer, device_memory, 0));
+	}
+
+	void CreateStagingBuffer(VkDeviceSize size, VkBuffer& buffer, VkDeviceMemory& device_memory, void** data_ptr)
+	{
+		CreateBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, buffer, device_memory);
+		VkCheckResult(vkMapMemory(vk_inst.device, device_memory, 0, size, 0, data_ptr));
+	}
+
+	void CreateVertexBuffer(VkDeviceSize size, VkBuffer& buffer, VkDeviceMemory& device_memory)
+	{
+		CreateBuffer(size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffer, device_memory);
+	}
+
+	void CreateIndexBuffer(VkDeviceSize size, VkBuffer& buffer, VkDeviceMemory& device_memory)
+	{
+		CreateBuffer(size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffer, device_memory);
+	}
+
+	void DestroyBuffer(VkBuffer buffer, VkDeviceMemory device_memory, void* data_ptr)
+	{
+		if (data_ptr)
+		{
+			vkUnmapMemory(vk_inst.device, device_memory);
+		}
+		vkDestroyBuffer(vk_inst.device, buffer, nullptr);
+		vkFreeMemory(vk_inst.device, device_memory, nullptr);
+	}
+
+	void WriteBuffer(void* dst_ptr, void* src_ptr, VkDeviceSize size)
+	{
+		// NOTE: The driver may or may not have immediately copied this over to buffer memory (e.g. caching)
+		// or writes to the buffer are not visible in the mapped memory yet.
+		// To deal with this problem, you either have to use a memory heap that is host coherent (VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
+		// or call vkFlushMappedMemoryRanges after writing to the mapped memory and then calling vkInvalidateMappedMemoryRanges before reading from it
+		// The transfer of data to the GPU happens in the background and the specification states it is guaranteed to be complete as of the next call to vkQueueSubmit
+		memcpy(dst_ptr, src_ptr, size);
+	}
+
+	void CopyBuffer(VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size, VkDeviceSize src_offset, VkDeviceSize dst_offset)
+	{
+		VkCommandBuffer command_buffer = VulkanBackend::BeginSingleTimeCommands();
+
+		VkBufferCopy copy_region = {};
+		copy_region.srcOffset = src_offset;
+		copy_region.dstOffset = dst_offset;
+		copy_region.size = size;
+		vkCmdCopyBuffer(command_buffer, src_buffer, dst_buffer, 1, &copy_region);
+
+		VulkanBackend::EndSingleTimeCommands(command_buffer);
 	}
 
 	void CreateImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
@@ -707,6 +741,26 @@ namespace VulkanBackend
 		VkCheckResult(vkCreateImageView(vk_inst.device, &view_info, nullptr, &image_view));
 	}
 
+	void CopyBufferToImage(VkBuffer src_buffer, VkImage dst_image, uint32_t width, uint32_t height, VkDeviceSize src_offset)
+	{
+		VkCommandBuffer command_buffer = VulkanBackend::BeginSingleTimeCommands();
+
+		VkBufferImageCopy region = {};
+		region.bufferOffset = src_offset;
+		region.bufferRowLength = 0;
+		region.bufferImageHeight = 0;
+		region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		region.imageSubresource.mipLevel = 0;
+		region.imageSubresource.baseArrayLayer = 0;
+		region.imageSubresource.layerCount = 1;
+		region.imageOffset = { 0, 0, 0 };
+		region.imageExtent = { width, height, 1 };
+
+		vkCmdCopyBufferToImage(command_buffer, src_buffer, dst_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+		VulkanBackend::EndSingleTimeCommands(command_buffer);
+	}
+
 	VkFormat FindDepthFormat()
 	{
 		return FindSupportedFormat(
@@ -714,6 +768,23 @@ namespace VulkanBackend
 			VK_IMAGE_TILING_OPTIMAL,
 			VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
 		);
+	}
+
+	uint32_t FindMemoryType(uint32_t type_filter, VkMemoryPropertyFlags mem_properties)
+	{
+		VkPhysicalDeviceMemoryProperties device_mem_properties = {};
+		vkGetPhysicalDeviceMemoryProperties(vk_inst.physical_device, &device_mem_properties);
+
+		for (uint32_t i = 0; i < device_mem_properties.memoryTypeCount; ++i)
+		{
+			if (type_filter & (1 << i) &&
+				(device_mem_properties.memoryTypes[i].propertyFlags & mem_properties) == mem_properties)
+			{
+				return i;
+			}
+		}
+
+		VK_EXCEPT("Vulkan", "Failed to find suitable memory type");
 	}
 
 	VkCommandBuffer BeginSingleTimeCommands()

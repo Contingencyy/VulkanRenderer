@@ -28,6 +28,13 @@ namespace Renderer
 	static constexpr uint32_t STORAGE_BINDING = 1;
 	static constexpr uint32_t TEXTURE_BINDING = 2;
 
+	struct Buffer
+	{
+		VkBuffer buffer = VK_NULL_HANDLE;
+		VkDeviceMemory memory = VK_NULL_HANDLE;
+		void* ptr = nullptr;
+	};
+
 	struct Texture
 	{
 		VkImage image = VK_NULL_HANDLE;
@@ -35,13 +42,13 @@ namespace Renderer
 		VkDeviceMemory device_memory = VK_NULL_HANDLE;
 		VkSampler sampler = VK_NULL_HANDLE;
 
-		/*~Texture()
+		~Texture()
 		{
 			vkDestroySampler(vk_inst.device, sampler, nullptr);
 			vkDestroyImageView(vk_inst.device, image_view, nullptr);
 			vkDestroyImage(vk_inst.device, image, nullptr);
 			vkFreeMemory(vk_inst.device, device_memory, nullptr);
-		}*/
+		}
 	};
 
 	struct Mesh
@@ -51,17 +58,19 @@ namespace Renderer
 		VkBuffer index_buffer = VK_NULL_HANDLE;
 		VkDeviceMemory index_buffer_memory = VK_NULL_HANDLE;
 
-		/*~Mesh()
+		~Mesh()
 		{
 			vkDestroyBuffer(vk_inst.device, vertex_buffer, nullptr);
 			vkFreeMemory(vk_inst.device, vertex_buffer_memory, nullptr);
 			vkDestroyBuffer(vk_inst.device, index_buffer, nullptr);
 			vkFreeMemory(vk_inst.device, index_buffer_memory, nullptr);
-		}*/
+		}
 	};
 
 	struct Data
 	{
+		~Data() {}
+
 		::GLFWwindow* window = nullptr;
 
 		ResourceSlotmap<Texture> texture_slotmap;
@@ -79,10 +88,8 @@ namespace Renderer
 		uint32_t descriptor_storage_buffers_current = 0;
 		uint32_t descriptor_combined_image_samplers_current = 0;
 
-		VkBuffer vertex_buffer = VK_NULL_HANDLE;
-		VkDeviceMemory vertex_buffer_memory = VK_NULL_HANDLE;
-		VkBuffer index_buffer = VK_NULL_HANDLE;
-		VkDeviceMemory index_buffer_memory = VK_NULL_HANDLE;
+		Buffer vertex_buffer;
+		Buffer index_buffer;
 
 		std::vector<VkBuffer> uniform_buffers;
 		std::vector<VkDeviceMemory> uniform_buffers_memory;
@@ -196,95 +203,38 @@ namespace Renderer
 		}
 	}
 
-	static void CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height)
-	{
-		VkCommandBuffer command_buffer = VulkanBackend::BeginSingleTimeCommands();
-
-		VkBufferImageCopy region = {};
-		region.bufferOffset = 0;
-		region.bufferRowLength = 0;
-		region.bufferImageHeight = 0;
-		region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		region.imageSubresource.mipLevel = 0;
-		region.imageSubresource.baseArrayLayer = 0;
-		region.imageSubresource.layerCount = 1;
-		region.imageOffset = { 0, 0, 0 };
-		region.imageExtent = { width, height, 1 };
-
-		vkCmdCopyBufferToImage(command_buffer, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-
-		VulkanBackend::EndSingleTimeCommands(command_buffer);
-	}
-
-	static void CopyBuffer(VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size)
-	{
-		VkCommandBuffer command_buffer = VulkanBackend::BeginSingleTimeCommands();
-
-		VkBufferCopy copy_region = {};
-		copy_region.srcOffset = 0;
-		copy_region.dstOffset = 0;
-		copy_region.size = size;
-		vkCmdCopyBuffer(command_buffer, src_buffer, dst_buffer, 1, &copy_region);
-
-		VulkanBackend::EndSingleTimeCommands(command_buffer);
-	}
-
 	static void CreateVertexBuffer()
 	{
+		// Calculate the total buffer size in bytes
 		VkDeviceSize buffer_size = sizeof(s_vertices[0]) * s_vertices.size();
 
-		// Staging buffer
-		VkBuffer staging_buffer;
-		VkDeviceMemory staging_buffer_memory;
-		VulkanBackend::CreateBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-			VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, staging_buffer, staging_buffer_memory);
+		// Create staging buffer and write data
+		Buffer staging_buffer;
+		VulkanBackend::CreateStagingBuffer(buffer_size, staging_buffer.buffer, staging_buffer.memory, &staging_buffer.ptr);
+		VulkanBackend::WriteBuffer(staging_buffer.ptr, (void*)s_vertices.data(), buffer_size);
 
-		// NOTE: The driver may or may not have immediately copied this over to buffer memory (e.g. caching)
-		// or writes to the buffer are not visible in the mapped memory yet.
-		// To deal with this problem, you either have to use a memory heap that is host coherent (VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
-		// or call vkFlushMappedMemoryRanges after writing to the mapped memory and then calling vkInvalidateMappedMemoryRanges before reading from it
-		// The transfer of data to the GPU happens in the background and the specification states it is guaranteed to be complete as of the next call to vkQueueSubmit
-		void* ptr;
-		VkCheckResult(vkMapMemory(vk_inst.device, staging_buffer_memory, 0, buffer_size, 0, &ptr));
-		memcpy(ptr, s_vertices.data(), (size_t)buffer_size);
-		vkUnmapMemory(vk_inst.device, staging_buffer_memory);
+		// Create vertex buffer and copy staging buffer data to it
+		VulkanBackend::CreateVertexBuffer(buffer_size, data.vertex_buffer.buffer, data.vertex_buffer.memory);
+		VulkanBackend::CopyBuffer(staging_buffer.buffer, data.vertex_buffer.buffer, buffer_size);
 
-		// Device local buffer
-		VulkanBackend::CreateBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, data.vertex_buffer, data.vertex_buffer_memory);
-		CopyBuffer(staging_buffer, data.vertex_buffer, buffer_size);
-
-		vkDestroyBuffer(vk_inst.device, staging_buffer, nullptr);
-		vkFreeMemory(vk_inst.device, staging_buffer_memory, nullptr);
+		VulkanBackend::DestroyBuffer(staging_buffer.buffer, staging_buffer.memory, staging_buffer.ptr);
 	}
 
 	static void CreateIndexBuffer()
 	{
+		// Calculate the total buffer size in bytes
 		VkDeviceSize buffer_size = sizeof(s_indices[0]) * s_indices.size();
 
-		// Staging buffer
-		VkBuffer staging_buffer;
-		VkDeviceMemory staging_buffer_memory;
-		VulkanBackend::CreateBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-			VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, staging_buffer, staging_buffer_memory);
+		// Create staging buffer and write data
+		Buffer staging_buffer;
+		VulkanBackend::CreateStagingBuffer(buffer_size, staging_buffer.buffer, staging_buffer.memory, &staging_buffer.ptr);
+		VulkanBackend::WriteBuffer(staging_buffer.ptr, (void*)s_indices.data(), buffer_size);
 
-		// NOTE: The driver may or may not have immediately copied this over to buffer memory (e.g. caching)
-		// or writes to the buffer are not visible in the mapped memory yet.
-		// To deal with this problem, you either have to use a memory heap that is host coherent (VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
-		// or call vkFlushMappedMemoryRanges after writing to the mapped memory and then calling vkInvalidateMappedMemoryRanges before reading from it
-		// The transfer of data to the GPU happens in the background and the specification states it is guaranteed to be complete as of the next call to vkQueueSubmit
-		void* ptr;
-		VkCheckResult(vkMapMemory(vk_inst.device, staging_buffer_memory, 0, buffer_size, 0, &ptr));
-		memcpy(ptr, s_indices.data(), (size_t)buffer_size);
-		vkUnmapMemory(vk_inst.device, staging_buffer_memory);
+		// Create vertex buffer and copy staging buffer data to it
+		VulkanBackend::CreateIndexBuffer(buffer_size, data.index_buffer.buffer, data.index_buffer.memory);
+		VulkanBackend::CopyBuffer(staging_buffer.buffer, data.index_buffer.buffer, buffer_size);
 
-		// Device local buffer
-		VulkanBackend::CreateBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, data.index_buffer, data.index_buffer_memory);
-		CopyBuffer(staging_buffer, data.index_buffer, buffer_size);
-
-		vkDestroyBuffer(vk_inst.device, staging_buffer, nullptr);
-		vkFreeMemory(vk_inst.device, staging_buffer_memory, nullptr);
+		VulkanBackend::DestroyBuffer(staging_buffer.buffer, staging_buffer.memory, staging_buffer.ptr);
 	}
 
 	static void CreateUniformBuffers()
@@ -668,10 +618,10 @@ namespace Renderer
 		vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, data.graphics_pipeline);
 
 		// Vertex and index buffers
-		VkBuffer vertex_buffers[] = { data.vertex_buffer };
+		VkBuffer vertex_buffers[] = { data.vertex_buffer.buffer };
 		VkDeviceSize offsets[] = { 0 };
 		vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_buffers, offsets);
-		vkCmdBindIndexBuffer(command_buffer, data.index_buffer, 0, VK_INDEX_TYPE_UINT32);
+		vkCmdBindIndexBuffer(command_buffer, data.index_buffer.buffer, 0, VK_INDEX_TYPE_UINT32);
 
 		// Viewport and scissor
 		VkViewport viewport = {};
@@ -733,16 +683,17 @@ namespace Renderer
 	{
 		vkDeviceWaitIdle(vk_inst.device);
 
+		// Clean up vulkan stuff
 		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
 			vkDestroyFence(vk_inst.device, data.in_flight_fences[i], nullptr);
 			vkDestroySemaphore(vk_inst.device, data.render_finished_semaphores[i], nullptr);
 			vkDestroySemaphore(vk_inst.device, data.image_available_semaphores[i], nullptr);
 		}
-		vkDestroyBuffer(vk_inst.device, data.index_buffer, nullptr);
-		vkFreeMemory(vk_inst.device, data.index_buffer_memory, nullptr);
-		vkDestroyBuffer(vk_inst.device, data.vertex_buffer, nullptr);
-		vkFreeMemory(vk_inst.device, data.vertex_buffer_memory, nullptr);
+
+		VulkanBackend::DestroyBuffer(data.vertex_buffer.buffer, data.vertex_buffer.memory);
+		VulkanBackend::DestroyBuffer(data.index_buffer.buffer, data.index_buffer.memory);
+
 		// Destroying the command pool will also destroy any command buffers associated with that pool
 		vkDestroyRenderPass(vk_inst.device, data.render_pass, nullptr);
 		vkDestroyPipeline(vk_inst.device, data.graphics_pipeline, nullptr);
@@ -758,6 +709,10 @@ namespace Renderer
 		vkDestroyDescriptorSetLayout(vk_inst.device, data.descriptor_set_layout, nullptr);
 		vkDestroyPipelineLayout(vk_inst.device, data.pipeline_layout, nullptr);
 
+		// Clean up the renderer data
+		data.~Data();
+
+		// Finally, exit the vulkan render backend
 		VulkanBackend::Exit();
 	}
 
@@ -855,26 +810,23 @@ namespace Renderer
 		vkUnmapMemory(vk_inst.device, staging_buffer_memory);
 
 		// Create texture image
-		Texture texture = {};
+		ResourceSlotmap<Texture>::ReservedResource reserved = data.texture_slotmap.Reserve();
 		VulkanBackend::CreateImage(args.width, args.height, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-			VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, texture.image, texture.device_memory);
+			VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, reserved.resource->image, reserved.resource->device_memory);
 
 		// Copy staging buffer data into final texture image memory (device local)
-		VulkanBackend::TransitionImageLayout(texture.image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-		CopyBufferToImage(staging_buffer, texture.image, args.width, args.height);
-		VulkanBackend::TransitionImageLayout(texture.image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+		VulkanBackend::TransitionImageLayout(reserved.resource->image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+		VulkanBackend::CopyBufferToImage(staging_buffer, reserved.resource->image, args.width, args.height);
+		VulkanBackend::TransitionImageLayout(reserved.resource->image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
 		// Clean up staging buffer (memory)
 		vkDestroyBuffer(vk_inst.device, staging_buffer, nullptr);
 		vkFreeMemory(vk_inst.device, staging_buffer_memory, nullptr);
 
 		// Create image view
-		VulkanBackend::CreateImageView(texture.image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, texture.image_view);
+		VulkanBackend::CreateImageView(reserved.resource->image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, reserved.resource->image_view);
 
 		// Create image sampler
-		VkPhysicalDeviceProperties properties = {};
-		vkGetPhysicalDeviceProperties(vk_inst.physical_device, &properties);
-
 		VkSamplerCreateInfo sampler_info = {};
 		sampler_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
 		// Oversampling
@@ -885,7 +837,7 @@ namespace Renderer
 		sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 		sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 		sampler_info.anisotropyEnable = VK_TRUE;
-		sampler_info.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
+		sampler_info.maxAnisotropy = vk_inst.device_props.max_anisotropy;
 		sampler_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
 		sampler_info.unnormalizedCoordinates = VK_FALSE;
 		sampler_info.compareEnable = VK_FALSE;
@@ -895,14 +847,13 @@ namespace Renderer
 		sampler_info.minLod = 0.0f;
 		sampler_info.maxLod = 0.0f;
 
-		VkCheckResult(vkCreateSampler(vk_inst.device, &sampler_info, nullptr, &texture.sampler));
-		ResourceHandle_t handle = data.texture_slotmap.Insert(texture);
+		VkCheckResult(vkCreateSampler(vk_inst.device, &sampler_info, nullptr, &reserved.resource->sampler));
 
 		// Update descriptor
 		VkDescriptorImageInfo image_info = {};
-		image_info.imageView = texture.image_view;
+		image_info.imageView = reserved.resource->image_view;
 		image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		image_info.sampler = texture.sampler;
+		image_info.sampler = reserved.resource->sampler;
 
 		VkDescriptorGetInfoEXT descriptor_info = {};
 		descriptor_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
@@ -917,7 +868,7 @@ namespace Renderer
 		vk_inst.pFunc.get_descriptor_ext(vk_inst.device, &descriptor_info, vk_inst.descriptor_sizes.combined_image_sampler, descriptor_ptr);
 		data.descriptor_combined_image_samplers_current++;
 
-		return handle;
+		return reserved.handle;
 	}
 
 	ResourceHandle_t CreateMesh(const CreateMeshArgs& args)
