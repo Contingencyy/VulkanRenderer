@@ -20,18 +20,6 @@ struct VulkanInstance
 
 	::GLFWwindow* window;
 
-	VkInstance instance = VK_NULL_HANDLE;
-	VkPhysicalDevice physical_device = VK_NULL_HANDLE;
-	VkDevice device = VK_NULL_HANDLE;
-
-	struct DeviceProperties
-	{
-		uint32_t max_descriptors_uniform_buffers = 0;
-		uint32_t max_descriptors_storage_buffers = 0;
-		uint32_t max_descriptors_combined_image_samplers = 0;
-		uint32_t min_uniform_buffer_offset_alignment = 0;
-	} device_properties;
-
 	std::vector<const char*> extensions =
 	{
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
@@ -40,6 +28,32 @@ struct VulkanInstance
 		VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME,
 		VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME
 	};
+
+	VkInstance instance = VK_NULL_HANDLE;
+	VkPhysicalDevice physical_device = VK_NULL_HANDLE;
+	VkDevice device = VK_NULL_HANDLE;
+
+	struct Pfn
+	{
+		PFN_vkGetDescriptorEXT get_descriptor_ext;
+		PFN_vkGetDescriptorSetLayoutSizeEXT get_descriptor_set_layout_size_ext;
+		PFN_vkGetDescriptorSetLayoutBindingOffsetEXT get_descriptor_set_layout_binding_offset_ext;
+		PFN_vkCmdSetDescriptorBufferOffsetsEXT cmd_set_descriptor_buffer_offsets_ext;
+		PFN_vkCmdBindDescriptorBuffersEXT cmd_bind_descriptor_buffers_ext;
+	} pFunc;
+
+	struct Debug
+	{
+		std::vector<const char*> validation_layers = { "VK_LAYER_KHRONOS_validation" };
+		VkDebugUtilsMessengerEXT debug_messenger = VK_NULL_HANDLE;
+	} debug;
+
+	struct DescriptorSizes
+	{
+		size_t uniform_buffer;
+		size_t storage_buffer;
+		size_t combined_image_sampler;
+	} descriptor_sizes;
 
 	struct Swapchain
 	{
@@ -78,12 +92,6 @@ struct VulkanInstance
 		//VkCommandPool compute = VK_NULL_HANDLE;
 		//VkCommandPool transfer = VK_NULL_HANDLE;
 	} cmd_pools;
-
-	struct Debug
-	{
-		std::vector<const char*> validation_layers = { "VK_LAYER_KHRONOS_validation" };
-		VkDebugUtilsMessengerEXT debug_messenger = VK_NULL_HANDLE;
-	} debug;
 };
 
 extern VulkanInstance vk_inst;

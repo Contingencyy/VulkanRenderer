@@ -20,23 +20,35 @@ void VkCheckResult(VkResult result)
 namespace VulkanBackend
 {
 
+	template<typename TFunc>
+	static void LoadVulkanFunction(const char* func_name, TFunc& func_ptr)
+	{
+		func_ptr = (TFunc)vkGetInstanceProcAddr(vk_inst.instance, func_name);
+		if (!func_ptr)
+		{
+			VK_EXCEPT("Vulkan", "Could not find function pointer for {}", func_name);
+		}
+	}
+
 	static VKAPI_ATTR VkBool32 VKAPI_CALL VkDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
 		VkDebugUtilsMessageTypeFlagsEXT type, const VkDebugUtilsMessengerCallbackDataEXT* callback_data, void* user_data)
 	{
 		(void)type; (void)user_data;
+		static const char* sender = "Vulkan validation layer";
+
 		switch (severity)
 		{
 		case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
-			LOG_VERBOSE("Vulkan validation layer", callback_data->pMessage);
+			LOG_VERBOSE(sender, callback_data->pMessage);
 			break;
 		case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
-			LOG_INFO("Vulkan validation layer", callback_data->pMessage);
+			LOG_INFO(sender, callback_data->pMessage);
 			break;
 		case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
-			LOG_WARN("Vulkan validation layer", callback_data->pMessage);
+			LOG_WARN(sender, callback_data->pMessage);
 			break;
 		case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
-			LOG_ERR("Vulkan validation layer", callback_data->pMessage);
+			VK_EXCEPT(sender, callback_data->pMessage);
 			break;
 		}
 
@@ -215,12 +227,8 @@ namespace VulkanBackend
 			create_info.pfnUserCallback = VkDebugCallback;
 			create_info.pUserData = nullptr;
 
-			auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(vk_inst.instance, "vkCreateDebugUtilsMessengerEXT");
-			if (!func)
-			{
-				VK_EXCEPT("Vulkan", "Could not find function pointer for vkCreateDebugUtilsMessengerEXT");
-			}
-
+			PFN_vkCreateDebugUtilsMessengerEXT func = {};
+			LoadVulkanFunction<PFN_vkCreateDebugUtilsMessengerEXT>("vkCreateDebugUtilsMessengerEXT", func);
 			VkCheckResult(func(vk_inst.instance, &create_info, nullptr, &vk_inst.debug.debug_messenger));
 		}
 	}
@@ -239,17 +247,6 @@ namespace VulkanBackend
 
 		for (const auto& device : devices)
 		{
-			VkPhysicalDeviceProperties device_properties;
-			vkGetPhysicalDeviceProperties(device, &device_properties);
-
-			vk_inst.device_properties.max_descriptors_uniform_buffers = device_properties.limits.maxDescriptorSetUniformBuffers;
-			vk_inst.device_properties.max_descriptors_storage_buffers = device_properties.limits.maxDescriptorSetStorageBuffers;
-			vk_inst.device_properties.max_descriptors_combined_image_samplers = device_properties.limits.maxDescriptorSetSampledImages;
-			vk_inst.device_properties.min_uniform_buffer_offset_alignment = device_properties.limits.minUniformBufferOffsetAlignment;
-
-			VkPhysicalDeviceFeatures device_features;
-			vkGetPhysicalDeviceFeatures(device, &device_features);
-
 			uint32_t extension_count = 0;
 			vkEnumerateDeviceExtensionProperties(device, nullptr, &extension_count, nullptr);
 			
@@ -270,26 +267,44 @@ namespace VulkanBackend
 				swapchain_suitable = !swapchain_support.formats.empty() && !swapchain_support.present_modes.empty();
 			}
 
+			VkPhysicalDeviceDescriptorBufferPropertiesEXT descriptor_buffer_properties = {};
+			descriptor_buffer_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_PROPERTIES_EXT;
+
+			VkPhysicalDeviceProperties2 device_properties2 = {};
+			device_properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+			device_properties2.pNext = &descriptor_buffer_properties;
+			vkGetPhysicalDeviceProperties2(device, &device_properties2);
+
 			VkPhysicalDeviceDescriptorIndexingFeatures descriptor_indexing_features = {};
 			descriptor_indexing_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
+
+			VkPhysicalDeviceDescriptorBufferFeaturesEXT descriptor_buffer_features = {};
+			descriptor_buffer_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT;
+			descriptor_indexing_features.pNext = &descriptor_buffer_features;
 
 			VkPhysicalDeviceFeatures2 device_features2 = {};
 			device_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
 			device_features2.pNext = &descriptor_indexing_features;
 			vkGetPhysicalDeviceFeatures2(device, &device_features2);
 
-			if (device_properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU &&
+			if (device_properties2.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU &&
 				required_extensions.empty() && swapchain_suitable &&
-				device_features.samplerAnisotropy &&
+				device_features2.features.samplerAnisotropy &&
 				descriptor_indexing_features.shaderUniformBufferArrayNonUniformIndexing &&
 				descriptor_indexing_features.descriptorBindingUniformBufferUpdateAfterBind &&
 				descriptor_indexing_features.shaderStorageBufferArrayNonUniformIndexing &&
 				descriptor_indexing_features.descriptorBindingStorageBufferUpdateAfterBind &&
 				descriptor_indexing_features.shaderSampledImageArrayNonUniformIndexing &&
 				descriptor_indexing_features.descriptorBindingSampledImageUpdateAfterBind &&
-				descriptor_indexing_features.descriptorBindingPartiallyBound)
+				descriptor_indexing_features.descriptorBindingPartiallyBound &&
+				descriptor_buffer_features.descriptorBuffer)
 			{
 				vk_inst.physical_device = device;
+
+				vk_inst.descriptor_sizes.uniform_buffer = descriptor_buffer_properties.uniformBufferDescriptorSize;
+				vk_inst.descriptor_sizes.storage_buffer = descriptor_buffer_properties.storageBufferDescriptorSize;
+				vk_inst.descriptor_sizes.combined_image_sampler = descriptor_buffer_properties.combinedImageSamplerDescriptorSize;
+
 				break;
 			}
 		}
@@ -328,9 +343,17 @@ namespace VulkanBackend
 		VkPhysicalDeviceDescriptorIndexingFeatures descriptor_indexing_features = {};
 		descriptor_indexing_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
 
+		VkPhysicalDeviceDescriptorBufferFeaturesEXT descriptor_buffer_features = {};
+		descriptor_buffer_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT;
+		descriptor_indexing_features.pNext = &descriptor_buffer_features;
+
+		VkPhysicalDeviceBufferDeviceAddressFeaturesEXT buffer_device_address_features = {};
+		buffer_device_address_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES_EXT;
+		descriptor_buffer_features.pNext = &buffer_device_address_features;
+
 		VkPhysicalDeviceFeatures2 device_features2 = {};
-		device_features2.features.samplerAnisotropy = VK_TRUE;
 		device_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+		device_features2.features.samplerAnisotropy = VK_TRUE;
 		device_features2.pNext = &descriptor_indexing_features;
 		vkGetPhysicalDeviceFeatures2(vk_inst.physical_device, &device_features2);
 		device_create_info.pNext = &device_features2;
@@ -347,8 +370,16 @@ namespace VulkanBackend
 
 		VkCheckResult(vkCreateDevice(vk_inst.physical_device, &device_create_info, nullptr, &vk_inst.device));
 
+		// Create queues
 		vkGetDeviceQueue(vk_inst.device, vk_inst.queue_indices.present, 0, &vk_inst.queues.present);
 		vkGetDeviceQueue(vk_inst.device, vk_inst.queue_indices.graphics, 0, &vk_inst.queues.graphics);
+
+		// Load function pointers for extensions
+		LoadVulkanFunction<PFN_vkGetDescriptorEXT>("vkGetDescriptorEXT", vk_inst.pFunc.get_descriptor_ext);
+		LoadVulkanFunction<PFN_vkGetDescriptorSetLayoutSizeEXT>("vkGetDescriptorSetLayoutSizeEXT", vk_inst.pFunc.get_descriptor_set_layout_size_ext);
+		LoadVulkanFunction<PFN_vkGetDescriptorSetLayoutBindingOffsetEXT>("vkGetDescriptorSetLayoutBindingOffsetEXT", vk_inst.pFunc.get_descriptor_set_layout_binding_offset_ext);
+		LoadVulkanFunction<PFN_vkCmdSetDescriptorBufferOffsetsEXT>("vkCmdSetDescriptorBufferOffsetsEXT", vk_inst.pFunc.cmd_set_descriptor_buffer_offsets_ext);
+		LoadVulkanFunction<PFN_vkCmdBindDescriptorBuffersEXT>("vkCmdBindDescriptorBuffersEXT", vk_inst.pFunc.cmd_bind_descriptor_buffers_ext);
 	}
 
 	static void CreateCommandPool()
