@@ -649,6 +649,20 @@ namespace VulkanBackend
 		VkCheckResult(vkMapMemory(vk_inst.device, device_memory, 0, size, 0, data_ptr));
 	}
 
+	void CreateUniformBuffer(VkDeviceSize size, VkBuffer& buffer, VkDeviceMemory& device_memory, void** data_ptr)
+	{
+		CreateBuffer(size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, buffer, device_memory);
+		VkCheckResult(vkMapMemory(vk_inst.device, device_memory, 0, size, 0, data_ptr));
+	}
+
+	void CreateDescriptorBuffer(VkDeviceSize size, VkBuffer& buffer, VkDeviceMemory& device_memory, void** data_ptr)
+	{
+		CreateBuffer(size, VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, buffer, device_memory);
+		VkCheckResult(vkMapMemory(vk_inst.device, device_memory, 0, size, 0, data_ptr));
+	}
+
 	void CreateVertexBuffer(VkDeviceSize size, VkBuffer& buffer, VkDeviceMemory& device_memory)
 	{
 		CreateBuffer(size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffer, device_memory);

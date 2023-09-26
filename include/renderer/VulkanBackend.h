@@ -33,21 +33,6 @@ struct VulkanInstance
 	VkPhysicalDevice physical_device = VK_NULL_HANDLE;
 	VkDevice device = VK_NULL_HANDLE;
 
-	struct Pfn
-	{
-		PFN_vkGetDescriptorEXT get_descriptor_ext;
-		PFN_vkGetDescriptorSetLayoutSizeEXT get_descriptor_set_layout_size_ext;
-		PFN_vkGetDescriptorSetLayoutBindingOffsetEXT get_descriptor_set_layout_binding_offset_ext;
-		PFN_vkCmdSetDescriptorBufferOffsetsEXT cmd_set_descriptor_buffer_offsets_ext;
-		PFN_vkCmdBindDescriptorBuffersEXT cmd_bind_descriptor_buffers_ext;
-	} pFunc;
-
-	struct Debug
-	{
-		std::vector<const char*> validation_layers = { "VK_LAYER_KHRONOS_validation" };
-		VkDebugUtilsMessengerEXT debug_messenger = VK_NULL_HANDLE;
-	} debug;
-
 	struct DeviceProperties
 	{
 		uint32_t max_anisotropy;
@@ -97,6 +82,21 @@ struct VulkanInstance
 		//VkCommandPool compute = VK_NULL_HANDLE;
 		//VkCommandPool transfer = VK_NULL_HANDLE;
 	} cmd_pools;
+
+	struct Debug
+	{
+		std::vector<const char*> validation_layers = { "VK_LAYER_KHRONOS_validation" };
+		VkDebugUtilsMessengerEXT debug_messenger = VK_NULL_HANDLE;
+	} debug;
+
+	struct Pfn
+	{
+		PFN_vkGetDescriptorEXT get_descriptor_ext;
+		PFN_vkGetDescriptorSetLayoutSizeEXT get_descriptor_set_layout_size_ext;
+		PFN_vkGetDescriptorSetLayoutBindingOffsetEXT get_descriptor_set_layout_binding_offset_ext;
+		PFN_vkCmdSetDescriptorBufferOffsetsEXT cmd_set_descriptor_buffer_offsets_ext;
+		PFN_vkCmdBindDescriptorBuffersEXT cmd_bind_descriptor_buffers_ext;
+	} pFunc;
 };
 
 extern VulkanInstance vk_inst;
@@ -111,6 +111,8 @@ namespace VulkanBackend
 
 	void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags mem_flags, VkBuffer& buffer, VkDeviceMemory& device_memory);
 	void CreateStagingBuffer(VkDeviceSize size, VkBuffer& buffer, VkDeviceMemory& device_memory, void** data_ptr);
+	void CreateUniformBuffer(VkDeviceSize size, VkBuffer& buffer, VkDeviceMemory& device_memory, void** data_ptr);
+	void CreateDescriptorBuffer(VkDeviceSize size, VkBuffer& buffer, VkDeviceMemory& device_memory, void** data_ptr);
 	void CreateVertexBuffer(VkDeviceSize size, VkBuffer& buffer, VkDeviceMemory& device_memory);
 	void CreateIndexBuffer(VkDeviceSize size, VkBuffer& buffer, VkDeviceMemory& device_memory);
 
