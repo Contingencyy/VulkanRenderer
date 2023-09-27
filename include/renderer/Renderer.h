@@ -10,7 +10,7 @@ namespace Renderer
 
 	void Init(GLFWwindow* window);
 	void Exit();
-	void BeginFrame();
+	void BeginFrame(const glm::mat4& view, const glm::mat4& proj);
 	void RenderFrame();
 	void EndFrame();
 

@@ -14,7 +14,6 @@
 #include <cstring>
 #include <set>
 #include <algorithm>
-#include <chrono>
 #include <exception>
 #include <fstream>
 
@@ -96,7 +95,7 @@ namespace Renderer
 		uint32_t descriptor_storage_buffers_current = 0;
 		uint32_t descriptor_combined_image_samplers_current = 0;
 		
-		std::vector<Vulkan::Buffer> uniform_buffers;
+		std::vector<Vulkan::Buffer> camera_uniform_buffers;
 
 		std::vector<VkCommandBuffer> command_buffers;
 		std::vector<VkSemaphore> image_available_semaphores;
@@ -207,17 +206,17 @@ namespace Renderer
 
 	static void CreateUniformBuffers()
 	{
-		data.uniform_buffers.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
+		data.camera_uniform_buffers.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
 		VkDeviceSize buffer_size = sizeof(CameraData);
 
 		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
-			Vulkan::CreateUniformBuffer(buffer_size, data.uniform_buffers[i]);
+			Vulkan::CreateUniformBuffer(buffer_size, data.camera_uniform_buffers[i]);
 
 			// Update descriptor
 			VkBufferDeviceAddressInfoEXT buffer_address_info = {};
 			buffer_address_info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
-			buffer_address_info.buffer = data.uniform_buffers[i].buffer;
+			buffer_address_info.buffer = data.camera_uniform_buffers[i].buffer;
 
 			VkDescriptorAddressInfoEXT descriptor_address_info = {};
 			descriptor_address_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT;
@@ -237,16 +236,6 @@ namespace Renderer
 			vk_inst.pFunc.get_descriptor_ext(vk_inst.device, &descriptor_info, vk_inst.descriptor_sizes.uniform_buffer, descriptor_ptr);
 			data.descriptor_uniform_buffers_current++;
 		}
-	}
-
-	static void UpdateUniformBuffer(uint32_t current_image)
-	{
-		CameraData ubo = {};
-		ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-		ubo.proj = glm::perspective(glm::radians(45.0f), vk_inst.swapchain.extent.width / (float)vk_inst.swapchain.extent.height, 0.1f, 10.0f);
-		ubo.proj[1][1] *= -1.0f;
-
-		memcpy(data.uniform_buffers[current_image].ptr, &ubo, sizeof(ubo));
 	}
 
 	static void CreateDescriptorSetLayout()
@@ -705,7 +694,7 @@ namespace Renderer
 		vkDestroyPipeline(vk_inst.device, data.graphics_pipeline, nullptr);
 		for (size_t i = 0; i < VulkanInstance::VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
-			Vulkan::DestroyBuffer(data.uniform_buffers[i]);
+			Vulkan::DestroyBuffer(data.camera_uniform_buffers[i]);
 		}
 		Vulkan::DestroyBuffer(data.descriptor_buffer);
 		vkDestroyDescriptorSetLayout(vk_inst.device, data.descriptor_set_layout, nullptr);
@@ -718,8 +707,13 @@ namespace Renderer
 		Vulkan::Exit();
 	}
 
-	void BeginFrame()
+	void BeginFrame(const glm::mat4& view, const glm::mat4& proj)
 	{
+		CameraData ubo = {};
+		ubo.view = view;
+		ubo.proj = proj;
+
+		memcpy(data.camera_uniform_buffers[data.current_frame].ptr, &ubo, sizeof(ubo));
 	}
 
 	void RenderFrame()
@@ -748,9 +742,6 @@ namespace Renderer
 		// Reset and record the command buffer
 		vkResetCommandBuffer(data.command_buffers[data.current_frame], 0);
 		RecordCommandBuffer(data.command_buffers[data.current_frame], image_index);
-
-		// Update UBOs
-		UpdateUniformBuffer(data.current_frame);
 
 		// Submit the command buffer for execution
 		VkSubmitInfo submit_info = {};
