@@ -1,6 +1,8 @@
 #pragma once
 #include "renderer/RenderTypes.h"
 
+#include <vector>
+
 typedef struct GLFWwindow;
 
 namespace Renderer
@@ -8,25 +10,27 @@ namespace Renderer
 
 	void Init(GLFWwindow* window);
 	void Exit();
+	void BeginFrame();
 	void RenderFrame();
+	void EndFrame();
 
 	struct CreateTextureArgs
 	{
 		uint32_t width;
 		uint32_t height;
-		uint8_t* data_ptr;
+		std::vector<uint8_t> pixels;
 	};
 
-	ResourceHandle_t CreateTexture(const CreateTextureArgs& args);
+	TextureHandle_t CreateTexture(const CreateTextureArgs& args);
 
 	struct CreateMeshArgs
 	{
-		size_t num_vertices;
-		Vertex* vertices;
-		size_t num_indices;
-		uint32_t* indices;
+		std::vector<Vertex> vertices;
+		std::vector<uint32_t> indices;
 	};
 
-	ResourceHandle_t CreateMesh(const CreateMeshArgs& args);
+	MeshHandle_t CreateMesh(const CreateMeshArgs& args);
+
+	void SubmitMesh(MeshHandle_t mesh_handle, TextureHandle_t texture_handle, const glm::mat4& transform);
 
 }

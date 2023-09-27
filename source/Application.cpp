@@ -46,6 +46,31 @@ namespace Application
 		}
 	}
 
+	static void SubmitModelNode(const Assets::Model& model, const Assets::Model::Node& node, const glm::mat4& node_transform)
+	{
+		for (size_t i = 0; i < node.mesh_handles.size(); ++i)
+		{
+			Renderer::SubmitMesh(node.mesh_handles[i], node.texture_handles[i], node_transform);
+		}
+
+		for (size_t i = 0; i < node.children.size(); ++i)
+		{
+			const Assets::Model::Node& child_node = model.nodes[node.children[i]];
+			glm::mat4 child_transform = child_node.transform * node_transform;
+			SubmitModelNode(model, child_node, child_transform);
+		}
+	}
+
+	static void SubmitModel(const Assets::Model& model, const glm::mat4& transform)
+	{
+		for (size_t i = 0; i < model.root_nodes.size(); ++i)
+		{
+			const Assets::Model::Node& root_node = model.nodes[model.root_nodes[i]];
+			glm::mat4 root_transform = root_node.transform * transform;
+			SubmitModelNode(model, root_node, root_transform);
+		}
+	}
+
 	void Init()
 	{
 		CreateWindow();
@@ -53,6 +78,7 @@ namespace Application
 
 		Assets::Init();
 		Assets::LoadTexture("assets/textures/statue.jpg", "statue");
+		Assets::LoadGLTF("assets/models/gltf/toyota_chaser_tourerv/scene.gltf", "lambo_venevo");
 
 		data.is_running = true;
 	}
@@ -72,7 +98,15 @@ namespace Application
 		while (!data.should_close)
 		{
 			PollEvents();
+
+			Renderer::BeginFrame();
+
+			// NOTE: Temporary test setup, we should have a proper scene soon
+			Assets::Model lambo_venevo = Assets::GetModel("lambo_venevo");
+			glm::mat4 transform = glm::scale(glm::identity<glm::mat4>(), glm::vec3(0.01f));
+			SubmitModel(lambo_venevo, transform);
 			Renderer::RenderFrame();
+			Renderer::EndFrame();
 		}
 	}
 

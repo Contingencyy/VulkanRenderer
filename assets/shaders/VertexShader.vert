@@ -2,28 +2,26 @@
 #extension GL_KHR_vulkan_glsl : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 
-layout(set = 0, binding = 0) uniform Scene
+layout(set = 0, binding = 0) uniform Camera
 {
-	mat4 model;
 	mat4 view;
 	mat4 proj;
-} scene[];
+} camera[];
 
-layout(push_constant) uniform constants
+layout(push_constant, std140) uniform constants
 {
-	uint scene_ubo_index;
+	layout(offset = 0) uint camera_ubo_index;
 } push_constants;
 
 layout(location = 0) in vec3 position;
-layout(location = 1) in vec3 color;
-layout(location = 2) in vec2 tex_coord;
+layout(location = 1) in vec2 tex_coord;
+// Takes up 4 locations, 2 to 5
+layout(location = 2) in mat4 transform;
 
-layout(location = 0) out vec3 frag_color;
-layout(location = 1) out vec2 frag_tex_coord;
+layout(location = 0) out vec2 frag_tex_coord;
 
 void main()
 {
-	gl_Position = scene[push_constants.scene_ubo_index].proj * scene[push_constants.scene_ubo_index].view * scene[push_constants.scene_ubo_index].model * vec4(position, 1.0);
-	frag_color = color;
+	gl_Position = camera[push_constants.camera_ubo_index].proj * camera[push_constants.camera_ubo_index].view * transform * vec4(position, 1.0);
 	frag_tex_coord = tex_coord;
 }

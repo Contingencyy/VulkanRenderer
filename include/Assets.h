@@ -1,6 +1,8 @@
 #pragma once
 #include "renderer/RenderTypes.h"
 
+#include <vector>
+
 namespace Assets
 {
 
@@ -8,9 +10,28 @@ namespace Assets
 	void Exit();
 
 	void LoadTexture(const char* filepath, const char* name);
-	ResourceHandle_t GetTexture(const char* name);
+	TextureHandle_t GetTexture(const char* name);
+
+	struct Model
+	{
+		struct Node
+		{
+			std::vector<MeshHandle_t> mesh_handles;
+			std::vector<TextureHandle_t> texture_handles;
+			std::vector<uint32_t> children;
+
+			glm::mat4 transform;
+
+			const char* name;
+		};
+
+		std::vector<Node> nodes;
+		std::vector<uint32_t> root_nodes;
+
+		const char* name;
+	};
 
 	void LoadGLTF(const char* filepath, const char* name);
-	ResourceHandle_t GetMesh(const char* name);
+	Model GetModel(const char* name);
 
 }

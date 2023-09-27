@@ -1,5 +1,4 @@
 #pragma once
-#include "renderer/RenderTypes.h"
 #include "Common.h"
 
 #include <type_traits>
@@ -102,7 +101,7 @@ private:
 		Slot& slot = m_slots[m_next_free];
 
 		handle.index = m_next_free;
-		handle.version = slot.version++;
+		handle.version = slot.version;
 
 		m_next_free = slot.next_free;
 		slot.next_free = INVALID_SLOT_INDEX;

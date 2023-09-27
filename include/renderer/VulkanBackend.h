@@ -5,9 +5,64 @@
 
 #include <vector>
 
+typedef struct GLFWwindow;
+
 inline void VkCheckResult(VkResult result);
 
-typedef struct GLFWwindow;
+namespace Vulkan
+{
+
+	struct Buffer
+	{
+		VkBuffer buffer = VK_NULL_HANDLE;
+		VkDeviceMemory memory = VK_NULL_HANDLE;
+		void* ptr = nullptr;
+
+		uint32_t num_elements = 0;
+	};
+
+	struct Image
+	{
+		VkImage image = VK_NULL_HANDLE;;
+		VkImageView view = VK_NULL_HANDLE;;
+		VkDeviceMemory memory = VK_NULL_HANDLE;;
+		VkSampler sampler = VK_NULL_HANDLE;
+		VkFormat format = VK_FORMAT_UNDEFINED;
+	};
+
+	void Init(::GLFWwindow* window);
+	void Exit();
+	
+	void RecreateSwapChain();
+
+	void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags mem_flags, Buffer& buffer);
+	void CreateStagingBuffer(VkDeviceSize size, Buffer& buffer);
+	void CreateUniformBuffer(VkDeviceSize size, Buffer& buffer);
+	void CreateDescriptorBuffer(VkDeviceSize size, Buffer& buffer);
+	void CreateVertexBuffer(VkDeviceSize size, Buffer& buffer);
+	void CreateIndexBuffer(VkDeviceSize size, Buffer& buffer);
+
+	void DestroyBuffer(const Buffer& buffer);
+
+	void WriteBuffer(void* dst_ptr, void* src_ptr, VkDeviceSize size);
+	void CopyBuffer(const Buffer& src_buffer, const Buffer& dst_buffer, VkDeviceSize size, VkDeviceSize src_offset = 0, VkDeviceSize dst_offset = 0);
+
+	void CreateImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
+		VkMemoryPropertyFlags memory_flags, Image& image);
+	void CreateImageView(VkImageAspectFlags aspect_flags, Image& image);
+
+	void DestroyImage(const Image& image);
+
+	void CopyBufferToImage(const Buffer& src_buffer, const Image& dst_image, uint32_t width, uint32_t height, VkDeviceSize src_offset = 0);
+	
+	VkFormat FindDepthFormat();
+	uint32_t FindMemoryType(uint32_t type_filter, VkMemoryPropertyFlags mem_properties);
+
+	VkCommandBuffer BeginSingleTimeCommands();
+	void EndSingleTimeCommands(VkCommandBuffer command_buffer);
+	void TransitionImageLayout(const Image& image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout);
+
+}
 
 struct VulkanInstance
 {
@@ -49,15 +104,11 @@ struct VulkanInstance
 	{
 		VkSurfaceKHR surface = VK_NULL_HANDLE;
 		VkSwapchainKHR swapchain = VK_NULL_HANDLE;
-		VkFormat format = VK_FORMAT_UNDEFINED;
 		VkExtent2D extent = { 0, 0 };
-		std::vector<VkImage> images;
-		std::vector<VkImageView> image_views;
+		std::vector<Vulkan::Image> images;
 		std::vector<VkFramebuffer> framebuffers;
 		// TODO: Depth images will be removed from swapchain, swapchain color buffers will only be copied to eventually
-		VkImage depth_image = VK_NULL_HANDLE;
-		VkDeviceMemory depth_image_memory = VK_NULL_HANDLE;
-		VkImageView depth_image_view = VK_NULL_HANDLE;
+		Vulkan::Image depth_image;
 	} swapchain;
 
 	struct QueueIndices
@@ -100,38 +151,3 @@ struct VulkanInstance
 };
 
 extern VulkanInstance vk_inst;
-
-namespace VulkanBackend
-{
-
-	void Init(::GLFWwindow* window);
-	void Exit();
-	
-	void RecreateSwapChain();
-
-	void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags mem_flags, VkBuffer& buffer, VkDeviceMemory& device_memory);
-	void CreateStagingBuffer(VkDeviceSize size, VkBuffer& buffer, VkDeviceMemory& device_memory, void** data_ptr);
-	void CreateUniformBuffer(VkDeviceSize size, VkBuffer& buffer, VkDeviceMemory& device_memory, void** data_ptr);
-	void CreateDescriptorBuffer(VkDeviceSize size, VkBuffer& buffer, VkDeviceMemory& device_memory, void** data_ptr);
-	void CreateVertexBuffer(VkDeviceSize size, VkBuffer& buffer, VkDeviceMemory& device_memory);
-	void CreateIndexBuffer(VkDeviceSize size, VkBuffer& buffer, VkDeviceMemory& device_memory);
-
-	void DestroyBuffer(VkBuffer buffer, VkDeviceMemory device_memory, void* data_ptr = nullptr);
-
-	void WriteBuffer(void* dst_ptr, void* src_ptr, VkDeviceSize size);
-	void CopyBuffer(VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size, VkDeviceSize src_offset = 0, VkDeviceSize dst_offset = 0);
-
-	void CreateImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
-		VkMemoryPropertyFlags memory_flags, VkImage& image, VkDeviceMemory& image_memory);
-	void CreateImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect_flags, VkImageView& image_view);
-
-	void CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height, VkDeviceSize src_offset = 0);
-	
-	VkFormat FindDepthFormat();
-	uint32_t FindMemoryType(uint32_t type_filter, VkMemoryPropertyFlags mem_properties);
-
-	VkCommandBuffer BeginSingleTimeCommands();
-	void EndSingleTimeCommands(VkCommandBuffer command_buffer);
-	void TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout);
-
-}

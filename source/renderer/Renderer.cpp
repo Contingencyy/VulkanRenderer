@@ -9,7 +9,6 @@
 #include "GLFW/glfw3.h"
 
 #include <array>
-#include <vector>
 #include <optional>
 #include <assert.h>
 #include <cstring>
@@ -28,43 +27,54 @@ namespace Renderer
 	static constexpr uint32_t STORAGE_BINDING = 1;
 	static constexpr uint32_t TEXTURE_BINDING = 2;
 
-	struct Buffer
-	{
-		VkBuffer buffer = VK_NULL_HANDLE;
-		VkDeviceMemory memory = VK_NULL_HANDLE;
-		void* ptr = nullptr;
-	};
+	static constexpr uint32_t MAX_DRAW_LIST_ENTRIES = 10000;
 
-	struct Texture
+	struct TextureResource
 	{
-		VkImage image = VK_NULL_HANDLE;
-		VkImageView image_view = VK_NULL_HANDLE;
-		VkDeviceMemory device_memory = VK_NULL_HANDLE;
-		VkSampler sampler = VK_NULL_HANDLE;
+		Vulkan::Image image;
 
-		~Texture()
+		~TextureResource()
 		{
-			vkDestroySampler(vk_inst.device, sampler, nullptr);
-			vkDestroyImageView(vk_inst.device, image_view, nullptr);
-			vkDestroyImage(vk_inst.device, image, nullptr);
-			vkFreeMemory(vk_inst.device, device_memory, nullptr);
+			Vulkan::DestroyImage(image);
 		}
 	};
 
-	struct Mesh
+	struct MeshResource
 	{
-		VkBuffer vertex_buffer = VK_NULL_HANDLE;
-		VkDeviceMemory vertex_buffer_memory = VK_NULL_HANDLE;
-		VkBuffer index_buffer = VK_NULL_HANDLE;
-		VkDeviceMemory index_buffer_memory = VK_NULL_HANDLE;
+		Vulkan::Buffer vertex_buffer;
+		Vulkan::Buffer index_buffer;
 
-		~Mesh()
+		~MeshResource()
 		{
-			vkDestroyBuffer(vk_inst.device, vertex_buffer, nullptr);
-			vkFreeMemory(vk_inst.device, vertex_buffer_memory, nullptr);
-			vkDestroyBuffer(vk_inst.device, index_buffer, nullptr);
-			vkFreeMemory(vk_inst.device, index_buffer_memory, nullptr);
+			Vulkan::DestroyBuffer(vertex_buffer);
+			Vulkan::DestroyBuffer(index_buffer);
 		}
+	};
+
+	struct DrawList
+	{
+		struct Entry
+		{
+			MeshHandle_t mesh_handle;
+			TextureHandle_t texture_handle;
+			glm::mat4 transform;
+		};
+
+		size_t current_entry = 0;
+		std::array<Entry, MAX_DRAW_LIST_ENTRIES> entries;
+
+		Entry& GetNextEntry()
+		{
+			Entry& entry = entries[current_entry];
+			current_entry++;
+			return entry;
+		}
+	};
+
+	struct CameraData
+	{
+		glm::mat4 view;
+		glm::mat4 proj;
 	};
 
 	struct Data
@@ -73,56 +83,34 @@ namespace Renderer
 
 		::GLFWwindow* window = nullptr;
 
-		ResourceSlotmap<Texture> texture_slotmap;
-		ResourceSlotmap<Mesh> mesh_slotmap;
+		ResourceSlotmap<TextureResource> texture_slotmap;
+		ResourceSlotmap<MeshResource> mesh_slotmap;
 
 		VkRenderPass render_pass = VK_NULL_HANDLE;
 		VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
 		VkPipeline graphics_pipeline = VK_NULL_HANDLE;
 
 		VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
-		Buffer descriptor_buffer;
+		Vulkan::Buffer descriptor_buffer;
 		uint32_t descriptor_uniform_buffers_current = 0;
 		uint32_t descriptor_storage_buffers_current = 0;
 		uint32_t descriptor_combined_image_samplers_current = 0;
-
-		Buffer vertex_buffer;
-		Buffer index_buffer;
-		std::vector<Buffer> uniform_buffers;
+		
+		std::vector<Vulkan::Buffer> uniform_buffers;
 
 		std::vector<VkCommandBuffer> command_buffers;
 		std::vector<VkSemaphore> image_available_semaphores;
 		std::vector<VkSemaphore> render_finished_semaphores;
 		std::vector<VkFence> in_flight_fences;
 
+		DrawList draw_list;
+		Vulkan::Buffer instance_buffer;
+
+		TextureHandle_t default_white_texture_handle;
+		TextureResource* default_white_texture_resource;
+
 		uint32_t current_frame = 0;
 	} static data;
-
-	struct UniformBufferObject
-	{
-		glm::mat4 model;
-		glm::mat4 view;
-		glm::mat4 proj;
-	};
-
-	static const std::vector<Vertex> s_vertices =
-	{
-		{{ -0.5f, -0.5f, 0.0f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f }},
-		{{  0.5f, -0.5f, 0.0f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f }},
-		{{  0.5f,  0.5f, 0.0f }, { 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f }},
-		{{ -0.5f,  0.5f, 0.0f }, { 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f }},
-
-		{{ -0.5f, -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f }},
-		{{  0.5f, -0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f }},
-		{{  0.5f,  0.5f, -0.5f }, { 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f }},
-		{{ -0.5f,  0.5f, -0.5f }, { 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f }},
-	};
-
-	static const std::vector<uint32_t> s_indices =
-	{
-		0, 1, 2, 2, 3, 0,
-		4, 5, 6, 6, 7, 4,
-	};
 
 	static std::vector<char> ReadFile(const char* filepath)
 	{
@@ -142,19 +130,23 @@ namespace Renderer
 		return buffer;
 	}
 	
-	static VkVertexInputBindingDescription GetVertexBindingDescription()
+	static std::array<VkVertexInputBindingDescription, 2> GetVertexBindingDescription()
 	{
-		VkVertexInputBindingDescription binding_desc = {};
-		binding_desc.binding = 0;
-		binding_desc.stride = sizeof(Vertex);
-		binding_desc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+		std::array<VkVertexInputBindingDescription, 2> binding_descs = {};
+		binding_descs[0].binding = 0;
+		binding_descs[0].stride = sizeof(Vertex);
+		binding_descs[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-		return binding_desc;
+		binding_descs[1].binding = 1;
+		binding_descs[1].stride = sizeof(glm::mat4);
+		binding_descs[1].inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
+
+		return binding_descs;
 	}
 
-	static std::array<VkVertexInputAttributeDescription, 3> GetVertexAttributeDescription()
+	static std::array<VkVertexInputAttributeDescription, 6> GetVertexAttributeDescription()
 	{
-		std::array<VkVertexInputAttributeDescription, 3> attribute_desc = {};
+		std::array<VkVertexInputAttributeDescription, 6> attribute_desc = {};
 		attribute_desc[0].binding = 0;
 		attribute_desc[0].location = 0;
 		attribute_desc[0].format = VK_FORMAT_R32G32B32_SFLOAT;
@@ -162,27 +154,42 @@ namespace Renderer
 
 		attribute_desc[1].binding = 0;
 		attribute_desc[1].location = 1;
-		attribute_desc[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-		attribute_desc[1].offset = offsetof(Vertex, color);
+		attribute_desc[1].format = VK_FORMAT_R32G32_SFLOAT;
+		attribute_desc[1].offset = offsetof(Vertex, tex_coord);
 
-		attribute_desc[2].binding = 0;
+		attribute_desc[2].binding = 1;
 		attribute_desc[2].location = 2;
-		attribute_desc[2].format = VK_FORMAT_R32G32_SFLOAT;
-		attribute_desc[2].offset = offsetof(Vertex, tex_coord);
+		attribute_desc[2].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+		attribute_desc[2].offset = 0;
+
+		attribute_desc[3].binding = 1;
+		attribute_desc[3].location = 3;
+		attribute_desc[3].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+		attribute_desc[3].offset = 16;
+
+		attribute_desc[4].binding = 1;
+		attribute_desc[4].location = 4;
+		attribute_desc[4].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+		attribute_desc[4].offset = 32;
+
+		attribute_desc[5].binding = 1;
+		attribute_desc[5].location = 5;
+		attribute_desc[5].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+		attribute_desc[5].offset = 48;
 
 		return attribute_desc;
 	}
 
 	static void CreateFramebuffers()
 	{
-		vk_inst.swapchain.framebuffers.resize(vk_inst.swapchain.image_views.size());
+		vk_inst.swapchain.framebuffers.resize(vk_inst.swapchain.images.size());
 
-		for (size_t i = 0; i < vk_inst.swapchain.image_views.size(); ++i)
+		for (size_t i = 0; i < vk_inst.swapchain.images.size(); ++i)
 		{
 			std::array<VkImageView, 2> attachments
 			{
-				vk_inst.swapchain.image_views[i],
-				vk_inst.swapchain.depth_image_view
+				vk_inst.swapchain.images[i].view,
+				vk_inst.swapchain.depth_image.view
 			};
 
 			VkFramebufferCreateInfo frame_buffer_info = {};
@@ -198,48 +205,14 @@ namespace Renderer
 		}
 	}
 
-	static void CreateVertexBuffer()
-	{
-		// Calculate the total buffer size in bytes
-		VkDeviceSize buffer_size = sizeof(s_vertices[0]) * s_vertices.size();
-
-		// Create staging buffer and write data
-		Buffer staging_buffer;
-		VulkanBackend::CreateStagingBuffer(buffer_size, staging_buffer.buffer, staging_buffer.memory, &staging_buffer.ptr);
-		VulkanBackend::WriteBuffer(staging_buffer.ptr, (void*)s_vertices.data(), buffer_size);
-
-		// Create vertex buffer and copy staging buffer data to it
-		VulkanBackend::CreateVertexBuffer(buffer_size, data.vertex_buffer.buffer, data.vertex_buffer.memory);
-		VulkanBackend::CopyBuffer(staging_buffer.buffer, data.vertex_buffer.buffer, buffer_size);
-
-		VulkanBackend::DestroyBuffer(staging_buffer.buffer, staging_buffer.memory, staging_buffer.ptr);
-	}
-
-	static void CreateIndexBuffer()
-	{
-		// Calculate the total buffer size in bytes
-		VkDeviceSize buffer_size = sizeof(s_indices[0]) * s_indices.size();
-
-		// Create staging buffer and write data
-		Buffer staging_buffer;
-		VulkanBackend::CreateStagingBuffer(buffer_size, staging_buffer.buffer, staging_buffer.memory, &staging_buffer.ptr);
-		VulkanBackend::WriteBuffer(staging_buffer.ptr, (void*)s_indices.data(), buffer_size);
-
-		// Create vertex buffer and copy staging buffer data to it
-		VulkanBackend::CreateIndexBuffer(buffer_size, data.index_buffer.buffer, data.index_buffer.memory);
-		VulkanBackend::CopyBuffer(staging_buffer.buffer, data.index_buffer.buffer, buffer_size);
-
-		VulkanBackend::DestroyBuffer(staging_buffer.buffer, staging_buffer.memory, staging_buffer.ptr);
-	}
-
 	static void CreateUniformBuffers()
 	{
 		data.uniform_buffers.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
-		VkDeviceSize buffer_size = sizeof(UniformBufferObject);
+		VkDeviceSize buffer_size = sizeof(CameraData);
 
 		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
-			VulkanBackend::CreateUniformBuffer(buffer_size, data.uniform_buffers[i].buffer, data.uniform_buffers[i].memory, &data.uniform_buffers[i].ptr);
+			Vulkan::CreateUniformBuffer(buffer_size, data.uniform_buffers[i]);
 
 			// Update descriptor
 			VkBufferDeviceAddressInfoEXT buffer_address_info = {};
@@ -250,7 +223,7 @@ namespace Renderer
 			descriptor_address_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT;
 			descriptor_address_info.address = vkGetBufferDeviceAddress(vk_inst.device, &buffer_address_info);
 			descriptor_address_info.format = VK_FORMAT_UNDEFINED;
-			descriptor_address_info.range = sizeof(UniformBufferObject);
+			descriptor_address_info.range = sizeof(CameraData);
 
 			VkDescriptorGetInfoEXT descriptor_info = {};
 			descriptor_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
@@ -268,13 +241,7 @@ namespace Renderer
 
 	static void UpdateUniformBuffer(uint32_t current_image)
 	{
-		static auto start_time = std::chrono::high_resolution_clock::now();
-
-		auto current_time = std::chrono::high_resolution_clock::now();
-		float time = std::chrono::duration<float, std::chrono::seconds::period>(current_time - start_time).count();
-
-		UniformBufferObject ubo = {};
-		ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+		CameraData ubo = {};
 		ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
 		ubo.proj = glm::perspective(glm::radians(45.0f), vk_inst.swapchain.extent.width / (float)vk_inst.swapchain.extent.height, 0.1f, 10.0f);
 		ubo.proj[1][1] *= -1.0f;
@@ -322,7 +289,7 @@ namespace Renderer
 		VkDeviceSize buffer_size;
 		vk_inst.pFunc.get_descriptor_set_layout_size_ext(vk_inst.device, data.descriptor_set_layout, &buffer_size);
 
-		VulkanBackend::CreateDescriptorBuffer(buffer_size, data.descriptor_buffer.buffer, data.descriptor_buffer.memory, &data.descriptor_buffer.ptr);
+		Vulkan::CreateDescriptorBuffer(buffer_size, data.descriptor_buffer);
 	}
 
 	static void CreateCommandBuffers()
@@ -359,6 +326,20 @@ namespace Renderer
 		}
 	}
 
+	static void CreateDefaultTextures()
+	{
+		// Default white texture
+		std::vector<uint8_t> pixel_data = { 0xFF, 0xFF, 0xFF, 0xFF };
+
+		CreateTextureArgs texture_args = {};
+		texture_args.width = 1;
+		texture_args.height = 1;
+		texture_args.pixels = pixel_data;
+
+		data.default_white_texture_handle = CreateTexture(texture_args);
+		data.default_white_texture_resource = data.texture_slotmap.Find(data.default_white_texture_handle);
+	}
+
 	static VkShaderModule CreateShaderModule(const std::vector<char>& code)
 	{
 		VkShaderModuleCreateInfo create_info = {};
@@ -375,7 +356,7 @@ namespace Renderer
 	static void CreateRenderPass()
 	{
 		VkAttachmentDescription color_attachment = {};
-		color_attachment.format = vk_inst.swapchain.format;
+		color_attachment.format = vk_inst.swapchain.images[0].format;
 		color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
 		color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 		color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -385,7 +366,7 @@ namespace Renderer
 		color_attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 		
 		VkAttachmentDescription depth_attachment = {};
-		depth_attachment.format = VulkanBackend::FindDepthFormat();
+		depth_attachment.format = Vulkan::FindDepthFormat();
 		depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
 		depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 		depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -461,8 +442,8 @@ namespace Renderer
 
 		VkPipelineVertexInputStateCreateInfo vertex_input_info = {};
 		vertex_input_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-		vertex_input_info.vertexBindingDescriptionCount = 1;
-		vertex_input_info.pVertexBindingDescriptions = &binding_desc;
+		vertex_input_info.vertexBindingDescriptionCount = (uint32_t)binding_desc.size();
+		vertex_input_info.pVertexBindingDescriptions = binding_desc.data();
 		vertex_input_info.vertexAttributeDescriptionCount = (uint32_t)attribute_desc.size();
 		vertex_input_info.pVertexAttributeDescriptions = attribute_desc.data();
 
@@ -543,17 +524,21 @@ namespace Renderer
 		color_blend.blendConstants[2] = 0.0f;
 		color_blend.blendConstants[3] = 0.0f;
 
-		VkPushConstantRange push_constants = {};
-		push_constants.offset = 0;
-		push_constants.size = sizeof(uint32_t);
-		push_constants.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+		std::array<VkPushConstantRange, 2> push_constants = {};
+		push_constants[0].offset = 0;
+		push_constants[0].size = sizeof(uint32_t);
+		push_constants[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+		push_constants[1].offset = 4;
+		push_constants[1].size = sizeof(uint32_t);
+		push_constants[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
 		VkPipelineLayoutCreateInfo pipeline_layout_info = {};
 		pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipeline_layout_info.setLayoutCount = 1;
 		pipeline_layout_info.pSetLayouts = &data.descriptor_set_layout;
-		pipeline_layout_info.pushConstantRangeCount = 1;
-		pipeline_layout_info.pPushConstantRanges = &push_constants;
+		pipeline_layout_info.pushConstantRangeCount = (uint32_t)push_constants.size();
+		pipeline_layout_info.pPushConstantRanges = push_constants.data();
 
 		VkCheckResult(vkCreatePipelineLayout(vk_inst.device, &pipeline_layout_info, nullptr, &data.pipeline_layout));
 
@@ -610,12 +595,6 @@ namespace Renderer
 		vkCmdBeginRenderPass(command_buffer, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
 		vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, data.graphics_pipeline);
 
-		// Vertex and index buffers
-		VkBuffer vertex_buffers[] = { data.vertex_buffer.buffer };
-		VkDeviceSize offsets[] = { 0 };
-		vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_buffers, offsets);
-		vkCmdBindIndexBuffer(command_buffer, data.index_buffer.buffer, 0, VK_INDEX_TYPE_UINT32);
-
 		// Viewport and scissor
 		VkViewport viewport = {};
 		viewport.x = 0.0f;
@@ -632,8 +611,8 @@ namespace Renderer
 		vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
 		// Push constants
-		uint32_t scene_ubo_index = data.current_frame;
-		vkCmdPushConstants(command_buffer, data.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(uint32_t), &scene_ubo_index);
+		uint32_t camera_ubo_index = data.current_frame;
+		vkCmdPushConstants(command_buffer, data.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(uint32_t), &camera_ubo_index);
 
 		// Bind descriptor buffers
 		VkBufferDeviceAddressInfo buffer_address_info = {};
@@ -651,8 +630,36 @@ namespace Renderer
 		vk_inst.pFunc.cmd_set_descriptor_buffer_offsets_ext(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
 			data.pipeline_layout, 0, 1, &buffer_indices, &buffer_offsets);
 
-		// Draw call
-		vkCmdDrawIndexed(command_buffer, (uint32_t)s_indices.size(), 1, 0, 0, 0);
+		for (size_t i = 0; i < data.draw_list.current_entry; ++i)
+		{
+			const DrawList::Entry& entry = data.draw_list.entries[i];
+
+			MeshResource* mesh = nullptr;
+			if (VK_RESOURCE_HANDLE_VALID(entry.mesh_handle))
+			{
+				mesh = data.mesh_slotmap.Find(entry.mesh_handle);
+			}
+			VK_ASSERT(mesh && "Tried to render a mesh with an invalid mesh handle");
+
+			TextureHandle_t texture_handle = data.default_white_texture_handle;
+			if (VK_RESOURCE_HANDLE_VALID(entry.texture_handle))
+			{
+				texture_handle = entry.texture_handle;
+			}
+
+			uint32_t texture_index = texture_handle.index;
+			vkCmdPushConstants(command_buffer, data.pipeline_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 4, sizeof(uint32_t), &texture_index);
+
+			// Vertex and index buffers
+			VkBuffer vertex_buffers[] = { mesh->vertex_buffer.buffer, data.instance_buffer.buffer };
+			VkDeviceSize offsets[] = { 0, i * sizeof(glm::mat4) };
+			vkCmdBindVertexBuffers(command_buffer, 0, 2, vertex_buffers, offsets);
+			vkCmdBindIndexBuffer(command_buffer, mesh->index_buffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+
+			// Draw call
+			vkCmdDrawIndexed(command_buffer, mesh->index_buffer.num_elements, 1, 0, 0, 0);
+		}
+
 		vkCmdEndRenderPass(command_buffer);
 
 		VkCheckResult(vkEndCommandBuffer(command_buffer));
@@ -661,7 +668,7 @@ namespace Renderer
 	void Init(::GLFWwindow* window)
 	{
 		data.window = window;
-		VulkanBackend::Init(window);
+		Vulkan::Init(window);
 
 		CreateRenderPass();
 		CreateDescriptorSetLayout();
@@ -669,17 +676,22 @@ namespace Renderer
 		CreateGraphicsPipeline();
 
 		CreateFramebuffers();
-		CreateVertexBuffer();
-		CreateIndexBuffer();
 		CreateUniformBuffers();
 		CreateCommandBuffers();
 		CreateSyncObjects();
+		CreateDefaultTextures();
+
+		VkDeviceSize instance_buffer_size = MAX_DRAW_LIST_ENTRIES * sizeof(glm::mat4);
+		Vulkan::CreateBuffer(instance_buffer_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, data.instance_buffer);
+		VkCheckResult(vkMapMemory(vk_inst.device, data.instance_buffer.memory, 0, instance_buffer_size, 0, &data.instance_buffer.ptr));
 	}
 
 	void Exit()
 	{
 		vkDeviceWaitIdle(vk_inst.device);
 
+		Vulkan::DestroyBuffer(data.instance_buffer);
 		// Clean up vulkan stuff
 		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
@@ -688,17 +700,14 @@ namespace Renderer
 			vkDestroySemaphore(vk_inst.device, data.image_available_semaphores[i], nullptr);
 		}
 
-		VulkanBackend::DestroyBuffer(data.vertex_buffer.buffer, data.vertex_buffer.memory);
-		VulkanBackend::DestroyBuffer(data.index_buffer.buffer, data.index_buffer.memory);
-
 		// Destroying the command pool will also destroy any command buffers associated with that pool
 		vkDestroyRenderPass(vk_inst.device, data.render_pass, nullptr);
 		vkDestroyPipeline(vk_inst.device, data.graphics_pipeline, nullptr);
 		for (size_t i = 0; i < VulkanInstance::VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
-			VulkanBackend::DestroyBuffer(data.uniform_buffers[i].buffer, data.uniform_buffers[i].memory, data.uniform_buffers[i].ptr);
+			Vulkan::DestroyBuffer(data.uniform_buffers[i]);
 		}
-		VulkanBackend::DestroyBuffer(data.descriptor_buffer.buffer, data.descriptor_buffer.memory, data.descriptor_buffer.ptr);
+		Vulkan::DestroyBuffer(data.descriptor_buffer);
 		vkDestroyDescriptorSetLayout(vk_inst.device, data.descriptor_set_layout, nullptr);
 		vkDestroyPipelineLayout(vk_inst.device, data.pipeline_layout, nullptr);
 
@@ -706,7 +715,11 @@ namespace Renderer
 		data.~Data();
 
 		// Finally, exit the vulkan render backend
-		VulkanBackend::Exit();
+		Vulkan::Exit();
+	}
+
+	void BeginFrame()
+	{
 	}
 
 	void RenderFrame()
@@ -720,7 +733,7 @@ namespace Renderer
 
 		if (image_result == VK_ERROR_OUT_OF_DATE_KHR)
 		{
-			VulkanBackend::RecreateSwapChain();
+			Vulkan::RecreateSwapChain();
 			CreateFramebuffers();
 			return;
 		}
@@ -773,7 +786,7 @@ namespace Renderer
 
 		if (present_result == VK_ERROR_OUT_OF_DATE_KHR || present_result == VK_SUBOPTIMAL_KHR)
 		{
-			VulkanBackend::RecreateSwapChain();
+			Vulkan::RecreateSwapChain();
 			CreateFramebuffers();
 		}
 		else
@@ -784,40 +797,39 @@ namespace Renderer
 		data.current_frame = (data.current_frame + 1) % VulkanInstance::MAX_FRAMES_IN_FLIGHT;
 	}
 
-	ResourceHandle_t CreateTexture(const CreateTextureArgs& args)
+	void EndFrame()
+	{
+		data.draw_list.current_entry = 0;
+	}
+
+	TextureHandle_t CreateTexture(const CreateTextureArgs& args)
 	{
 		// NOTE: BPP are always 4 for now
 		uint32_t bpp = 4;
 		VkDeviceSize image_size = args.width * args.height * bpp;
 
 		// Create staging buffer
-		VkBuffer staging_buffer;
-		VkDeviceMemory staging_buffer_memory;
-		VulkanBackend::CreateBuffer(image_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
-			| VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, staging_buffer, staging_buffer_memory);
+		Vulkan::Buffer staging_buffer;
+		Vulkan::CreateStagingBuffer(image_size, staging_buffer);
 
 		// Copy data into the mapped memory of the staging buffer
-		void* mapped_ptr;
-		VkCheckResult(vkMapMemory(vk_inst.device, staging_buffer_memory, 0, image_size, 0, &mapped_ptr));
-		memcpy(mapped_ptr, args.data_ptr, (size_t)image_size);
-		vkUnmapMemory(vk_inst.device, staging_buffer_memory);
+		Vulkan::WriteBuffer(staging_buffer.ptr, (void*)args.pixels.data(), image_size);
 
 		// Create texture image
-		ResourceSlotmap<Texture>::ReservedResource reserved = data.texture_slotmap.Reserve();
-		VulkanBackend::CreateImage(args.width, args.height, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-			VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, reserved.resource->image, reserved.resource->device_memory);
+		ResourceSlotmap<TextureResource>::ReservedResource reserved = data.texture_slotmap.Reserve();
+		Vulkan::CreateImage(args.width, args.height, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+			VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, reserved.resource->image);
 
 		// Copy staging buffer data into final texture image memory (device local)
-		VulkanBackend::TransitionImageLayout(reserved.resource->image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-		VulkanBackend::CopyBufferToImage(staging_buffer, reserved.resource->image, args.width, args.height);
-		VulkanBackend::TransitionImageLayout(reserved.resource->image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+		Vulkan::TransitionImageLayout(reserved.resource->image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+		Vulkan::CopyBufferToImage(staging_buffer, reserved.resource->image, args.width, args.height);
+		Vulkan::TransitionImageLayout(reserved.resource->image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-		// Clean up staging buffer (memory)
-		vkDestroyBuffer(vk_inst.device, staging_buffer, nullptr);
-		vkFreeMemory(vk_inst.device, staging_buffer_memory, nullptr);
+		// Clean up staging buffer
+		Vulkan::DestroyBuffer(staging_buffer);
 
 		// Create image view
-		VulkanBackend::CreateImageView(reserved.resource->image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, reserved.resource->image_view);
+		Vulkan::CreateImageView(VK_IMAGE_ASPECT_COLOR_BIT, reserved.resource->image);
 
 		// Create image sampler
 		VkSamplerCreateInfo sampler_info = {};
@@ -840,13 +852,13 @@ namespace Renderer
 		sampler_info.minLod = 0.0f;
 		sampler_info.maxLod = 0.0f;
 
-		VkCheckResult(vkCreateSampler(vk_inst.device, &sampler_info, nullptr, &reserved.resource->sampler));
+		VkCheckResult(vkCreateSampler(vk_inst.device, &sampler_info, nullptr, &reserved.resource->image.sampler));
 
 		// Update descriptor
 		VkDescriptorImageInfo image_info = {};
-		image_info.imageView = reserved.resource->image_view;
+		image_info.imageView = reserved.resource->image.view;
 		image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		image_info.sampler = reserved.resource->sampler;
+		image_info.sampler = reserved.resource->image.sampler;
 
 		VkDescriptorGetInfoEXT descriptor_info = {};
 		descriptor_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
@@ -864,9 +876,47 @@ namespace Renderer
 		return reserved.handle;
 	}
 
-	ResourceHandle_t CreateMesh(const CreateMeshArgs& args)
+	MeshHandle_t CreateMesh(const CreateMeshArgs& args)
 	{
-		return ResourceHandle_t{};
+		VkDeviceSize vertex_buffer_size = sizeof(Vertex) * args.vertices.size();
+		VkDeviceSize index_buffer_size = sizeof(uint32_t) * args.indices.size();
+
+		// Create staging buffer
+		Vulkan::Buffer staging_buffer;
+		Vulkan::CreateStagingBuffer(vertex_buffer_size + index_buffer_size, staging_buffer);
+
+		// Write data into staging buffer
+		Vulkan::WriteBuffer(staging_buffer.ptr, (void*)args.vertices.data(), vertex_buffer_size);
+		Vulkan::WriteBuffer((uint8_t*)staging_buffer.ptr + vertex_buffer_size, (void*)args.indices.data(), index_buffer_size);
+
+		// Reserve mesh resource
+		ResourceSlotmap<MeshResource>::ReservedResource reserved = data.mesh_slotmap.Reserve();
+
+		// Create vertex and index buffers
+		Vulkan::CreateVertexBuffer(vertex_buffer_size, reserved.resource->vertex_buffer);
+		Vulkan::CreateIndexBuffer(index_buffer_size, reserved.resource->index_buffer);
+
+		// Copy staging buffer data into vertex and index buffers
+		Vulkan::CopyBuffer(staging_buffer, reserved.resource->vertex_buffer, vertex_buffer_size);
+		Vulkan::CopyBuffer(staging_buffer, reserved.resource->index_buffer, index_buffer_size, vertex_buffer_size);
+		
+		reserved.resource->vertex_buffer.num_elements = (uint32_t)args.vertices.size();
+		reserved.resource->index_buffer.num_elements = (uint32_t)args.indices.size();
+
+		// Destroy staging buffer
+		Vulkan::DestroyBuffer(staging_buffer);
+
+		return reserved.handle;
+	}
+
+	void SubmitMesh(MeshHandle_t mesh_handle, TextureHandle_t texture_handle, const glm::mat4& transform)
+	{
+		memcpy((glm::mat4*)data.instance_buffer.ptr + data.draw_list.current_entry, &transform, sizeof(glm::mat4));
+
+		DrawList::Entry& entry = data.draw_list.GetNextEntry();
+		entry.mesh_handle = mesh_handle;
+		entry.texture_handle = texture_handle;
+		entry.transform = transform;
 	}
 
 }
