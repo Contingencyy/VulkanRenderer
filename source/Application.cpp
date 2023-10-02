@@ -6,6 +6,9 @@
 
 #include "GLFW/glfw3.h"
 
+#include "imgui/imgui.h"
+#include "imgui/imgui_impl_glfw.h"
+
 #include <chrono>
 
 namespace Application
@@ -62,7 +65,7 @@ namespace Application
 		{
 			glfwSetInputMode(data.window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 		}
-		else if (Input::IsButtonPressed(Input::Button_RightMouse))
+		if (Input::IsButtonPressed(Input::Button_RightMouse))
 		{
 			glfwSetInputMode(data.window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 		}
@@ -179,10 +182,17 @@ namespace Application
 			Input::Update();
 
 			Renderer::BeginFrame(data.view, data.proj);
+
 			// NOTE: Temporary test setup, we should have a proper scene soon
 			Assets::Model car = Assets::GetModel("car");
 			glm::mat4 transform = glm::scale(glm::identity<glm::mat4>(), glm::vec3(1.0));
 			SubmitModel(car, transform);
+
+			// NOTE: Temporary menu code
+			ImGui::Begin("General");
+			ImGui::Text("Frametime: %.3fms", delta_time.count() * 1000.0f);
+			ImGui::End();
+
 			Renderer::RenderFrame();
 			Renderer::EndFrame();
 

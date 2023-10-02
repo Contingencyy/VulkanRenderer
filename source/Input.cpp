@@ -2,6 +2,9 @@
 
 #include "GLFW/glfw3.h"
 
+#include "imgui/imgui.h"
+#include "imgui/imgui_impl_glfw.h"
+
 #include <vector>
 #include <unordered_map>
 
@@ -40,6 +43,11 @@ namespace Input
 
 	void GLFWKeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
 	{
+		if (ImGui::GetIO().WantCaptureKeyboard)
+		{
+			return;
+		}
+
 		if (data.key_mappings.find(key) != data.key_mappings.end())
 		{
 			Key mapped_key = data.key_mappings.at(key);
@@ -49,6 +57,11 @@ namespace Input
 
 	void GLFWMouseButtonCallback(GLFWwindow* window, int button, int action, int mods)
 	{
+		if (ImGui::GetIO().WantCaptureMouse)
+		{
+			return;
+		}
+
 		if (data.button_mappings.find(button) != data.button_mappings.end())
 		{
 			Button mapped_button = data.button_mappings.at(button);
@@ -58,6 +71,11 @@ namespace Input
 
 	void GLFWCursorPosCallback(GLFWwindow* window, double xpos, double ypos)
 	{
+		if (ImGui::GetIO().WantCaptureMouse)
+		{
+			return;
+		}
+
 		data.mouse_pos_prev = data.mouse_pos_curr;
 		data.mouse_pos_curr.x = xpos;
 		data.mouse_pos_curr.y = ypos;
