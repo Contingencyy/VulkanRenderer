@@ -69,11 +69,6 @@ namespace Assets
 	{
 		glm::mat4 transform = glm::identity<glm::mat4>();
 
-		if (!node.mesh)
-		{
-			return transform;
-		}
-
 		if (node.has_matrix)
 		{
 			memcpy(&transform[0][0], &node.matrix[0], sizeof(glm::mat4));
@@ -222,6 +217,27 @@ namespace Assets
 			}
 		}
 
+		// Create all materials
+		std::vector<MaterialHandle_t> material_handles(data->materials_count);
+
+		for (size_t i = 0; i < data->materials_count; ++i)
+		{
+			cgltf_material& gltf_material = data->materials[i];
+			Renderer::CreateMaterialArgs material_args = {};
+			memcpy(&material_args.base_color_factor, gltf_material.pbr_metallic_roughness.base_color_factor, sizeof(glm::vec4));
+
+			if (gltf_material.pbr_metallic_roughness.base_color_texture.texture)
+			{
+				size_t texture_handle_index = CGLTFGetIndex<cgltf_image>(data->images,
+					gltf_material.pbr_metallic_roughness.base_color_texture.texture->image);
+
+				material_args.base_color_handle = texture_handles[texture_handle_index];
+			}
+
+			material_handles[i] = Renderer::CreateMaterial(material_args);
+		}
+
+		// Create all nodes
 		model.nodes.resize(data->nodes_count);
 
 		for (size_t i = 0; i < data->nodes_count; ++i)
@@ -229,6 +245,7 @@ namespace Assets
 			cgltf_node& gltf_node = data->nodes[i];
 			Model::Node& model_node = model.nodes[i];
 			model_node.transform = CGLTFNodeGetTransform(gltf_node);
+			model_node.name = gltf_node.name;
 
 			model_node.children.resize(gltf_node.children_count);
 			for (size_t j = 0; j < gltf_node.children_count; ++j)
@@ -239,8 +256,7 @@ namespace Assets
 			if (gltf_node.mesh)
 			{
 				model_node.mesh_handles.resize(gltf_node.mesh->primitives_count);
-				model_node.texture_handles.resize(gltf_node.mesh->primitives_count);
-				model_node.name = gltf_node.name;
+				model_node.material_handles.resize(gltf_node.mesh->primitives_count);
 
 				for (size_t j = 0; j < gltf_node.mesh->primitives_count; ++j)
 				{
@@ -250,12 +266,8 @@ namespace Assets
 						CGLTFGetIndex<cgltf_primitive>(gltf_node.mesh->primitives, &primitive);
 					model_node.mesh_handles[j] = mesh_handles[mesh_handle_index];
 
-					if (primitive.material->pbr_metallic_roughness.base_color_texture.texture)
-					{
-						size_t texture_handle_index = CGLTFGetIndex<cgltf_image>(data->images,
-							primitive.material->pbr_metallic_roughness.base_color_texture.texture->image);
-						model_node.texture_handles[j] = texture_handles[texture_handle_index];
-					}
+					size_t material_handle_index = CGLTFGetIndex<cgltf_material>(data->materials, primitive.material);
+					model_node.material_handles[j] = material_handles[material_handle_index];
 				}
 			}
 

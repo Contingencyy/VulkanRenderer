@@ -50,12 +50,18 @@ namespace Renderer
 		}
 	};
 
+	struct MaterialResource
+	{
+		glm::vec4 base_color_factor = glm::vec4(1.0f);
+		TextureHandle_t base_color_handle;
+	};
+
 	struct DrawList
 	{
 		struct Entry
 		{
 			MeshHandle_t mesh_handle;
-			TextureHandle_t texture_handle;
+			MaterialHandle_t material_handle;
 			glm::mat4 transform;
 		};
 
@@ -84,6 +90,7 @@ namespace Renderer
 
 		ResourceSlotmap<TextureResource> texture_slotmap;
 		ResourceSlotmap<MeshResource> mesh_slotmap;
+		ResourceSlotmap<MaterialResource> material_slotmap;
 
 		VkRenderPass render_pass = VK_NULL_HANDLE;
 		VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
@@ -519,7 +526,7 @@ namespace Renderer
 		push_constants[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
 		push_constants[1].offset = 4;
-		push_constants[1].size = sizeof(uint32_t);
+		push_constants[1].size = VK_ALIGN_POW2(sizeof(uint32_t) + sizeof(glm::vec4), 16) - push_constants[1].offset;
 		push_constants[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
 		VkPipelineLayoutCreateInfo pipeline_layout_info = {};
@@ -623,6 +630,7 @@ namespace Renderer
 		{
 			const DrawList::Entry& entry = data.draw_list.entries[i];
 
+			// TODO: Default mesh
 			MeshResource* mesh = nullptr;
 			if (VK_RESOURCE_HANDLE_VALID(entry.mesh_handle))
 			{
@@ -630,14 +638,23 @@ namespace Renderer
 			}
 			VK_ASSERT(mesh && "Tried to render a mesh with an invalid mesh handle");
 
-			TextureHandle_t texture_handle = data.default_white_texture_handle;
-			if (VK_RESOURCE_HANDLE_VALID(entry.texture_handle))
+			// TODO: Default material
+			MaterialResource* material = nullptr;
+			if (VK_RESOURCE_HANDLE_VALID(entry.material_handle))
 			{
-				texture_handle = entry.texture_handle;
+				material = data.material_slotmap.Find(entry.material_handle);
+			}
+			VK_ASSERT(material && "Tried to render a mesh with an invalid material handle");
+
+			TextureResource* base_color_texture = nullptr;
+			if (VK_RESOURCE_HANDLE_VALID(material->base_color_handle))
+			{
+				base_color_texture = data.texture_slotmap.Find(material->base_color_handle);
 			}
 
-			uint32_t texture_index = texture_handle.index;
+			uint32_t texture_index = base_color_texture ? material->base_color_handle.index : data.default_white_texture_handle.index;
 			vkCmdPushConstants(command_buffer, data.pipeline_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 4, sizeof(uint32_t), &texture_index);
+			vkCmdPushConstants(command_buffer, data.pipeline_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 16, sizeof(glm::vec4), &material->base_color_factor);
 
 			// Vertex and index buffers
 			VkBuffer vertex_buffers[] = { mesh->vertex_buffer.buffer, data.instance_buffer.buffer };
@@ -867,6 +884,11 @@ namespace Renderer
 		return reserved.handle;
 	}
 
+	void DestroyTexture(TextureHandle_t handle)
+	{
+		data.texture_slotmap.Delete(handle);
+	}
+
 	MeshHandle_t CreateMesh(const CreateMeshArgs& args)
 	{
 		VkDeviceSize vertex_buffer_size = sizeof(Vertex) * args.vertices.size();
@@ -900,13 +922,32 @@ namespace Renderer
 		return reserved.handle;
 	}
 
-	void SubmitMesh(MeshHandle_t mesh_handle, TextureHandle_t texture_handle, const glm::mat4& transform)
+	void DestroyMesh(MeshHandle_t handle)
+	{
+		data.mesh_slotmap.Delete(handle);
+	}
+
+	MaterialHandle_t CreateMaterial(const CreateMaterialArgs& args)
+	{
+		ResourceSlotmap<MaterialResource>::ReservedResource reserved = data.material_slotmap.Reserve();
+		reserved.resource->base_color_factor = args.base_color_factor;
+		reserved.resource->base_color_handle = args.base_color_handle;
+
+		return reserved.handle;
+	}
+
+	void DestroyMaterial(MaterialHandle_t handle)
+	{
+		data.material_slotmap.Delete(handle);
+	}
+
+	void SubmitMesh(MeshHandle_t mesh_handle, MaterialHandle_t material_handle, const glm::mat4& transform)
 	{
 		memcpy((glm::mat4*)data.instance_buffer.ptr + data.draw_list.current_entry, &transform, sizeof(glm::mat4));
 
 		DrawList::Entry& entry = data.draw_list.GetNextEntry();
 		entry.mesh_handle = mesh_handle;
-		entry.texture_handle = texture_handle;
+		entry.material_handle = material_handle;
 		entry.transform = transform;
 	}
 

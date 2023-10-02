@@ -17,7 +17,7 @@ namespace Assets
 		struct Node
 		{
 			std::vector<MeshHandle_t> mesh_handles;
-			std::vector<TextureHandle_t> texture_handles;
+			std::vector<MaterialHandle_t> material_handles;
 			std::vector<uint32_t> children;
 
 			glm::mat4 transform;

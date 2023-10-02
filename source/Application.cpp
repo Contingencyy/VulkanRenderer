@@ -57,19 +57,28 @@ namespace Application
 		{
 			data.should_close = true;
 		}
+
+		if (Input::IsButtonPressed(Input::Button_LeftMouse))
+		{
+			glfwSetInputMode(data.window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+		}
+		else if (Input::IsButtonPressed(Input::Button_RightMouse))
+		{
+			glfwSetInputMode(data.window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+		}
 	}
 
 	static void SubmitModelNode(const Assets::Model& model, const Assets::Model::Node& node, const glm::mat4& node_transform)
 	{
 		for (size_t i = 0; i < node.mesh_handles.size(); ++i)
 		{
-			Renderer::SubmitMesh(node.mesh_handles[i], node.texture_handles[i], node_transform);
+			Renderer::SubmitMesh(node.mesh_handles[i], node.material_handles[i], node_transform);
 		}
 
 		for (size_t i = 0; i < node.children.size(); ++i)
 		{
 			const Assets::Model::Node& child_node = model.nodes[node.children[i]];
-			glm::mat4 child_transform = child_node.transform * node_transform;
+			glm::mat4 child_transform = node_transform * child_node.transform;
 			SubmitModelNode(model, child_node, child_transform);
 		}
 	}
@@ -136,7 +145,7 @@ namespace Application
 		Renderer::Init(data.window);
 		Assets::Init();
 		Assets::LoadTexture("assets/textures/statue.jpg", "statue");
-		Assets::LoadGLTF("assets/models/gltf/bmw_m6_rigged/scene.gltf", "bmw_m6_rigged");
+		Assets::LoadGLTF("assets/models/gltf/bmw_m6_rigged/scene.gltf", "car");
 
 		data.is_running = true;
 	}
@@ -165,23 +174,15 @@ namespace Application
 			delta_time = curr_time - prev_time;
 
 			PollEvents();
-			if (Input::IsButtonPressed(Input::Button_LeftMouse))
-			{
-				glfwSetInputMode(data.window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-			}
-			else if (Input::IsButtonPressed(Input::Button_RightMouse))
-			{
-				glfwSetInputMode(data.window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-			}
 
 			UpdateCamera(delta_time.count());
 			Input::Update();
 
 			Renderer::BeginFrame(data.view, data.proj);
 			// NOTE: Temporary test setup, we should have a proper scene soon
-			Assets::Model bmw_m6_rigged = Assets::GetModel("bmw_m6_rigged");
+			Assets::Model car = Assets::GetModel("car");
 			glm::mat4 transform = glm::scale(glm::identity<glm::mat4>(), glm::vec3(1.0));
-			SubmitModel(bmw_m6_rigged, transform);
+			SubmitModel(car, transform);
 			Renderer::RenderFrame();
 			Renderer::EndFrame();
 

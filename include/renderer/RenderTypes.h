@@ -3,6 +3,7 @@
 
 using TextureHandle_t = ResourceHandle_t;
 using MeshHandle_t = ResourceHandle_t;
+using MaterialHandle_t = ResourceHandle_t;
 
 struct Vertex
 {

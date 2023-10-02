@@ -22,6 +22,7 @@ namespace Renderer
 	};
 
 	TextureHandle_t CreateTexture(const CreateTextureArgs& args);
+	void DestroyTexture(TextureHandle_t handle);
 
 	struct CreateMeshArgs
 	{
@@ -30,7 +31,17 @@ namespace Renderer
 	};
 
 	MeshHandle_t CreateMesh(const CreateMeshArgs& args);
+	void DestroyMesh(MeshHandle_t handle);
 
-	void SubmitMesh(MeshHandle_t mesh_handle, TextureHandle_t texture_handle, const glm::mat4& transform);
+	struct CreateMaterialArgs
+	{
+		glm::vec4 base_color_factor;
+		TextureHandle_t base_color_handle;
+	};
+
+	MaterialHandle_t CreateMaterial(const CreateMaterialArgs& args);
+	void DestroyMaterial(MaterialHandle_t handle);
+
+	void SubmitMesh(MeshHandle_t mesh_handle, MaterialHandle_t material_handle, const glm::mat4& transform);
 
 }

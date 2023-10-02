@@ -2,6 +2,9 @@
 
 #include "Logger.h"
 
+#define VK_ALIGN_POW2(x, align) ((intptr_t)(x) + ((align) - 1) & (-(intptr_t)(align)))
+#define VK_ALIGN_DOWN_POW2(x, align) ((intptr_t)(x) & (-(intptr_t)(align)))
+
 #define VK_ASSERT(x) assert(x)
 #define VK_EXCEPT(...) auto logged_msg = LOG_ERR(__VA_ARGS__); throw std::runtime_error(logged_msg)
 
