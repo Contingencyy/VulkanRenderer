@@ -22,11 +22,16 @@ namespace Renderer
 
 	static constexpr uint32_t DEFAULT_DESCRIPTOR_COUNT_PER_TYPE = 1000;
 
-	static constexpr uint32_t UNIFORM_BINDING = 0;
-	static constexpr uint32_t STORAGE_BINDING = 1;
-	static constexpr uint32_t TEXTURE_BINDING = 2;
-
 	static constexpr uint32_t MAX_DRAW_LIST_ENTRIES = 10000;
+	static constexpr uint32_t MAX_UNIQUE_MATERIALS = 1000;
+
+	enum Bindings
+	{
+		Bindings_Uniform,
+		Bindings_Storage,
+		Bindings_CombinedImageSampler,
+		Bindings_NumBindings
+	};
 
 	struct TextureResource
 	{
@@ -50,10 +55,10 @@ namespace Renderer
 		}
 	};
 
-	struct MaterialResource
+	struct alignas(16) MaterialResource
 	{
 		glm::vec4 base_color_factor = glm::vec4(1.0f);
-		TextureHandle_t base_color_handle;
+		TextureHandle_t base_color_tex_handle;
 	};
 
 	struct DrawList
@@ -101,8 +106,6 @@ namespace Renderer
 		uint32_t descriptor_uniform_buffers_current = 0;
 		uint32_t descriptor_storage_buffers_current = 0;
 		uint32_t descriptor_combined_image_samplers_current = 0;
-		
-		std::vector<Vulkan::Buffer> camera_uniform_buffers;
 
 		std::vector<VkCommandBuffer> command_buffers;
 		std::vector<VkSemaphore> image_available_semaphores;
@@ -110,7 +113,10 @@ namespace Renderer
 		std::vector<VkFence> in_flight_fences;
 
 		DrawList draw_list;
-		Vulkan::Buffer instance_buffer;
+
+		std::vector<Vulkan::Buffer> camera_uniform_buffers;
+		std::vector<Vulkan::Buffer> instance_buffers;
+		Vulkan::Buffer material_buffer;
 
 		TextureHandle_t default_white_texture_handle;
 		TextureResource* default_white_texture_resource;
@@ -211,40 +217,6 @@ namespace Renderer
 		}
 	}
 
-	static void CreateUniformBuffers()
-	{
-		data.camera_uniform_buffers.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
-		VkDeviceSize buffer_size = sizeof(CameraData);
-
-		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
-		{
-			Vulkan::CreateUniformBuffer(buffer_size, data.camera_uniform_buffers[i]);
-
-			// Update descriptor
-			VkBufferDeviceAddressInfoEXT buffer_address_info = {};
-			buffer_address_info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
-			buffer_address_info.buffer = data.camera_uniform_buffers[i].buffer;
-
-			VkDescriptorAddressInfoEXT descriptor_address_info = {};
-			descriptor_address_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT;
-			descriptor_address_info.address = vkGetBufferDeviceAddress(vk_inst.device, &buffer_address_info);
-			descriptor_address_info.format = VK_FORMAT_UNDEFINED;
-			descriptor_address_info.range = sizeof(CameraData);
-
-			VkDescriptorGetInfoEXT descriptor_info = {};
-			descriptor_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
-			descriptor_info.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-			descriptor_info.data.pUniformBuffer = &descriptor_address_info;
-
-			VkDeviceSize binding_offset;
-			vk_inst.pFunc.get_descriptor_set_layout_binding_offset_ext(vk_inst.device, data.descriptor_set_layout, UNIFORM_BINDING, &binding_offset);
-
-			uint8_t* descriptor_ptr = (uint8_t*)data.descriptor_buffer.ptr + binding_offset + vk_inst.descriptor_sizes.uniform_buffer * data.descriptor_uniform_buffers_current;
-			vk_inst.pFunc.get_descriptor_ext(vk_inst.device, &descriptor_info, vk_inst.descriptor_sizes.uniform_buffer, descriptor_ptr);
-			data.descriptor_uniform_buffers_current++;
-		}
-	}
-
 	static void CreateDescriptorSetLayout()
 	{
 		std::array<VkDescriptorSetLayoutBinding, 3> bindings = {};
@@ -334,6 +306,85 @@ namespace Renderer
 
 		data.default_white_texture_handle = CreateTexture(texture_args);
 		data.default_white_texture_resource = data.texture_slotmap.Find(data.default_white_texture_handle);
+	}
+
+	static void CreateUniformBuffers()
+	{
+		data.camera_uniform_buffers.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
+		VkDeviceSize buffer_size = sizeof(CameraData);
+
+		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
+		{
+			Vulkan::CreateUniformBuffer(buffer_size, data.camera_uniform_buffers[i]);
+
+			// Update descriptor
+			VkBufferDeviceAddressInfoEXT buffer_address_info = {};
+			buffer_address_info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+			buffer_address_info.buffer = data.camera_uniform_buffers[i].buffer;
+
+			VkDescriptorAddressInfoEXT descriptor_address_info = {};
+			descriptor_address_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT;
+			descriptor_address_info.address = vkGetBufferDeviceAddress(vk_inst.device, &buffer_address_info);
+			descriptor_address_info.format = VK_FORMAT_UNDEFINED;
+			descriptor_address_info.range = sizeof(CameraData);
+
+			VkDescriptorGetInfoEXT descriptor_info = {};
+			descriptor_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
+			descriptor_info.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+			descriptor_info.data.pUniformBuffer = &descriptor_address_info;
+
+			VkDeviceSize binding_offset;
+			vk_inst.pFunc.get_descriptor_set_layout_binding_offset_ext(vk_inst.device, data.descriptor_set_layout, Bindings_Uniform, &binding_offset);
+
+			uint8_t* descriptor_ptr = (uint8_t*)data.descriptor_buffer.ptr + binding_offset + vk_inst.descriptor_sizes.uniform_buffer * data.descriptor_uniform_buffers_current;
+			vk_inst.pFunc.get_descriptor_ext(vk_inst.device, &descriptor_info, vk_inst.descriptor_sizes.uniform_buffer, descriptor_ptr);
+			data.descriptor_uniform_buffers_current++;
+		}
+	}
+
+	static void CreateInstanceBuffers()
+	{
+		data.instance_buffers.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
+		VkDeviceSize instance_buffer_size = MAX_DRAW_LIST_ENTRIES * sizeof(glm::mat4);
+
+		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
+		{
+			Vulkan::Buffer& instance_buffer = data.instance_buffers[i];
+
+			Vulkan::CreateBuffer(instance_buffer_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, instance_buffer);
+			VkCheckResult(vkMapMemory(vk_inst.device, instance_buffer.memory, 0, instance_buffer_size, 0, &instance_buffer.ptr));
+		}
+	}
+
+	static void CreateMaterialBuffer()
+	{
+		VkDeviceSize material_buffer_size = MAX_UNIQUE_MATERIALS * sizeof(MaterialResource);
+		Vulkan::CreateBuffer(material_buffer_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, data.material_buffer);
+
+		// Update descriptor
+		VkBufferDeviceAddressInfoEXT buffer_address_info = {};
+		buffer_address_info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+		buffer_address_info.buffer = data.material_buffer.buffer;
+
+		VkDescriptorAddressInfoEXT descriptor_address_info = {};
+		descriptor_address_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT;
+		descriptor_address_info.address = vkGetBufferDeviceAddress(vk_inst.device, &buffer_address_info);
+		descriptor_address_info.format = VK_FORMAT_UNDEFINED;
+		descriptor_address_info.range = MAX_UNIQUE_MATERIALS * sizeof(MaterialResource);
+
+		VkDescriptorGetInfoEXT descriptor_info = {};
+		descriptor_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
+		descriptor_info.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+		descriptor_info.data.pStorageBuffer = &descriptor_address_info;
+
+		VkDeviceSize binding_offset;
+		vk_inst.pFunc.get_descriptor_set_layout_binding_offset_ext(vk_inst.device, data.descriptor_set_layout, Bindings_Storage, &binding_offset);
+
+		uint8_t* descriptor_ptr = (uint8_t*)data.descriptor_buffer.ptr + binding_offset + vk_inst.descriptor_sizes.storage_buffer * data.descriptor_storage_buffers_current;
+		vk_inst.pFunc.get_descriptor_ext(vk_inst.device, &descriptor_info, vk_inst.descriptor_sizes.storage_buffer, descriptor_ptr);
+		data.descriptor_storage_buffers_current++;
 	}
 
 	static VkShaderModule CreateShaderModule(const std::vector<char>& code)
@@ -525,8 +576,8 @@ namespace Renderer
 		push_constants[0].size = sizeof(uint32_t);
 		push_constants[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
-		push_constants[1].offset = 4;
-		push_constants[1].size = VK_ALIGN_POW2(sizeof(uint32_t) + sizeof(glm::vec4), 16) - push_constants[1].offset;
+		push_constants[1].offset = VK_ALIGN_POW2(4 + alignof(MaterialHandle_t), 16);
+		push_constants[1].size = sizeof(MaterialHandle_t);
 		push_constants[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
 		VkPipelineLayoutCreateInfo pipeline_layout_info = {};
@@ -626,6 +677,9 @@ namespace Renderer
 		vk_inst.pFunc.cmd_set_descriptor_buffer_offsets_ext(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
 			data.pipeline_layout, 0, 1, &buffer_indices, &buffer_offsets);
 
+		// Instance buffer
+		const Vulkan::Buffer& instance_buffer = data.instance_buffers[data.current_frame];
+
 		for (size_t i = 0; i < data.draw_list.current_entry; ++i)
 		{
 			const DrawList::Entry& entry = data.draw_list.entries[i];
@@ -638,26 +692,10 @@ namespace Renderer
 			}
 			VK_ASSERT(mesh && "Tried to render a mesh with an invalid mesh handle");
 
-			// TODO: Default material
-			MaterialResource* material = nullptr;
-			if (VK_RESOURCE_HANDLE_VALID(entry.material_handle))
-			{
-				material = data.material_slotmap.Find(entry.material_handle);
-			}
-			VK_ASSERT(material && "Tried to render a mesh with an invalid material handle");
-
-			TextureResource* base_color_texture = nullptr;
-			if (VK_RESOURCE_HANDLE_VALID(material->base_color_handle))
-			{
-				base_color_texture = data.texture_slotmap.Find(material->base_color_handle);
-			}
-
-			uint32_t texture_index = base_color_texture ? material->base_color_handle.index : data.default_white_texture_handle.index;
-			vkCmdPushConstants(command_buffer, data.pipeline_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 4, sizeof(uint32_t), &texture_index);
-			vkCmdPushConstants(command_buffer, data.pipeline_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 16, sizeof(glm::vec4), &material->base_color_factor);
+			vkCmdPushConstants(command_buffer, data.pipeline_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 16, sizeof(MaterialHandle_t), &entry.material_handle);
 
 			// Vertex and index buffers
-			VkBuffer vertex_buffers[] = { mesh->vertex_buffer.buffer, data.instance_buffer.buffer };
+			VkBuffer vertex_buffers[] = { mesh->vertex_buffer.buffer, instance_buffer.buffer };
 			VkDeviceSize offsets[] = { 0, i * sizeof(glm::mat4) };
 			vkCmdBindVertexBuffers(command_buffer, 0, 2, vertex_buffers, offsets);
 			vkCmdBindIndexBuffer(command_buffer, mesh->index_buffer.buffer, 0, VK_INDEX_TYPE_UINT32);
@@ -682,22 +720,18 @@ namespace Renderer
 		CreateGraphicsPipeline();
 
 		CreateFramebuffers();
-		CreateUniformBuffers();
 		CreateCommandBuffers();
 		CreateSyncObjects();
 		CreateDefaultTextures();
-
-		VkDeviceSize instance_buffer_size = MAX_DRAW_LIST_ENTRIES * sizeof(glm::mat4);
-		Vulkan::CreateBuffer(instance_buffer_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, data.instance_buffer);
-		VkCheckResult(vkMapMemory(vk_inst.device, data.instance_buffer.memory, 0, instance_buffer_size, 0, &data.instance_buffer.ptr));
+		CreateUniformBuffers();
+		CreateInstanceBuffers();
+		CreateMaterialBuffer();
 	}
 
 	void Exit()
 	{
 		vkDeviceWaitIdle(vk_inst.device);
 
-		Vulkan::DestroyBuffer(data.instance_buffer);
 		// Clean up vulkan stuff
 		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
@@ -712,7 +746,9 @@ namespace Renderer
 		for (size_t i = 0; i < VulkanInstance::VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
 			Vulkan::DestroyBuffer(data.camera_uniform_buffers[i]);
+			Vulkan::DestroyBuffer(data.instance_buffers[i]);
 		}
+		Vulkan::DestroyBuffer(data.material_buffer);
 		Vulkan::DestroyBuffer(data.descriptor_buffer);
 		vkDestroyDescriptorSetLayout(vk_inst.device, data.descriptor_set_layout, nullptr);
 		vkDestroyPipelineLayout(vk_inst.device, data.pipeline_layout, nullptr);
@@ -874,7 +910,7 @@ namespace Renderer
 		descriptor_info.data.pCombinedImageSampler = &image_info;
 
 		VkDeviceSize binding_offset;
-		vk_inst.pFunc.get_descriptor_set_layout_binding_offset_ext(vk_inst.device, data.descriptor_set_layout, TEXTURE_BINDING, &binding_offset);
+		vk_inst.pFunc.get_descriptor_set_layout_binding_offset_ext(vk_inst.device, data.descriptor_set_layout, Bindings_CombinedImageSampler, &binding_offset);
 		
 		uint8_t* descriptor_ptr = (uint8_t*)data.descriptor_buffer.ptr + binding_offset +
 			vk_inst.descriptor_sizes.combined_image_sampler * data.descriptor_combined_image_samplers_current;
@@ -931,7 +967,30 @@ namespace Renderer
 	{
 		ResourceSlotmap<MaterialResource>::ReservedResource reserved = data.material_slotmap.Reserve();
 		reserved.resource->base_color_factor = args.base_color_factor;
-		reserved.resource->base_color_handle = args.base_color_handle;
+		if (VK_RESOURCE_HANDLE_VALID(args.base_color_handle))
+		{
+			reserved.resource->base_color_tex_handle = args.base_color_handle;
+		}
+		else
+		{
+			reserved.resource->base_color_tex_handle = data.default_white_texture_handle;
+		}
+
+		VkDeviceSize material_size = sizeof(MaterialResource);
+
+		// TODO: Suballocate from big upload buffer, having a staging buffer for every little upload is unnecessary
+		// Create staging buffer
+		Vulkan::Buffer staging_buffer;
+		Vulkan::CreateStagingBuffer(material_size, staging_buffer);
+
+		// Write data into staging buffer
+		Vulkan::WriteBuffer(staging_buffer.ptr, (void*)reserved.resource, material_size);
+
+		// Copy staging buffer material resource into device local material buffer
+		Vulkan::CopyBuffer(staging_buffer, data.material_buffer, material_size, 0, reserved.handle.index * material_size);
+
+		// Destroy staging buffer
+		Vulkan::DestroyBuffer(staging_buffer);
 
 		return reserved.handle;
 	}
@@ -939,11 +998,14 @@ namespace Renderer
 	void DestroyMaterial(MaterialHandle_t handle)
 	{
 		data.material_slotmap.Delete(handle);
+		// NOTE: We could update the material buffer entry here to be 0 or some invalid value,
+		// but it will be overwritten anyways when the slot is re-used
 	}
 
 	void SubmitMesh(MeshHandle_t mesh_handle, MaterialHandle_t material_handle, const glm::mat4& transform)
 	{
-		memcpy((glm::mat4*)data.instance_buffer.ptr + data.draw_list.current_entry, &transform, sizeof(glm::mat4));
+		Vulkan::Buffer& instance_buffer = data.instance_buffers[data.current_frame];
+		memcpy((glm::mat4*)instance_buffer.ptr + data.draw_list.current_entry, &transform, sizeof(glm::mat4));
 
 		DrawList::Entry& entry = data.draw_list.GetNextEntry();
 		entry.mesh_handle = mesh_handle;
