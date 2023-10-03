@@ -1,5 +1,6 @@
 #include "renderer/Renderer.h"
 #include "renderer/VulkanBackend.h"
+#include "renderer/DescriptorBuffer.h"
 #include "renderer/ResourceSlotmap.h"
 #include "Common.h"
 
@@ -24,22 +25,15 @@
 namespace Renderer
 {
 
-	static constexpr uint32_t DEFAULT_DESCRIPTOR_COUNT_PER_TYPE = 1000;
+	static constexpr uint32_t BINDLESS_DEFAULT_DESCRIPTOR_COUNT_PER_TYPE = 1000;
 
 	static constexpr uint32_t MAX_DRAW_LIST_ENTRIES = 10000;
 	static constexpr uint32_t MAX_UNIQUE_MATERIALS = 1000;
 
-	enum Bindings
-	{
-		Bindings_Uniform,
-		Bindings_Storage,
-		Bindings_CombinedImageSampler,
-		Bindings_NumBindings
-	};
-
 	struct TextureResource
 	{
 		Vulkan::Image image;
+		DescriptorAllocation descriptor;
 
 		~TextureResource()
 		{
@@ -118,11 +112,8 @@ namespace Renderer
 
 		VkDescriptorSetLayout reserved_descriptor_set_layout = VK_NULL_HANDLE;
 		VkDescriptorSetLayout bindless_descriptor_set_layout = VK_NULL_HANDLE;
-		Vulkan::Buffer reserved_descriptor_buffer;
-		Vulkan::Buffer bindless_descriptor_buffer;
-		uint32_t bindless_descriptors_uniform_buffers_current = 0;
-		uint32_t bindless_descriptors_storage_buffers_current = 0;
-		uint32_t bindless_descriptors_combined_image_samplers_current = 0;
+		DescriptorBuffer* reserved_descriptor_buffer = nullptr;
+		DescriptorBuffer* bindless_descriptor_buffer = nullptr;
 
 		std::vector<VkCommandBuffer> command_buffers;
 		std::vector<VkSemaphore> image_available_semaphores;
@@ -132,8 +123,12 @@ namespace Renderer
 		DrawList draw_list;
 
 		std::vector<Vulkan::Buffer> camera_uniform_buffers;
+		DescriptorAllocation camera_ubo_descriptors;
+
 		std::vector<Vulkan::Buffer> instance_buffers;
+
 		Vulkan::Buffer material_buffer;
+		DescriptorAllocation material_buffer_descriptor;
 
 		TextureHandle_t default_white_texture_handle;
 		TextureResource* default_white_texture_resource;
@@ -283,7 +278,7 @@ namespace Renderer
 			{
 				bindings[i].binding = i;
 				bindings[i].descriptorType = descriptor_types[i];
-				bindings[i].descriptorCount = DEFAULT_DESCRIPTOR_COUNT_PER_TYPE;
+				bindings[i].descriptorCount = BINDLESS_DEFAULT_DESCRIPTOR_COUNT_PER_TYPE;
 				bindings[i].stageFlags = VK_SHADER_STAGE_ALL;
 				binding_flags[i] = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
 			}
@@ -308,16 +303,31 @@ namespace Renderer
 	{
 		// Reserved descriptor buffer
 		{
-			VkDeviceSize buffer_size;
-			vk_inst.pFunc.get_descriptor_set_layout_size_ext(vk_inst.device, data.reserved_descriptor_set_layout, &buffer_size);
-			Vulkan::CreateDescriptorBuffer(buffer_size, data.reserved_descriptor_buffer);
+			VkDeviceSize storage_binding_offset;
+			vk_inst.pFunc.get_descriptor_set_layout_binding_offset_ext(vk_inst.device, data.reserved_descriptor_set_layout, 0, &storage_binding_offset);
+
+			std::unordered_map<DescriptorType, DescriptorRange> descriptor_ranges;
+			descriptor_ranges.emplace(DescriptorType_Storage, DescriptorRange(ReservedDescriptorStorage_NumDescriptors,
+				(uint32_t)vk_inst.descriptor_sizes.storage_buffer, (uint32_t)storage_binding_offset, 0));
+			data.reserved_descriptor_buffer = new DescriptorBuffer(data.reserved_descriptor_set_layout, descriptor_ranges);
 		}
 
 		// Bindless descriptor buffer
 		{
-			VkDeviceSize buffer_size;
-			vk_inst.pFunc.get_descriptor_set_layout_size_ext(vk_inst.device, data.bindless_descriptor_set_layout, &buffer_size);
-			Vulkan::CreateDescriptorBuffer(buffer_size, data.bindless_descriptor_buffer);
+			VkDeviceSize uniform_binding_offset, storage_binding_offset, combined_image_sampler_binding_offset;
+			vk_inst.pFunc.get_descriptor_set_layout_binding_offset_ext(vk_inst.device, data.bindless_descriptor_set_layout, 0, &uniform_binding_offset);
+			vk_inst.pFunc.get_descriptor_set_layout_binding_offset_ext(vk_inst.device, data.bindless_descriptor_set_layout, 1, &storage_binding_offset);
+			vk_inst.pFunc.get_descriptor_set_layout_binding_offset_ext(vk_inst.device, data.bindless_descriptor_set_layout, 2, &combined_image_sampler_binding_offset);
+
+			std::unordered_map<DescriptorType, DescriptorRange> descriptor_ranges;
+			descriptor_ranges.emplace(DescriptorType_Uniform, DescriptorRange(BINDLESS_DEFAULT_DESCRIPTOR_COUNT_PER_TYPE,
+				(uint32_t)vk_inst.descriptor_sizes.uniform_buffer, (uint32_t)uniform_binding_offset, 0));
+			descriptor_ranges.emplace(DescriptorType_Storage, DescriptorRange(BINDLESS_DEFAULT_DESCRIPTOR_COUNT_PER_TYPE,
+				(uint32_t)vk_inst.descriptor_sizes.storage_buffer, (uint32_t)storage_binding_offset, 1));
+			descriptor_ranges.emplace(DescriptorType_CombinedImageSampler, DescriptorRange(BINDLESS_DEFAULT_DESCRIPTOR_COUNT_PER_TYPE,
+				(uint32_t)vk_inst.descriptor_sizes.combined_image_sampler, (uint32_t)combined_image_sampler_binding_offset, 2));
+
+			data.bindless_descriptor_buffer = new DescriptorBuffer(data.bindless_descriptor_set_layout, descriptor_ranges);
 		}
 	}
 
@@ -372,6 +382,7 @@ namespace Renderer
 	static void CreateUniformBuffers()
 	{
 		data.camera_uniform_buffers.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
+		data.camera_ubo_descriptors = data.bindless_descriptor_buffer->Allocate(DescriptorType_Uniform, 3);
 		VkDeviceSize buffer_size = sizeof(CameraData);
 
 		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
@@ -394,13 +405,8 @@ namespace Renderer
 			descriptor_info.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 			descriptor_info.data.pUniformBuffer = &descriptor_address_info;
 
-			VkDeviceSize binding_offset;
-			vk_inst.pFunc.get_descriptor_set_layout_binding_offset_ext(vk_inst.device, data.bindless_descriptor_set_layout, Bindings_Uniform, &binding_offset);
-
-			uint8_t* descriptor_ptr = (uint8_t*)data.bindless_descriptor_buffer.ptr + binding_offset +
-				vk_inst.descriptor_sizes.uniform_buffer * data.bindless_descriptors_uniform_buffers_current;
-			vk_inst.pFunc.get_descriptor_ext(vk_inst.device, &descriptor_info, vk_inst.descriptor_sizes.uniform_buffer, descriptor_ptr);
-			data.bindless_descriptors_uniform_buffers_current++;
+			vk_inst.pFunc.get_descriptor_ext(vk_inst.device, &descriptor_info,
+				vk_inst.descriptor_sizes.uniform_buffer, data.camera_ubo_descriptors.GetDescriptor(i));
 		}
 	}
 
@@ -424,6 +430,7 @@ namespace Renderer
 		VkDeviceSize material_buffer_size = MAX_UNIQUE_MATERIALS * sizeof(MaterialResource);
 		Vulkan::CreateBuffer(material_buffer_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT |
 			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, data.material_buffer);
+		data.material_buffer_descriptor = data.reserved_descriptor_buffer->Allocate(DescriptorType::DescriptorType_Storage, 1);
 
 		// Update descriptor
 		VkBufferDeviceAddressInfoEXT buffer_address_info = {};
@@ -441,11 +448,8 @@ namespace Renderer
 		descriptor_info.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 		descriptor_info.data.pStorageBuffer = &descriptor_address_info;
 
-		VkDeviceSize binding_offset;
-		vk_inst.pFunc.get_descriptor_set_layout_binding_offset_ext(vk_inst.device, data.reserved_descriptor_set_layout, 0, &binding_offset);
-
-		uint8_t* descriptor_ptr = (uint8_t*)data.reserved_descriptor_buffer.ptr + binding_offset + ReservedDescriptorStorage_Material * vk_inst.descriptor_sizes.storage_buffer;
-		vk_inst.pFunc.get_descriptor_ext(vk_inst.device, &descriptor_info, vk_inst.descriptor_sizes.storage_buffer, descriptor_ptr);
+		vk_inst.pFunc.get_descriptor_ext(vk_inst.device, &descriptor_info,
+			vk_inst.descriptor_sizes.storage_buffer, data.material_buffer_descriptor.GetDescriptor());
 	}
 
 	static VkShaderModule CreateShaderModule(const std::vector<char>& code)
@@ -724,12 +728,11 @@ namespace Renderer
 		vkCmdPushConstants(command_buffer, data.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(uint32_t), &camera_ubo_index);
 
 		// Bind descriptor buffers
-		std::array<VkBufferDeviceAddressInfo, 2> buffer_address_infos = {};
-		buffer_address_infos[0].sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
-		buffer_address_infos[0].buffer = data.reserved_descriptor_buffer.buffer;
-
-		buffer_address_infos[1].sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
-		buffer_address_infos[1].buffer = data.bindless_descriptor_buffer.buffer;
+		std::array<VkBufferDeviceAddressInfo, 2> buffer_address_infos =
+		{
+			data.reserved_descriptor_buffer->GetDeviceAddressInfo(),
+			data.bindless_descriptor_buffer->GetDeviceAddressInfo()
+		};
 
 		std::array<VkDescriptorBufferBindingInfoEXT, 2> descriptor_buffer_binding_infos = {};
 		descriptor_buffer_binding_infos[0].sType = VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT;
@@ -951,8 +954,10 @@ namespace Renderer
 			Vulkan::DestroyBuffer(data.instance_buffers[i]);
 		}
 		Vulkan::DestroyBuffer(data.material_buffer);
-		Vulkan::DestroyBuffer(data.reserved_descriptor_buffer);
-		Vulkan::DestroyBuffer(data.bindless_descriptor_buffer);
+
+		delete data.reserved_descriptor_buffer;
+		delete data.bindless_descriptor_buffer;
+
 		vkDestroyDescriptorSetLayout(vk_inst.device, data.reserved_descriptor_set_layout, nullptr);
 		vkDestroyDescriptorSetLayout(vk_inst.device, data.bindless_descriptor_set_layout, nullptr);
 		vkDestroyPipelineLayout(vk_inst.device, data.pipeline_layout, nullptr);
@@ -1118,13 +1123,9 @@ namespace Renderer
 		descriptor_info.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 		descriptor_info.data.pCombinedImageSampler = &image_info;
 
-		VkDeviceSize binding_offset;
-		vk_inst.pFunc.get_descriptor_set_layout_binding_offset_ext(vk_inst.device, data.bindless_descriptor_set_layout, Bindings_CombinedImageSampler, &binding_offset);
-		
-		uint8_t* descriptor_ptr = (uint8_t*)data.bindless_descriptor_buffer.ptr + binding_offset +
-			vk_inst.descriptor_sizes.combined_image_sampler * data.bindless_descriptors_combined_image_samplers_current;
-		vk_inst.pFunc.get_descriptor_ext(vk_inst.device, &descriptor_info, vk_inst.descriptor_sizes.combined_image_sampler, descriptor_ptr);
-		data.bindless_descriptors_combined_image_samplers_current++;
+		reserved.resource->descriptor = data.bindless_descriptor_buffer->Allocate(DescriptorType_CombinedImageSampler);
+		vk_inst.pFunc.get_descriptor_ext(vk_inst.device, &descriptor_info,
+			vk_inst.descriptor_sizes.combined_image_sampler, reserved.resource->descriptor.GetDescriptor());
 
 		return reserved.handle;
 	}

@@ -157,6 +157,7 @@ C:/VulkanSDK/1.3.261.1/Bin/glslc.exe assets/shaders/FragmentShader.frag -o $(Out
     <ClCompile Include="source\Input.cpp" />
     <ClCompile Include="source\Logger.cpp" />
     <ClCompile Include="source\Main.cpp" />
+    <ClCompile Include="source\renderer\DescriptorBuffer.cpp" />
     <ClCompile Include="source\renderer\Renderer.cpp" />
     <ClCompile Include="source\renderer\VulkanBackend.cpp" />
   </ItemGroup>
@@ -170,6 +171,7 @@ C:/VulkanSDK/1.3.261.1/Bin/glslc.exe assets/shaders/FragmentShader.frag -o $(Out
     <ClInclude Include="include\Common.h" />
     <ClInclude Include="include\Input.h" />
     <ClInclude Include="include\Logger.h" />
+    <ClInclude Include="include\renderer\DescriptorBuffer.h" />
     <ClInclude Include="include\renderer\Renderer.h" />
     <ClInclude Include="include\renderer\RenderTypes.h" />
     <ClInclude Include="include\renderer\ResourceSlotmap.h" />
