@@ -223,15 +223,31 @@ namespace Assets
 		for (size_t i = 0; i < data->materials_count; ++i)
 		{
 			cgltf_material& gltf_material = data->materials[i];
-			Renderer::CreateMaterialArgs material_args = {};
-			memcpy(&material_args.base_color_factor, gltf_material.pbr_metallic_roughness.base_color_factor, sizeof(glm::vec4));
 
+			Renderer::CreateMaterialArgs material_args = {};
+			
+			memcpy(&material_args.base_color_factor, gltf_material.pbr_metallic_roughness.base_color_factor, sizeof(glm::vec4));
 			if (gltf_material.pbr_metallic_roughness.base_color_texture.texture)
 			{
 				size_t texture_handle_index = CGLTFGetIndex<cgltf_image>(data->images,
 					gltf_material.pbr_metallic_roughness.base_color_texture.texture->image);
+				material_args.base_color_texture_handle = texture_handles[texture_handle_index];
+			}
 
-				material_args.base_color_handle = texture_handles[texture_handle_index];
+			if (gltf_material.normal_texture.texture)
+			{
+				size_t normal_texture_index = CGLTFGetIndex<cgltf_image>(data->images,
+					gltf_material.normal_texture.texture->image);
+				material_args.normal_texture_handle = texture_handles[normal_texture_index];
+			}
+
+			material_args.metallic_factor = gltf_material.pbr_metallic_roughness.metallic_factor;
+			material_args.roughness_factor = gltf_material.pbr_metallic_roughness.roughness_factor;
+			if (gltf_material.pbr_metallic_roughness.metallic_roughness_texture.texture)
+			{
+				size_t metallic_roughness_texture_index = CGLTFGetIndex<cgltf_image>(data->images,
+					gltf_material.pbr_metallic_roughness.metallic_roughness_texture.texture->image);
+				material_args.metallic_roughness_texture_handle = texture_handles[metallic_roughness_texture_index];
 			}
 
 			material_handles[i] = Renderer::CreateMaterial(material_args);

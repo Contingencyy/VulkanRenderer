@@ -2,13 +2,14 @@
 #extension GL_KHR_vulkan_glsl : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 
+#include "Shared.glsl.h"
+
 layout(set = 1, binding = 0) uniform Camera
 {
-	mat4 view;
-	mat4 proj;
-} camera[];
+	CameraData cam;
+} g_camera[];
 
-layout(push_constant, std140) uniform constants
+layout(std140, push_constant) uniform constants
 {
 	layout(offset = 0) uint camera_ubo_index;
 } push_constants;
@@ -22,6 +23,6 @@ layout(location = 0) out vec2 frag_tex_coord;
 
 void main()
 {
-	gl_Position = camera[push_constants.camera_ubo_index].proj * camera[push_constants.camera_ubo_index].view * transform * vec4(position, 1.0);
+	gl_Position = g_camera[push_constants.camera_ubo_index].cam.proj * g_camera[push_constants.camera_ubo_index].cam.view * transform * vec4(position, 1.0);
 	frag_tex_coord = tex_coord;
 }

@@ -36,7 +36,11 @@ namespace Renderer
 	struct CreateMaterialArgs
 	{
 		glm::vec4 base_color_factor;
-		TextureHandle_t base_color_handle;
+		TextureHandle_t base_color_texture_handle;
+		TextureHandle_t normal_texture_handle;
+		float metallic_factor;
+		float roughness_factor;
+		TextureHandle_t metallic_roughness_texture_handle;
 	};
 
 	MaterialHandle_t CreateMaterial(const CreateMaterialArgs& args);

@@ -3,6 +3,7 @@
 #include "renderer/DescriptorBuffer.h"
 #include "renderer/ResourceSlotmap.h"
 #include "Common.h"
+#include "Shared.glsl.h"
 
 #include "vulkan/vulkan.h"
 #include "vulkan/vk_enum_string_helper.h"
@@ -55,13 +56,11 @@ namespace Renderer
 
 	struct MaterialResource
 	{
-		TextureHandle_t base_color_tex_handle;
+		TextureHandle_t base_color_texture_handle;
+		TextureHandle_t normal_texture_handle;
+		TextureHandle_t metallic_roughness_texture_handle;
 
-		struct alignas(16) MaterialData
-		{
-			glm::vec4 base_color_factor = glm::vec4(1.0f);
-			uint32_t base_color_tex_index = 0;
-		} data;
+		MaterialData data;
 	};
 
 	struct DrawList
@@ -78,16 +77,13 @@ namespace Renderer
 
 		Entry& GetNextEntry()
 		{
+			VK_ASSERT(current_entry < MAX_DRAW_LIST_ENTRIES &&
+				"Exceeded the maximum amount of draw list entries");
+
 			Entry& entry = entries[current_entry];
 			current_entry++;
 			return entry;
 		}
-	};
-
-	struct CameraData
-	{
-		glm::mat4 view;
-		glm::mat4 proj;
 	};
 
 	enum ReservedDescriptorStorage
@@ -132,6 +128,8 @@ namespace Renderer
 
 		TextureHandle_t default_white_texture_handle;
 		TextureResource* default_white_texture_resource;
+		TextureHandle_t default_normal_texture_handle;
+		TextureResource* default_normal_texture_resource;
 
 		uint32_t current_frame = 0;
 
@@ -368,15 +366,22 @@ namespace Renderer
 	static void CreateDefaultTextures()
 	{
 		// Default white texture
-		std::vector<uint8_t> pixel_data = { 0xFF, 0xFF, 0xFF, 0xFF };
+		std::vector<uint8_t> white_pixel = { 0xFF, 0xFF, 0xFF, 0xFF };
 
 		CreateTextureArgs texture_args = {};
 		texture_args.width = 1;
 		texture_args.height = 1;
-		texture_args.pixels = pixel_data;
+		texture_args.pixels = white_pixel;
 
 		data.default_white_texture_handle = CreateTexture(texture_args);
 		data.default_white_texture_resource = data.texture_slotmap.Find(data.default_white_texture_handle);
+
+		// Default normal texture
+		std::vector<uint8_t> normal_pixel = { 127, 127, 255, 255 };
+		texture_args.pixels = normal_pixel;
+
+		data.default_normal_texture_handle = CreateTexture(texture_args);
+		data.default_white_texture_resource = data.texture_slotmap.Find(data.default_normal_texture_handle);
 	}
 
 	static void CreateUniformBuffers()
@@ -767,7 +772,9 @@ namespace Renderer
 			// Check material handles for validity
 			VK_ASSERT(VK_RESOURCE_HANDLE_VALID(entry.material_handle));
 			MaterialResource* material = data.material_slotmap.Find(entry.material_handle);
-			VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->base_color_tex_handle));
+			VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->base_color_texture_handle));
+			VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->normal_texture_handle));
+			VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->metallic_roughness_texture_handle));
 
 			vkCmdPushConstants(command_buffer, data.pipeline_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 16, sizeof(uint32_t), &entry.material_handle.index);
 
@@ -1179,19 +1186,42 @@ namespace Renderer
 	MaterialHandle_t CreateMaterial(const CreateMaterialArgs& args)
 	{
 		ResourceSlotmap<MaterialResource>::ReservedResource reserved = data.material_slotmap.Reserve();
+
 		reserved.resource->data.base_color_factor = args.base_color_factor;
-		if (VK_RESOURCE_HANDLE_VALID(args.base_color_handle))
+		if (VK_RESOURCE_HANDLE_VALID(args.base_color_texture_handle))
 		{
-			reserved.resource->base_color_tex_handle = args.base_color_handle;
-			reserved.resource->data.base_color_tex_index = args.base_color_handle.index;
+			reserved.resource->base_color_texture_handle = args.base_color_texture_handle;
+			reserved.resource->data.base_color_texture_index = args.base_color_texture_handle.index;
 		}
 		else
 		{
-			reserved.resource->base_color_tex_handle = data.default_white_texture_handle;
-			reserved.resource->data.base_color_tex_index = data.default_white_texture_handle.index;
+			reserved.resource->base_color_texture_handle = data.default_white_texture_handle;
+			reserved.resource->data.base_color_texture_index = data.default_white_texture_handle.index;
 		}
 
-		VkDeviceSize material_size = sizeof(MaterialResource::MaterialData);
+		if (VK_RESOURCE_HANDLE_VALID(args.normal_texture_handle))
+		{
+			reserved.resource->normal_texture_handle = args.normal_texture_handle;
+			reserved.resource->data.normal_texture_index = args.normal_texture_handle.index;
+		}
+		else
+		{
+			reserved.resource->normal_texture_handle = data.default_normal_texture_handle;
+			reserved.resource->data.normal_texture_index = data.default_normal_texture_handle.index;
+		}
+
+		if (VK_RESOURCE_HANDLE_VALID(args.metallic_roughness_texture_handle))
+		{
+			reserved.resource->metallic_roughness_texture_handle = args.metallic_roughness_texture_handle;
+			reserved.resource->data.metallic_roughness_texture_index = args.metallic_roughness_texture_handle.index;
+		}
+		else
+		{
+			reserved.resource->metallic_roughness_texture_handle = data.default_white_texture_handle;
+			reserved.resource->data.metallic_roughness_texture_index = data.default_white_texture_handle.index;
+		}
+
+		VkDeviceSize material_size = sizeof(MaterialData);
 
 		// TODO: Suballocate from big upload buffer, having a staging buffer for every little upload is unnecessary
 		// Create staging buffer

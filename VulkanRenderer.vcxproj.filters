@@ -101,6 +101,9 @@
     <ClInclude Include="include\renderer\DescriptorBuffer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="assets\shaders\Shared.glsl.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="assets\shaders\FragmentShader.frag" />

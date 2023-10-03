@@ -93,7 +93,7 @@
     <ClCompile>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <WarningLevel>Level4</WarningLevel>
-      <AdditionalIncludeDirectories>$(SolutionDir)extern;$(SolutionDir)extern/glm;$(SolutionDir)include;C:\VulkanSDK\1.3.261.1\Include;$(SolutionDir)extern/glfw-3.3.8-win64/include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)extern;$(SolutionDir)extern/glm;$(SolutionDir)assets/shaders/;$(SolutionDir)include;C:\VulkanSDK\1.3.261.1\Include;$(SolutionDir)extern/glfw-3.3.8-win64/include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
@@ -126,7 +126,7 @@ C:/VulkanSDK/1.3.261.1/Bin/glslc.exe assets/shaders/FragmentShader.frag -o $(Out
     <ClCompile>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <WarningLevel>Level4</WarningLevel>
-      <AdditionalIncludeDirectories>$(SolutionDir)extern;$(SolutionDir)extern/glm;$(SolutionDir)include;C:\VulkanSDK\1.3.261.1\Include;$(SolutionDir)extern/glfw-3.3.8-win64/include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)extern;$(SolutionDir)extern/glm;$(SolutionDir)assets/shaders/;$(SolutionDir)include;C:\VulkanSDK\1.3.261.1\Include;$(SolutionDir)extern/glfw-3.3.8-win64/include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
@@ -162,6 +162,7 @@ C:/VulkanSDK/1.3.261.1/Bin/glslc.exe assets/shaders/FragmentShader.frag -o $(Out
     <ClCompile Include="source\renderer\VulkanBackend.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="assets\shaders\Shared.glsl.h" />
     <ClInclude Include="extern\imgui\imgui.h" />
     <ClInclude Include="extern\imgui\imgui_impl_glfw.h" />
     <ClInclude Include="extern\imgui\imgui_impl_vulkan.h" />
