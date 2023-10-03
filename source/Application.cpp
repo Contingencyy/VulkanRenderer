@@ -190,7 +190,10 @@ namespace Application
 
 			// NOTE: Temporary menu code
 			ImGui::Begin("General");
-			ImGui::Text("Frametime: %.3fms", delta_time.count() * 1000.0f);
+			float delta_time_ms = delta_time.count() * 1000.0f;
+
+			ImGui::Text("FPS: %u", (uint32_t)(1000.0f / delta_time_ms));
+			ImGui::Text("Frametime: %.3fms", delta_time_ms);
 			ImGui::End();
 
 			Renderer::RenderFrame();

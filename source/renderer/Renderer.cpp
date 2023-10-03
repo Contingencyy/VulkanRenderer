@@ -59,10 +59,15 @@ namespace Renderer
 		}
 	};
 
-	struct alignas(16) MaterialResource
+	struct MaterialResource
 	{
-		glm::vec4 base_color_factor = glm::vec4(1.0f);
 		TextureHandle_t base_color_tex_handle;
+
+		struct alignas(16) MaterialData
+		{
+			glm::vec4 base_color_factor = glm::vec4(1.0f);
+			uint32_t base_color_tex_index = 0;
+		} data;
 	};
 
 	struct DrawList
@@ -91,6 +96,12 @@ namespace Renderer
 		glm::mat4 proj;
 	};
 
+	enum ReservedDescriptorStorage
+	{
+		ReservedDescriptorStorage_Material,
+		ReservedDescriptorStorage_NumDescriptors
+	};
+
 	struct Data
 	{
 		~Data() {}
@@ -105,11 +116,13 @@ namespace Renderer
 		VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
 		VkPipeline graphics_pipeline = VK_NULL_HANDLE;
 
-		VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
-		Vulkan::Buffer descriptor_buffer;
-		uint32_t descriptor_uniform_buffers_current = 0;
-		uint32_t descriptor_storage_buffers_current = 0;
-		uint32_t descriptor_combined_image_samplers_current = 0;
+		VkDescriptorSetLayout reserved_descriptor_set_layout = VK_NULL_HANDLE;
+		VkDescriptorSetLayout bindless_descriptor_set_layout = VK_NULL_HANDLE;
+		Vulkan::Buffer reserved_descriptor_buffer;
+		Vulkan::Buffer bindless_descriptor_buffer;
+		uint32_t bindless_descriptors_uniform_buffers_current = 0;
+		uint32_t bindless_descriptors_storage_buffers_current = 0;
+		uint32_t bindless_descriptors_combined_image_samplers_current = 0;
 
 		std::vector<VkCommandBuffer> command_buffers;
 		std::vector<VkSemaphore> image_available_semaphores;
@@ -227,47 +240,85 @@ namespace Renderer
 		}
 	}
 
-	static void CreateDescriptorSetLayout()
+	static void CreateDescriptorSetLayouts()
 	{
-		std::array<VkDescriptorSetLayoutBinding, 3> bindings = {};
-		std::array<VkDescriptorBindingFlags, 3> binding_flags = {};
-		std::array<VkDescriptorType, 3> descriptor_types =
+		// Fixed descriptor set layout for reserved rendering resources that are always present
+		// e.g. the global material buffer
 		{
-			VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-			VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-			VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
-		};
+			VkDescriptorSetLayoutBinding bindings = {};
+			bindings.binding = 0;
+			bindings.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+			bindings.descriptorCount = ReservedDescriptorStorage_NumDescriptors;
+			bindings.stageFlags = VK_SHADER_STAGE_ALL;
 
-		for (size_t i = 0; i < 3; ++i)
-		{
-			bindings[i].binding = i;
-			bindings[i].descriptorType = descriptor_types[i];
-			bindings[i].descriptorCount = DEFAULT_DESCRIPTOR_COUNT_PER_TYPE;
-			bindings[i].stageFlags = VK_SHADER_STAGE_ALL;
-			binding_flags[i] = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
+			VkDescriptorBindingFlags binding_flags = {};
+
+			VkDescriptorSetLayoutBindingFlagsCreateInfo binding_info = {};
+			binding_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
+			binding_info.pBindingFlags = &binding_flags;
+			binding_info.bindingCount = 1;
+
+			VkDescriptorSetLayoutCreateInfo layout_info = {};
+			layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+			layout_info.bindingCount = 1;
+			layout_info.pBindings = &bindings;
+			layout_info.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
+			layout_info.pNext = &binding_info;
+
+			VkCheckResult(vkCreateDescriptorSetLayout(vk_inst.device, &layout_info, nullptr, &data.reserved_descriptor_set_layout));
 		}
 
-		VkDescriptorSetLayoutBindingFlagsCreateInfo binding_info = {};
-		binding_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
-		binding_info.pBindingFlags = binding_flags.data();
-		binding_info.bindingCount = 3;
+		// Bindless descriptor set layout
+		{
+			std::array<VkDescriptorSetLayoutBinding, 3> bindings = {};
+			std::array<VkDescriptorBindingFlags, 3> binding_flags = {};
+			std::array<VkDescriptorType, 3> descriptor_types =
+			{
+				VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+				VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+				VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
+			};
 
-		VkDescriptorSetLayoutCreateInfo layout_info = {};
-		layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-		layout_info.bindingCount = 3;
-		layout_info.pBindings = bindings.data();
-		layout_info.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
-		layout_info.pNext = &binding_info;
+			for (size_t i = 0; i < 3; ++i)
+			{
+				bindings[i].binding = i;
+				bindings[i].descriptorType = descriptor_types[i];
+				bindings[i].descriptorCount = DEFAULT_DESCRIPTOR_COUNT_PER_TYPE;
+				bindings[i].stageFlags = VK_SHADER_STAGE_ALL;
+				binding_flags[i] = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
+			}
 
-		VkCheckResult(vkCreateDescriptorSetLayout(vk_inst.device, &layout_info, nullptr, &data.descriptor_set_layout));
+			VkDescriptorSetLayoutBindingFlagsCreateInfo binding_info = {};
+			binding_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
+			binding_info.pBindingFlags = binding_flags.data();
+			binding_info.bindingCount = 3;
+
+			VkDescriptorSetLayoutCreateInfo layout_info = {};
+			layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+			layout_info.bindingCount = 3;
+			layout_info.pBindings = bindings.data();
+			layout_info.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
+			layout_info.pNext = &binding_info;
+
+			VkCheckResult(vkCreateDescriptorSetLayout(vk_inst.device, &layout_info, nullptr, &data.bindless_descriptor_set_layout));
+		}
 	}
 
-	static void CreateDescriptorBuffer()
+	static void CreateDescriptorBuffers()
 	{
-		VkDeviceSize buffer_size;
-		vk_inst.pFunc.get_descriptor_set_layout_size_ext(vk_inst.device, data.descriptor_set_layout, &buffer_size);
+		// Reserved descriptor buffer
+		{
+			VkDeviceSize buffer_size;
+			vk_inst.pFunc.get_descriptor_set_layout_size_ext(vk_inst.device, data.reserved_descriptor_set_layout, &buffer_size);
+			Vulkan::CreateDescriptorBuffer(buffer_size, data.reserved_descriptor_buffer);
+		}
 
-		Vulkan::CreateDescriptorBuffer(buffer_size, data.descriptor_buffer);
+		// Bindless descriptor buffer
+		{
+			VkDeviceSize buffer_size;
+			vk_inst.pFunc.get_descriptor_set_layout_size_ext(vk_inst.device, data.bindless_descriptor_set_layout, &buffer_size);
+			Vulkan::CreateDescriptorBuffer(buffer_size, data.bindless_descriptor_buffer);
+		}
 	}
 
 	static void CreateCommandBuffers()
@@ -344,11 +395,12 @@ namespace Renderer
 			descriptor_info.data.pUniformBuffer = &descriptor_address_info;
 
 			VkDeviceSize binding_offset;
-			vk_inst.pFunc.get_descriptor_set_layout_binding_offset_ext(vk_inst.device, data.descriptor_set_layout, Bindings_Uniform, &binding_offset);
+			vk_inst.pFunc.get_descriptor_set_layout_binding_offset_ext(vk_inst.device, data.bindless_descriptor_set_layout, Bindings_Uniform, &binding_offset);
 
-			uint8_t* descriptor_ptr = (uint8_t*)data.descriptor_buffer.ptr + binding_offset + vk_inst.descriptor_sizes.uniform_buffer * data.descriptor_uniform_buffers_current;
+			uint8_t* descriptor_ptr = (uint8_t*)data.bindless_descriptor_buffer.ptr + binding_offset +
+				vk_inst.descriptor_sizes.uniform_buffer * data.bindless_descriptors_uniform_buffers_current;
 			vk_inst.pFunc.get_descriptor_ext(vk_inst.device, &descriptor_info, vk_inst.descriptor_sizes.uniform_buffer, descriptor_ptr);
-			data.descriptor_uniform_buffers_current++;
+			data.bindless_descriptors_uniform_buffers_current++;
 		}
 	}
 
@@ -390,11 +442,10 @@ namespace Renderer
 		descriptor_info.data.pStorageBuffer = &descriptor_address_info;
 
 		VkDeviceSize binding_offset;
-		vk_inst.pFunc.get_descriptor_set_layout_binding_offset_ext(vk_inst.device, data.descriptor_set_layout, Bindings_Storage, &binding_offset);
+		vk_inst.pFunc.get_descriptor_set_layout_binding_offset_ext(vk_inst.device, data.reserved_descriptor_set_layout, 0, &binding_offset);
 
-		uint8_t* descriptor_ptr = (uint8_t*)data.descriptor_buffer.ptr + binding_offset + vk_inst.descriptor_sizes.storage_buffer * data.descriptor_storage_buffers_current;
+		uint8_t* descriptor_ptr = (uint8_t*)data.reserved_descriptor_buffer.ptr + binding_offset + ReservedDescriptorStorage_Material * vk_inst.descriptor_sizes.storage_buffer;
 		vk_inst.pFunc.get_descriptor_ext(vk_inst.device, &descriptor_info, vk_inst.descriptor_sizes.storage_buffer, descriptor_ptr);
-		data.descriptor_storage_buffers_current++;
 	}
 
 	static VkShaderModule CreateShaderModule(const std::vector<char>& code)
@@ -586,14 +637,15 @@ namespace Renderer
 		push_constants[0].size = sizeof(uint32_t);
 		push_constants[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
-		push_constants[1].offset = VK_ALIGN_POW2(4 + alignof(MaterialHandle_t), 16);
-		push_constants[1].size = sizeof(MaterialHandle_t);
+		push_constants[1].offset = VK_ALIGN_POW2(4 + alignof(uint32_t), 16);
+		push_constants[1].size = sizeof(uint32_t);
 		push_constants[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
+		std::array<VkDescriptorSetLayout, 2> descriptor_set_layouts = { data.reserved_descriptor_set_layout, data.bindless_descriptor_set_layout };
 		VkPipelineLayoutCreateInfo pipeline_layout_info = {};
 		pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-		pipeline_layout_info.setLayoutCount = 1;
-		pipeline_layout_info.pSetLayouts = &data.descriptor_set_layout;
+		pipeline_layout_info.setLayoutCount = (uint32_t)descriptor_set_layouts.size();
+		pipeline_layout_info.pSetLayouts = descriptor_set_layouts.data();
 		pipeline_layout_info.pushConstantRangeCount = (uint32_t)push_constants.size();
 		pipeline_layout_info.pPushConstantRanges = push_constants.data();
 
@@ -672,20 +724,27 @@ namespace Renderer
 		vkCmdPushConstants(command_buffer, data.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(uint32_t), &camera_ubo_index);
 
 		// Bind descriptor buffers
-		VkBufferDeviceAddressInfo buffer_address_info = {};
-		buffer_address_info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
-		buffer_address_info.buffer = data.descriptor_buffer.buffer;
+		std::array<VkBufferDeviceAddressInfo, 2> buffer_address_infos = {};
+		buffer_address_infos[0].sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+		buffer_address_infos[0].buffer = data.reserved_descriptor_buffer.buffer;
 
-		VkDescriptorBufferBindingInfoEXT descriptor_binding_info = {};
-		descriptor_binding_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT;
-		descriptor_binding_info.usage = VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT;
-		descriptor_binding_info.address = vkGetBufferDeviceAddress(vk_inst.device, &buffer_address_info);
+		buffer_address_infos[1].sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+		buffer_address_infos[1].buffer = data.bindless_descriptor_buffer.buffer;
 
-		vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, 1, &descriptor_binding_info);
-		uint32_t buffer_indices = 0;
-		VkDeviceSize buffer_offsets = 0;
+		std::array<VkDescriptorBufferBindingInfoEXT, 2> descriptor_buffer_binding_infos = {};
+		descriptor_buffer_binding_infos[0].sType = VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT;
+		descriptor_buffer_binding_infos[0].usage = VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT;
+		descriptor_buffer_binding_infos[0].address = vkGetBufferDeviceAddress(vk_inst.device, &buffer_address_infos[0]);
+
+		descriptor_buffer_binding_infos[1].sType = VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT;
+		descriptor_buffer_binding_infos[1].usage = VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT;
+		descriptor_buffer_binding_infos[1].address = vkGetBufferDeviceAddress(vk_inst.device, &buffer_address_infos[1]);
+
+		vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)descriptor_buffer_binding_infos.size(), descriptor_buffer_binding_infos.data());
+		uint32_t buffer_indices[2] = { 0, 1 };
+		VkDeviceSize buffer_offsets[2] = { 0, 0 };
 		vk_inst.pFunc.cmd_set_descriptor_buffer_offsets_ext(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-			data.pipeline_layout, 0, 1, &buffer_indices, &buffer_offsets);
+			data.pipeline_layout, 0, 2, &buffer_indices[0], &buffer_offsets[0]);
 
 		// Instance buffer
 		const Vulkan::Buffer& instance_buffer = data.instance_buffers[data.current_frame];
@@ -701,8 +760,13 @@ namespace Renderer
 				mesh = data.mesh_slotmap.Find(entry.mesh_handle);
 			}
 			VK_ASSERT(mesh && "Tried to render a mesh with an invalid mesh handle");
+			
+			// Check material handles for validity
+			VK_ASSERT(VK_RESOURCE_HANDLE_VALID(entry.material_handle));
+			MaterialResource* material = data.material_slotmap.Find(entry.material_handle);
+			VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->base_color_tex_handle));
 
-			vkCmdPushConstants(command_buffer, data.pipeline_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 16, sizeof(MaterialHandle_t), &entry.material_handle);
+			vkCmdPushConstants(command_buffer, data.pipeline_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 16, sizeof(uint32_t), &entry.material_handle.index);
 
 			// Vertex and index buffers
 			VkBuffer vertex_buffers[] = { mesh->vertex_buffer.buffer, instance_buffer.buffer };
@@ -849,8 +913,8 @@ namespace Renderer
 		Vulkan::Init(window);
 
 		CreateRenderPass();
-		CreateDescriptorSetLayout();
-		CreateDescriptorBuffer();
+		CreateDescriptorSetLayouts();
+		CreateDescriptorBuffers();
 		CreateGraphicsPipeline();
 
 		CreateFramebuffers();
@@ -887,8 +951,10 @@ namespace Renderer
 			Vulkan::DestroyBuffer(data.instance_buffers[i]);
 		}
 		Vulkan::DestroyBuffer(data.material_buffer);
-		Vulkan::DestroyBuffer(data.descriptor_buffer);
-		vkDestroyDescriptorSetLayout(vk_inst.device, data.descriptor_set_layout, nullptr);
+		Vulkan::DestroyBuffer(data.reserved_descriptor_buffer);
+		Vulkan::DestroyBuffer(data.bindless_descriptor_buffer);
+		vkDestroyDescriptorSetLayout(vk_inst.device, data.reserved_descriptor_set_layout, nullptr);
+		vkDestroyDescriptorSetLayout(vk_inst.device, data.bindless_descriptor_set_layout, nullptr);
 		vkDestroyPipelineLayout(vk_inst.device, data.pipeline_layout, nullptr);
 
 		// Clean up the renderer data
@@ -1053,12 +1119,12 @@ namespace Renderer
 		descriptor_info.data.pCombinedImageSampler = &image_info;
 
 		VkDeviceSize binding_offset;
-		vk_inst.pFunc.get_descriptor_set_layout_binding_offset_ext(vk_inst.device, data.descriptor_set_layout, Bindings_CombinedImageSampler, &binding_offset);
+		vk_inst.pFunc.get_descriptor_set_layout_binding_offset_ext(vk_inst.device, data.bindless_descriptor_set_layout, Bindings_CombinedImageSampler, &binding_offset);
 		
-		uint8_t* descriptor_ptr = (uint8_t*)data.descriptor_buffer.ptr + binding_offset +
-			vk_inst.descriptor_sizes.combined_image_sampler * data.descriptor_combined_image_samplers_current;
+		uint8_t* descriptor_ptr = (uint8_t*)data.bindless_descriptor_buffer.ptr + binding_offset +
+			vk_inst.descriptor_sizes.combined_image_sampler * data.bindless_descriptors_combined_image_samplers_current;
 		vk_inst.pFunc.get_descriptor_ext(vk_inst.device, &descriptor_info, vk_inst.descriptor_sizes.combined_image_sampler, descriptor_ptr);
-		data.descriptor_combined_image_samplers_current++;
+		data.bindless_descriptors_combined_image_samplers_current++;
 
 		return reserved.handle;
 	}
@@ -1109,17 +1175,19 @@ namespace Renderer
 	MaterialHandle_t CreateMaterial(const CreateMaterialArgs& args)
 	{
 		ResourceSlotmap<MaterialResource>::ReservedResource reserved = data.material_slotmap.Reserve();
-		reserved.resource->base_color_factor = args.base_color_factor;
+		reserved.resource->data.base_color_factor = args.base_color_factor;
 		if (VK_RESOURCE_HANDLE_VALID(args.base_color_handle))
 		{
 			reserved.resource->base_color_tex_handle = args.base_color_handle;
+			reserved.resource->data.base_color_tex_index = args.base_color_handle.index;
 		}
 		else
 		{
 			reserved.resource->base_color_tex_handle = data.default_white_texture_handle;
+			reserved.resource->data.base_color_tex_index = data.default_white_texture_handle.index;
 		}
 
-		VkDeviceSize material_size = sizeof(MaterialResource);
+		VkDeviceSize material_size = sizeof(MaterialResource::MaterialData);
 
 		// TODO: Suballocate from big upload buffer, having a staging buffer for every little upload is unnecessary
 		// Create staging buffer
@@ -1127,7 +1195,7 @@ namespace Renderer
 		Vulkan::CreateStagingBuffer(material_size, staging_buffer);
 
 		// Write data into staging buffer
-		Vulkan::WriteBuffer(staging_buffer.ptr, (void*)reserved.resource, material_size);
+		Vulkan::WriteBuffer(staging_buffer.ptr, (void*)&reserved.resource->data, material_size);
 
 		// Copy staging buffer material resource into device local material buffer
 		Vulkan::CopyBuffer(staging_buffer, data.material_buffer, material_size, 0, reserved.handle.index * material_size);
