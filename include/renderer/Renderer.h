@@ -3,7 +3,7 @@
 
 #include <vector>
 
-typedef struct GLFWwindow;
+struct GLFWwindow;
 
 namespace Renderer
 {

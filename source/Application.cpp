@@ -120,7 +120,7 @@ namespace Application
 			double mouse_x, mouse_y;
 			Input::GetMousePositionRel(mouse_x, mouse_y);
 
-			float yaw_sign = camera_transform[1][1] < 0.0 ? -1.0 : 1.0;
+			float yaw_sign = camera_transform[1][1] < 0.0f ? -1.0f : 1.0f;
 			rotation.y -= delta_time * yaw_sign * mouse_x;
 			rotation.x -= delta_time * mouse_y;
 			rotation.x = std::min(rotation.x, glm::radians(90.0f));

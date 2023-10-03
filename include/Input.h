@@ -1,6 +1,6 @@
 #pragma once
 
-typedef struct GLFWwindow;
+struct GLFWwindow;
 
 namespace Input
 {
