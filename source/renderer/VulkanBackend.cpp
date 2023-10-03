@@ -704,7 +704,7 @@ namespace Vulkan
 	}
 
 	void CreateImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,
-		VkImageUsageFlags usage, VkMemoryPropertyFlags memory_flags, Image& image)
+		VkImageUsageFlags usage, VkMemoryPropertyFlags memory_flags, Image& image, uint32_t num_mips)
 	{
 		VkImageCreateInfo image_info = {};
 		image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -712,7 +712,7 @@ namespace Vulkan
 		image_info.extent.width = width;
 		image_info.extent.height = height;
 		image_info.extent.depth = 1;
-		image_info.mipLevels = 1;
+		image_info.mipLevels = num_mips;
 		image_info.arrayLayers = 1;
 		image_info.format = format;
 		image_info.tiling = tiling;
@@ -737,7 +737,7 @@ namespace Vulkan
 		VkCheckResult(vkBindImageMemory(vk_inst.device, image.image, image.memory, 0));
 	}
 
-	void CreateImageView(VkImageAspectFlags aspect_flags, Image& image)
+	void CreateImageView(VkImageAspectFlags aspect_flags, Image& image, uint32_t num_mips)
 	{
 		VkImageViewCreateInfo view_info = {};
 		view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -746,11 +746,104 @@ namespace Vulkan
 		view_info.format = image.format;
 		view_info.subresourceRange.aspectMask = aspect_flags;
 		view_info.subresourceRange.baseMipLevel = 0;
-		view_info.subresourceRange.levelCount = 1;
+		view_info.subresourceRange.levelCount = num_mips;
 		view_info.subresourceRange.baseArrayLayer = 0;
 		view_info.subresourceRange.layerCount = 1;
 
 		VkCheckResult(vkCreateImageView(vk_inst.device, &view_info, nullptr, &image.view));
+	}
+
+	void GenerateMips(uint32_t width, uint32_t height, uint32_t num_mips, VkFormat format, Image& image)
+	{
+		VkFormatProperties format_properties;
+		vkGetPhysicalDeviceFormatProperties(vk_inst.physical_device, format, &format_properties);
+
+		if (!(format_properties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT))
+		{
+			VK_EXCEPT("Vulkan", "Texture image format does not support linear filter in blitting operation");
+		}
+
+		VkCommandBuffer command_buffer = BeginSingleTimeCommands();
+
+		VkImageMemoryBarrier barrier = {};
+		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		barrier.image = image.image;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		barrier.subresourceRange.baseArrayLayer = 0;
+		barrier.subresourceRange.layerCount = 1;
+		barrier.subresourceRange.levelCount = 1;
+
+		int32_t mip_width = width;
+		int32_t mip_height = height;
+
+		for (uint32_t i = 1; i < num_mips; ++i)
+		{
+			barrier.subresourceRange.baseMipLevel = i - 1;
+			barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+			barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+			barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+			barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+
+			vkCmdPipelineBarrier(command_buffer,
+				VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+				0, nullptr,
+				0, nullptr,
+				1, &barrier
+			);
+
+			VkImageBlit blit = {};
+			blit.srcOffsets[0] = { 0, 0, 0 };
+			blit.srcOffsets[1] = { mip_width, mip_height, 1 };
+			blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			blit.srcSubresource.mipLevel = i - 1;
+			blit.srcSubresource.baseArrayLayer = 0;
+			blit.srcSubresource.layerCount = 1;
+			blit.dstOffsets[0] = { 0, 0, 0 };
+			blit.dstOffsets[1] = { mip_width > 1 ? mip_width / 2 : 1, mip_height > 1 ? mip_height / 2 : 1, 1 };
+			blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			blit.dstSubresource.mipLevel = i;
+			blit.dstSubresource.baseArrayLayer = 0;
+			blit.dstSubresource.layerCount = 1;
+
+			vkCmdBlitImage(command_buffer,
+				image.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+				image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				1, &blit,
+				VK_FILTER_LINEAR
+			);
+
+			barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+			barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+			barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+			vkCmdPipelineBarrier(command_buffer,
+				VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
+				0, nullptr,
+				0, nullptr,
+				1, &barrier
+			);
+
+			if (mip_width > 1) mip_width /= 2;
+			if (mip_height > 1) mip_height /= 2;
+		}
+
+		barrier.subresourceRange.baseMipLevel = num_mips - 1;
+		barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+		vkCmdPipelineBarrier(command_buffer,
+			VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
+			0, nullptr,
+			0, nullptr,
+			1, &barrier
+		);
+
+		EndSingleTimeCommands(command_buffer);
 	}
 
 	void DestroyImage(const Image& image)
@@ -841,7 +934,7 @@ namespace Vulkan
 		vkFreeCommandBuffers(vk_inst.device, vk_inst.cmd_pools.graphics, 1, &command_buffer);
 	}
 
-	void TransitionImageLayout(const Image& image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout)
+	void TransitionImageLayout(const Image& image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout, uint32_t num_mips)
 	{
 		VkCommandBuffer command_buffer = BeginSingleTimeCommands();
 
@@ -867,7 +960,7 @@ namespace Vulkan
 			barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		}
 		barrier.subresourceRange.baseMipLevel = 0;
-		barrier.subresourceRange.levelCount = 1;
+		barrier.subresourceRange.levelCount = num_mips;
 		barrier.subresourceRange.baseArrayLayer = 0;
 		barrier.subresourceRange.layerCount = 1;
 

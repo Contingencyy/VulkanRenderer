@@ -1075,19 +1075,22 @@ namespace Renderer
 
 		// Create texture image
 		ResourceSlotmap<TextureResource>::ReservedResource reserved = data.texture_slotmap.Reserve();
-		Vulkan::CreateImage(args.width, args.height, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-			VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, reserved.resource->image);
+		uint32_t num_mips = (uint32_t)std::floor(std::log2(std::max(args.width, args.height))) + 1;
+		Vulkan::CreateImage(args.width, args.height, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+			VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, reserved.resource->image, num_mips);
 
 		// Copy staging buffer data into final texture image memory (device local)
-		Vulkan::TransitionImageLayout(reserved.resource->image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+		Vulkan::TransitionImageLayout(reserved.resource->image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, num_mips);
 		Vulkan::CopyBufferToImage(staging_buffer, reserved.resource->image, args.width, args.height);
-		Vulkan::TransitionImageLayout(reserved.resource->image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+		// Generate mips using blit
+		Vulkan::GenerateMips(args.width, args.height, num_mips, VK_FORMAT_R8G8B8A8_SRGB, reserved.resource->image);
 
 		// Clean up staging buffer
 		Vulkan::DestroyBuffer(staging_buffer);
 
 		// Create image view
-		Vulkan::CreateImageView(VK_IMAGE_ASPECT_COLOR_BIT, reserved.resource->image);
+		Vulkan::CreateImageView(VK_IMAGE_ASPECT_COLOR_BIT, reserved.resource->image, num_mips);
 
 		// Create image sampler
 		VkSamplerCreateInfo sampler_info = {};
@@ -1108,7 +1111,7 @@ namespace Renderer
 		sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
 		sampler_info.mipLodBias = 0.0f;
 		sampler_info.minLod = 0.0f;
-		sampler_info.maxLod = 0.0f;
+		sampler_info.maxLod = (float)num_mips;
 
 		VkCheckResult(vkCreateSampler(vk_inst.device, &sampler_info, nullptr, &reserved.resource->image.sampler));
 

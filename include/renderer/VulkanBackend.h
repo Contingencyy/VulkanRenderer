@@ -47,8 +47,9 @@ namespace Vulkan
 	void CopyBuffer(const Buffer& src_buffer, const Buffer& dst_buffer, VkDeviceSize size, VkDeviceSize src_offset = 0, VkDeviceSize dst_offset = 0);
 
 	void CreateImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
-		VkMemoryPropertyFlags memory_flags, Image& image);
-	void CreateImageView(VkImageAspectFlags aspect_flags, Image& image);
+		VkMemoryPropertyFlags memory_flags, Image& image, uint32_t num_mips = 1);
+	void CreateImageView(VkImageAspectFlags aspect_flags, Image& image, uint32_t num_mips = 1);
+	void GenerateMips(uint32_t width, uint32_t height, uint32_t num_mips, VkFormat format, Image& image);
 
 	void DestroyImage(const Image& image);
 
@@ -59,7 +60,7 @@ namespace Vulkan
 
 	VkCommandBuffer BeginSingleTimeCommands();
 	void EndSingleTimeCommands(VkCommandBuffer command_buffer);
-	void TransitionImageLayout(const Image& image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout);
+	void TransitionImageLayout(const Image& image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout, uint32_t num_mips = 1);
 
 }
 
