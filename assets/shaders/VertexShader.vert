@@ -4,7 +4,7 @@
 
 #include "Shared.glsl.h"
 
-layout(set = 1, binding = 0) uniform Camera
+layout(set = 0, binding = 0) uniform Camera
 {
 	CameraData cam;
 } g_camera[];

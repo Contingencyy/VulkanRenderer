@@ -1,4 +1,6 @@
 #pragma once
+#include "renderer/DescriptorAllocation.h"
+
 #include "vulkan/vulkan.h"
 #include "vulkan/vk_enum_string_helper.h"
 
@@ -17,6 +19,7 @@ namespace Vulkan
 		VkDeviceMemory memory = VK_NULL_HANDLE;
 		void* ptr = nullptr;
 
+		DescriptorAllocation descriptors;
 		uint32_t num_elements = 0;
 	};
 
@@ -27,6 +30,8 @@ namespace Vulkan
 		VkDeviceMemory memory = VK_NULL_HANDLE;;
 		VkSampler sampler = VK_NULL_HANDLE;
 		VkFormat format = VK_FORMAT_UNDEFINED;
+
+		DescriptorAllocation descriptors;
 	};
 
 	void Init(::GLFWwindow* window);
@@ -73,7 +78,7 @@ struct VulkanInstance
 #ifdef _DEBUG
 	static constexpr bool ENABLE_VALIDATION_LAYERS = true;
 #else
-	static constexpr bool ENABLE_VALIDATION_LAYERS = true;
+	static constexpr bool ENABLE_VALIDATION_LAYERS = false;
 #endif
 
 	::GLFWwindow* window;

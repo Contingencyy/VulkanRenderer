@@ -26,7 +26,6 @@
 namespace Renderer
 {
 
-	static constexpr uint32_t BINDLESS_DEFAULT_DESCRIPTOR_COUNT_PER_TYPE = 1000;
 	static constexpr uint32_t MAX_DRAW_LIST_ENTRIES = 10000;
 
 	struct TextureResource
@@ -84,10 +83,23 @@ namespace Renderer
 		}
 	};
 
+	enum ReservedDescriptorUniform
+	{
+		ReservedDescriptorUniform_Camera,
+		ReservedDescriptorUniform_NumReserved
+	};
+
 	enum ReservedDescriptorStorage
 	{
 		ReservedDescriptorStorage_Material,
-		ReservedDescriptorStorage_NumDescriptors
+		ReservedDescriptorStorage_NumReserved
+	};
+
+	enum ReservedDescriptorImage
+	{
+		ReservedDescriptorImage_DefaultWhite,
+		ReservedDescriptorImage_DefaultNormal,
+		ReservedDescriptorImage_NumReserved
 	};
 
 	struct GraphicsPass
@@ -122,40 +134,40 @@ namespace Renderer
 
 	struct Data
 	{
-		~Data() {}
-
 		::GLFWwindow* window = nullptr;
 
+		// Resource slotmaps
 		ResourceSlotmap<TextureResource> texture_slotmap;
 		ResourceSlotmap<MeshResource> mesh_slotmap;
 		ResourceSlotmap<MaterialResource> material_slotmap;
 
-		GraphicsPass lighting_pass;
-
-		VkDescriptorSetLayout reserved_descriptor_set_layout = VK_NULL_HANDLE;
-		VkDescriptorSetLayout bindless_descriptor_set_layout = VK_NULL_HANDLE;
-		DescriptorBuffer* reserved_descriptor_buffer = nullptr;
-		DescriptorBuffer* bindless_descriptor_buffer = nullptr;
-
+		// Command buffers and synchronization primitives
 		std::vector<VkCommandBuffer> command_buffers;
 		std::vector<VkSemaphore> image_available_semaphores;
 		std::vector<VkSemaphore> render_finished_semaphores;
 		std::vector<VkFence> in_flight_fences;
 
+		// Descriptor buffers
+		DescriptorBuffer descriptor_buffer_uniform{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, (uint32_t)vk_inst.descriptor_sizes.uniform_buffer };
+		DescriptorBuffer descriptor_buffer_storage{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, (uint32_t)vk_inst.descriptor_sizes.storage_buffer };
+		DescriptorBuffer descriptor_buffer_images{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, (uint32_t)vk_inst.descriptor_sizes.combined_image_sampler };
+
+		// Render passes
+		GraphicsPass lighting_pass;
+
+		// Draw submission list
 		DrawList draw_list;
 
+		// Uniform buffers
 		std::vector<Vulkan::Buffer> camera_uniform_buffers;
-		DescriptorAllocation camera_ubo_descriptors;
-
 		std::vector<Vulkan::Buffer> instance_buffers;
 
+		// Storage buffers
 		Vulkan::Buffer material_buffer;
-		DescriptorAllocation material_buffer_descriptor;
 
+		// Default resources
 		TextureHandle_t default_white_texture_handle;
-		TextureResource* default_white_texture_resource;
 		TextureHandle_t default_normal_texture_handle;
-		TextureResource* default_normal_texture_resource;
 
 		uint32_t current_frame = 0;
 
@@ -164,7 +176,7 @@ namespace Renderer
 			VkDescriptorPool descriptor_pool;
 			VkRenderPass render_pass;
 		} imgui;
-	} static data;
+	} static *data;
 
 	static std::vector<char> ReadFile(const char* filepath)
 	{
@@ -234,120 +246,24 @@ namespace Renderer
 		return attribute_desc;
 	}
 
-	static void CreateDescriptorSetLayouts()
-	{
-		// Fixed descriptor set layout for reserved rendering resources that are always present
-		// e.g. the global material buffer
-		{
-			VkDescriptorSetLayoutBinding bindings = {};
-			bindings.binding = 0;
-			bindings.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-			bindings.descriptorCount = ReservedDescriptorStorage_NumDescriptors;
-			bindings.stageFlags = VK_SHADER_STAGE_ALL;
-
-			VkDescriptorBindingFlags binding_flags = {};
-
-			VkDescriptorSetLayoutBindingFlagsCreateInfo binding_info = {};
-			binding_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
-			binding_info.pBindingFlags = &binding_flags;
-			binding_info.bindingCount = 1;
-
-			VkDescriptorSetLayoutCreateInfo layout_info = {};
-			layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-			layout_info.bindingCount = 1;
-			layout_info.pBindings = &bindings;
-			layout_info.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
-			layout_info.pNext = &binding_info;
-
-			VkCheckResult(vkCreateDescriptorSetLayout(vk_inst.device, &layout_info, nullptr, &data.reserved_descriptor_set_layout));
-		}
-
-		// Bindless descriptor set layout
-		{
-			std::array<VkDescriptorSetLayoutBinding, 3> bindings = {};
-			std::array<VkDescriptorBindingFlags, 3> binding_flags = {};
-			std::array<VkDescriptorType, 3> descriptor_types =
-			{
-				VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-				VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-				VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
-			};
-
-			for (size_t i = 0; i < 3; ++i)
-			{
-				bindings[i].binding = i;
-				bindings[i].descriptorType = descriptor_types[i];
-				bindings[i].descriptorCount = BINDLESS_DEFAULT_DESCRIPTOR_COUNT_PER_TYPE;
-				bindings[i].stageFlags = VK_SHADER_STAGE_ALL;
-				binding_flags[i] = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
-			}
-
-			VkDescriptorSetLayoutBindingFlagsCreateInfo binding_info = {};
-			binding_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
-			binding_info.pBindingFlags = binding_flags.data();
-			binding_info.bindingCount = 3;
-
-			VkDescriptorSetLayoutCreateInfo layout_info = {};
-			layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-			layout_info.bindingCount = 3;
-			layout_info.pBindings = bindings.data();
-			layout_info.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
-			layout_info.pNext = &binding_info;
-
-			VkCheckResult(vkCreateDescriptorSetLayout(vk_inst.device, &layout_info, nullptr, &data.bindless_descriptor_set_layout));
-		}
-	}
-
-	static void CreateDescriptorBuffers()
-	{
-		// Reserved descriptor buffer
-		{
-			VkDeviceSize storage_binding_offset;
-			vk_inst.pFunc.get_descriptor_set_layout_binding_offset_ext(vk_inst.device, data.reserved_descriptor_set_layout, 0, &storage_binding_offset);
-
-			std::unordered_map<DescriptorType, DescriptorRange> descriptor_ranges;
-			descriptor_ranges.emplace(DescriptorType_Storage, DescriptorRange(ReservedDescriptorStorage_NumDescriptors,
-				(uint32_t)vk_inst.descriptor_sizes.storage_buffer, (uint32_t)storage_binding_offset, 0));
-			data.reserved_descriptor_buffer = new DescriptorBuffer(data.reserved_descriptor_set_layout, descriptor_ranges);
-		}
-
-		// Bindless descriptor buffer
-		{
-			VkDeviceSize uniform_binding_offset, storage_binding_offset, combined_image_sampler_binding_offset;
-			vk_inst.pFunc.get_descriptor_set_layout_binding_offset_ext(vk_inst.device, data.bindless_descriptor_set_layout, 0, &uniform_binding_offset);
-			vk_inst.pFunc.get_descriptor_set_layout_binding_offset_ext(vk_inst.device, data.bindless_descriptor_set_layout, 1, &storage_binding_offset);
-			vk_inst.pFunc.get_descriptor_set_layout_binding_offset_ext(vk_inst.device, data.bindless_descriptor_set_layout, 2, &combined_image_sampler_binding_offset);
-
-			std::unordered_map<DescriptorType, DescriptorRange> descriptor_ranges;
-			descriptor_ranges.emplace(DescriptorType_Uniform, DescriptorRange(BINDLESS_DEFAULT_DESCRIPTOR_COUNT_PER_TYPE,
-				(uint32_t)vk_inst.descriptor_sizes.uniform_buffer, (uint32_t)uniform_binding_offset, 0));
-			descriptor_ranges.emplace(DescriptorType_Storage, DescriptorRange(BINDLESS_DEFAULT_DESCRIPTOR_COUNT_PER_TYPE,
-				(uint32_t)vk_inst.descriptor_sizes.storage_buffer, (uint32_t)storage_binding_offset, 1));
-			descriptor_ranges.emplace(DescriptorType_CombinedImageSampler, DescriptorRange(BINDLESS_DEFAULT_DESCRIPTOR_COUNT_PER_TYPE,
-				(uint32_t)vk_inst.descriptor_sizes.combined_image_sampler, (uint32_t)combined_image_sampler_binding_offset, 2));
-
-			data.bindless_descriptor_buffer = new DescriptorBuffer(data.bindless_descriptor_set_layout, descriptor_ranges);
-		}
-	}
-
 	static void CreateCommandBuffers()
 	{
-		data.command_buffers.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
+		data->command_buffers.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
 
 		VkCommandBufferAllocateInfo alloc_info = {};
 		alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 		alloc_info.commandPool = vk_inst.cmd_pools.graphics;
 		alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-		alloc_info.commandBufferCount = (uint32_t)data.command_buffers.size();
+		alloc_info.commandBufferCount = (uint32_t)data->command_buffers.size();
 
-		VkCheckResult(vkAllocateCommandBuffers(vk_inst.device, &alloc_info, data.command_buffers.data()));
+		VkCheckResult(vkAllocateCommandBuffers(vk_inst.device, &alloc_info, data->command_buffers.data()));
 	}
 
 	static void CreateSyncObjects()
 	{
-		data.image_available_semaphores.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
-		data.render_finished_semaphores.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
-		data.in_flight_fences.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
+		data->image_available_semaphores.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
+		data->render_finished_semaphores.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
+		data->in_flight_fences.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
 
 		VkSemaphoreCreateInfo semaphore_info = {};
 		semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -358,9 +274,9 @@ namespace Renderer
 
 		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
-			VkCheckResult(vkCreateSemaphore(vk_inst.device, &semaphore_info, nullptr, &data.image_available_semaphores[i]));
-			VkCheckResult(vkCreateSemaphore(vk_inst.device, &semaphore_info, nullptr, &data.render_finished_semaphores[i]));
-			VkCheckResult(vkCreateFence(vk_inst.device, &fence_info, nullptr, &data.in_flight_fences[i]));
+			VkCheckResult(vkCreateSemaphore(vk_inst.device, &semaphore_info, nullptr, &data->image_available_semaphores[i]));
+			VkCheckResult(vkCreateSemaphore(vk_inst.device, &semaphore_info, nullptr, &data->render_finished_semaphores[i]));
+			VkCheckResult(vkCreateFence(vk_inst.device, &fence_info, nullptr, &data->in_flight_fences[i]));
 		}
 	}
 
@@ -374,57 +290,38 @@ namespace Renderer
 		texture_args.height = 1;
 		texture_args.pixels = white_pixel;
 
-		data.default_white_texture_handle = CreateTexture(texture_args);
-		data.default_white_texture_resource = data.texture_slotmap.Find(data.default_white_texture_handle);
+		data->default_white_texture_handle = CreateTexture(texture_args);
 
 		// Default normal texture
 		std::vector<uint8_t> normal_pixel = { 127, 127, 255, 255 };
 		texture_args.pixels = normal_pixel;
 
-		data.default_normal_texture_handle = CreateTexture(texture_args);
-		data.default_white_texture_resource = data.texture_slotmap.Find(data.default_normal_texture_handle);
+		data->default_normal_texture_handle = CreateTexture(texture_args);
 	}
 
 	static void CreateUniformBuffers()
 	{
-		data.camera_uniform_buffers.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
-		data.camera_ubo_descriptors = data.bindless_descriptor_buffer->Allocate(DescriptorType_Uniform, 3);
+		data->camera_uniform_buffers.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
 		VkDeviceSize buffer_size = sizeof(CameraData);
 
 		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
-			Vulkan::CreateUniformBuffer(buffer_size, data.camera_uniform_buffers[i]);
+			Vulkan::CreateUniformBuffer(buffer_size, data->camera_uniform_buffers[i]);
 
-			// Update descriptor
-			VkBufferDeviceAddressInfoEXT buffer_address_info = {};
-			buffer_address_info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
-			buffer_address_info.buffer = data.camera_uniform_buffers[i].buffer;
-
-			VkDescriptorAddressInfoEXT descriptor_address_info = {};
-			descriptor_address_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT;
-			descriptor_address_info.address = vkGetBufferDeviceAddress(vk_inst.device, &buffer_address_info);
-			descriptor_address_info.format = VK_FORMAT_UNDEFINED;
-			descriptor_address_info.range = sizeof(CameraData);
-
-			VkDescriptorGetInfoEXT descriptor_info = {};
-			descriptor_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
-			descriptor_info.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-			descriptor_info.data.pUniformBuffer = &descriptor_address_info;
-
-			vk_inst.pFunc.get_descriptor_ext(vk_inst.device, &descriptor_info,
-				vk_inst.descriptor_sizes.uniform_buffer, data.camera_ubo_descriptors.GetDescriptor(i));
+			// Allocate and update descriptor
+			data->camera_uniform_buffers[i].descriptors = data->descriptor_buffer_uniform.Allocate();
+			data->camera_uniform_buffers[i].descriptors.WriteDescriptor(data->camera_uniform_buffers[i], buffer_size);
 		}
 	}
 
 	static void CreateInstanceBuffers()
 	{
-		data.instance_buffers.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
+		data->instance_buffers.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
 		VkDeviceSize instance_buffer_size = MAX_DRAW_LIST_ENTRIES * sizeof(glm::mat4);
 
 		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
-			Vulkan::Buffer& instance_buffer = data.instance_buffers[i];
-
+			Vulkan::Buffer& instance_buffer = data->instance_buffers[i];
 			Vulkan::CreateBuffer(instance_buffer_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
 				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, instance_buffer);
 			VkCheckResult(vkMapMemory(vk_inst.device, instance_buffer.memory, 0, instance_buffer_size, 0, &instance_buffer.ptr));
@@ -435,27 +332,11 @@ namespace Renderer
 	{
 		VkDeviceSize material_buffer_size = MAX_UNIQUE_MATERIALS * sizeof(MaterialResource);
 		Vulkan::CreateBuffer(material_buffer_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, data.material_buffer);
-		data.material_buffer_descriptor = data.reserved_descriptor_buffer->Allocate(DescriptorType::DescriptorType_Storage, 1);
+			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, data->material_buffer);
 
-		// Update descriptor
-		VkBufferDeviceAddressInfoEXT buffer_address_info = {};
-		buffer_address_info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
-		buffer_address_info.buffer = data.material_buffer.buffer;
-
-		VkDescriptorAddressInfoEXT descriptor_address_info = {};
-		descriptor_address_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT;
-		descriptor_address_info.address = vkGetBufferDeviceAddress(vk_inst.device, &buffer_address_info);
-		descriptor_address_info.format = VK_FORMAT_UNDEFINED;
-		descriptor_address_info.range = MAX_UNIQUE_MATERIALS * sizeof(MaterialResource);
-
-		VkDescriptorGetInfoEXT descriptor_info = {};
-		descriptor_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
-		descriptor_info.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-		descriptor_info.data.pStorageBuffer = &descriptor_address_info;
-
-		vk_inst.pFunc.get_descriptor_ext(vk_inst.device, &descriptor_info,
-			vk_inst.descriptor_sizes.storage_buffer, data.material_buffer_descriptor.GetDescriptor());
+		// Allocate and update descriptor
+		data->material_buffer.descriptors = data->descriptor_buffer_storage.Allocate();
+		data->material_buffer.descriptors.WriteDescriptor(data->material_buffer, material_buffer_size);
 	}
 
 	static VkShaderModule CreateShaderModule(const std::vector<char>& code)
@@ -594,7 +475,9 @@ namespace Renderer
 		push_constants[1].size = sizeof(uint32_t);
 		push_constants[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-		std::array<VkDescriptorSetLayout, 2> descriptor_set_layouts = { data.reserved_descriptor_set_layout, data.bindless_descriptor_set_layout };
+		std::array<VkDescriptorSetLayout, 3> descriptor_set_layouts = { data->descriptor_buffer_uniform.GetDescriptorSetLayout(),
+			data->descriptor_buffer_storage.GetDescriptorSetLayout(), data->descriptor_buffer_images.GetDescriptorSetLayout() };
+
 		VkPipelineLayoutCreateInfo pipeline_layout_info = {};
 		pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipeline_layout_info.setLayoutCount = (uint32_t)descriptor_set_layouts.size();
@@ -637,18 +520,18 @@ namespace Renderer
 	static void CreateFramebuffers()
 	{
 		// Create lighting pass color attachment
-		data.lighting_pass.color_attachments.resize(1);
+		data->lighting_pass.color_attachments.resize(1);
 		// VK_FORMAT_R16G16B16A16_SFLOAT
 		Vulkan::CreateImage(
 			vk_inst.swapchain.extent.width, vk_inst.swapchain.extent.height,
 			vk_inst.swapchain.format, VK_IMAGE_TILING_OPTIMAL,
 			VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-			data.lighting_pass.color_attachments[0]
+			data->lighting_pass.color_attachments[0]
 		);
 		Vulkan::CreateImageView(
 			VK_IMAGE_ASPECT_COLOR_BIT,
-			data.lighting_pass.color_attachments[0]
+			data->lighting_pass.color_attachments[0]
 		);
 
 		// Create lighting pass depth attachment
@@ -658,33 +541,33 @@ namespace Renderer
 			VK_IMAGE_TILING_OPTIMAL,
 			VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-			data.lighting_pass.depth_stencil_attachment
+			data->lighting_pass.depth_stencil_attachment
 		);
 		Vulkan::CreateImageView(
 			VK_IMAGE_ASPECT_DEPTH_BIT,
-			data.lighting_pass.depth_stencil_attachment
+			data->lighting_pass.depth_stencil_attachment
 		);
 
 		// Create lighting pass framebuffer
-		Vulkan::CreateFramebuffer(data.lighting_pass.GetAttachmentViews(), data.lighting_pass.render_pass,
-			vk_inst.swapchain.extent.width, vk_inst.swapchain.extent.height, data.lighting_pass.framebuffer);
+		Vulkan::CreateFramebuffer(data->lighting_pass.GetAttachmentViews(), data->lighting_pass.render_pass,
+			vk_inst.swapchain.extent.width, vk_inst.swapchain.extent.height, data->lighting_pass.framebuffer);
 	}
 
 	static void DestroyFramebuffers()
 	{
-		for (auto& color_attachment : data.lighting_pass.color_attachments)
+		for (auto& color_attachment : data->lighting_pass.color_attachments)
 		{
 			vkDestroyImageView(vk_inst.device, color_attachment.view, nullptr);
 			vkDestroyImage(vk_inst.device, color_attachment.image, nullptr);
 			vkFreeMemory(vk_inst.device, color_attachment.memory, nullptr);
 		}
-		if (data.lighting_pass.depth_enabled)
+		if (data->lighting_pass.depth_enabled)
 		{
-			vkDestroyImageView(vk_inst.device, data.lighting_pass.depth_stencil_attachment.view, nullptr);
-			vkDestroyImage(vk_inst.device, data.lighting_pass.depth_stencil_attachment.image, nullptr);
-			vkFreeMemory(vk_inst.device, data.lighting_pass.depth_stencil_attachment.memory, nullptr);
+			vkDestroyImageView(vk_inst.device, data->lighting_pass.depth_stencil_attachment.view, nullptr);
+			vkDestroyImage(vk_inst.device, data->lighting_pass.depth_stencil_attachment.image, nullptr);
+			vkFreeMemory(vk_inst.device, data->lighting_pass.depth_stencil_attachment.memory, nullptr);
 		}
-		vkDestroyFramebuffer(vk_inst.device, data.lighting_pass.framebuffer, nullptr);
+		vkDestroyFramebuffer(vk_inst.device, data->lighting_pass.framebuffer, nullptr);
 	}
 
 	static void CreateRenderPasses()
@@ -743,10 +626,10 @@ namespace Renderer
 			render_pass_info.dependencyCount = 1;
 			render_pass_info.pDependencies = &dependency;
 
-			VkCheckResult(vkCreateRenderPass(vk_inst.device, &render_pass_info, nullptr, &data.lighting_pass.render_pass));
-			data.lighting_pass.depth_enabled = true;
+			VkCheckResult(vkCreateRenderPass(vk_inst.device, &render_pass_info, nullptr, &data->lighting_pass.render_pass));
+			data->lighting_pass.depth_enabled = true;
 
-			CreateGraphicsPipeline("assets/shaders/bin/VertexShader.spv", "assets/shaders/bin/FragmentShader.spv", data.lighting_pass);
+			CreateGraphicsPipeline("assets/shaders/bin/VertexShader.spv", "assets/shaders/bin/FragmentShader.spv", data->lighting_pass);
 		}
 	}
 
@@ -762,8 +645,8 @@ namespace Renderer
 
 		VkRenderPassBeginInfo render_pass_info = {};
 		render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-		render_pass_info.renderPass = data.lighting_pass.render_pass;
-		render_pass_info.framebuffer = data.lighting_pass.framebuffer;
+		render_pass_info.renderPass = data->lighting_pass.render_pass;
+		render_pass_info.framebuffer = data->lighting_pass.framebuffer;
 		// NOTE: Define the render area, which defines where shader loads and stores will take place
 		// Pixels outside this region will have undefined values
 		render_pass_info.renderArea.offset = { 0, 0 };
@@ -777,7 +660,7 @@ namespace Renderer
 		render_pass_info.pClearValues = clear_values.data();
 
 		vkCmdBeginRenderPass(command_buffer, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
-		vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, data.lighting_pass.pipeline);
+		vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, data->lighting_pass.pipeline);
 
 		// Viewport and scissor
 		VkViewport viewport = {};
@@ -795,54 +678,44 @@ namespace Renderer
 		vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
 		// Push constants
-		uint32_t camera_ubo_index = data.current_frame;
-		vkCmdPushConstants(command_buffer, data.lighting_pass.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(uint32_t), &camera_ubo_index);
+		uint32_t camera_ubo_index = data->current_frame;
+		vkCmdPushConstants(command_buffer, data->lighting_pass.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(uint32_t), &camera_ubo_index);
 
 		// Bind descriptor buffers
-		std::array<VkBufferDeviceAddressInfo, 2> buffer_address_infos =
-		{
-			data.reserved_descriptor_buffer->GetDeviceAddressInfo(),
-			data.bindless_descriptor_buffer->GetDeviceAddressInfo()
-		};
-
-		std::array<VkDescriptorBufferBindingInfoEXT, 2> descriptor_buffer_binding_infos = {};
-		descriptor_buffer_binding_infos[0].sType = VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT;
-		descriptor_buffer_binding_infos[0].usage = VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT;
-		descriptor_buffer_binding_infos[0].address = vkGetBufferDeviceAddress(vk_inst.device, &buffer_address_infos[0]);
-
-		descriptor_buffer_binding_infos[1].sType = VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT;
-		descriptor_buffer_binding_infos[1].usage = VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT;
-		descriptor_buffer_binding_infos[1].address = vkGetBufferDeviceAddress(vk_inst.device, &buffer_address_infos[1]);
-
+		std::array<VkDescriptorBufferBindingInfoEXT, 3> descriptor_buffer_binding_infos = {};
+		descriptor_buffer_binding_infos[0] = data->descriptor_buffer_uniform.GetBindingInfo();
+		descriptor_buffer_binding_infos[1] = data->descriptor_buffer_storage.GetBindingInfo();
+		descriptor_buffer_binding_infos[2] = data->descriptor_buffer_images.GetBindingInfo();
 		vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)descriptor_buffer_binding_infos.size(), descriptor_buffer_binding_infos.data());
-		uint32_t buffer_indices[2] = { 0, 1 };
-		VkDeviceSize buffer_offsets[2] = { 0, 0 };
+
+		uint32_t buffer_indices[3] = { 0, 1, 2 };
+		VkDeviceSize buffer_offsets[3] = { 0, 0, 0 };
 		vk_inst.pFunc.cmd_set_descriptor_buffer_offsets_ext(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-			data.lighting_pass.pipeline_layout, 0, 2, &buffer_indices[0], &buffer_offsets[0]);
+			data->lighting_pass.pipeline_layout, 0, 3, &buffer_indices[0], &buffer_offsets[0]);
 
 		// Instance buffer
-		const Vulkan::Buffer& instance_buffer = data.instance_buffers[data.current_frame];
+		const Vulkan::Buffer& instance_buffer = data->instance_buffers[data->current_frame];
 
-		for (size_t i = 0; i < data.draw_list.current_entry; ++i)
+		for (size_t i = 0; i < data->draw_list.current_entry; ++i)
 		{
-			const DrawList::Entry& entry = data.draw_list.entries[i];
+			const DrawList::Entry& entry = data->draw_list.entries[i];
 
 			// TODO: Default mesh
 			MeshResource* mesh = nullptr;
 			if (VK_RESOURCE_HANDLE_VALID(entry.mesh_handle))
 			{
-				mesh = data.mesh_slotmap.Find(entry.mesh_handle);
+				mesh = data->mesh_slotmap.Find(entry.mesh_handle);
 			}
 			VK_ASSERT(mesh && "Tried to render a mesh with an invalid mesh handle");
 			
 			// Check material handles for validity
 			VK_ASSERT(VK_RESOURCE_HANDLE_VALID(entry.material_handle));
-			MaterialResource* material = data.material_slotmap.Find(entry.material_handle);
+			MaterialResource* material = data->material_slotmap.Find(entry.material_handle);
 			VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->base_color_texture_handle));
 			VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->normal_texture_handle));
 			VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->metallic_roughness_texture_handle));
 
-			vkCmdPushConstants(command_buffer, data.lighting_pass.pipeline_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 16, sizeof(uint32_t), &entry.material_handle.index);
+			vkCmdPushConstants(command_buffer, data->lighting_pass.pipeline_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 16, sizeof(uint32_t), &entry.material_handle.index);
 
 			// Vertex and index buffers
 			VkBuffer vertex_buffers[] = { mesh->vertex_buffer.buffer, instance_buffer.buffer };
@@ -859,8 +732,8 @@ namespace Renderer
 		// Render ImGui
 		VkRenderPassBeginInfo imgui_pass_info = {};
 		imgui_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-		imgui_pass_info.renderPass = data.imgui.render_pass;
-		imgui_pass_info.framebuffer = data.lighting_pass.framebuffer;
+		imgui_pass_info.renderPass = data->imgui.render_pass;
+		imgui_pass_info.framebuffer = data->lighting_pass.framebuffer;
 		imgui_pass_info.renderArea.offset = { 0, 0 };
 		imgui_pass_info.renderArea.extent = vk_inst.swapchain.extent;
 
@@ -891,7 +764,7 @@ namespace Renderer
 
 		Vulkan::TransitionImageLayout(command_buffer, swapchain_image, VK_FORMAT_B8G8R8A8_UNORM,
 			VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-		vkCmdCopyImage(command_buffer, data.lighting_pass.color_attachments[0].image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		vkCmdCopyImage(command_buffer, data->lighting_pass.color_attachments[0].image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 			swapchain_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy_region);
 		Vulkan::TransitionImageLayout(command_buffer, swapchain_image, VK_FORMAT_B8G8R8A8_UNORM,
 			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
@@ -916,7 +789,7 @@ namespace Renderer
 		pool_info.maxSets = 1;
 		pool_info.poolSizeCount = 1;
 		pool_info.pPoolSizes = &pool_size;
-		VkCheckResult(vkCreateDescriptorPool(vk_inst.device, &pool_info, nullptr, &data.imgui.descriptor_pool));
+		VkCheckResult(vkCreateDescriptorPool(vk_inst.device, &pool_info, nullptr, &data->imgui.descriptor_pool));
 
 		// Create imgui render pass
 		VkAttachmentDescription color_attachment = {};
@@ -971,7 +844,7 @@ namespace Renderer
 		render_pass_info.dependencyCount = 1;
 		render_pass_info.pDependencies = &dependency;
 
-		VkCheckResult(vkCreateRenderPass(vk_inst.device, &render_pass_info, nullptr, &data.imgui.render_pass));
+		VkCheckResult(vkCreateRenderPass(vk_inst.device, &render_pass_info, nullptr, &data->imgui.render_pass));
 
 		// Init imgui
 		ImGui_ImplGlfw_InitForVulkan(vk_inst.window, true);
@@ -982,14 +855,14 @@ namespace Renderer
 		init_info.QueueFamily = vk_inst.queue_indices.graphics;
 		init_info.Queue = vk_inst.queues.graphics;
 		init_info.PipelineCache = VK_NULL_HANDLE;
-		init_info.DescriptorPool = data.imgui.descriptor_pool;
+		init_info.DescriptorPool = data->imgui.descriptor_pool;
 		init_info.Subpass = 0;
 		init_info.MinImageCount = VulkanInstance::MAX_FRAMES_IN_FLIGHT;
 		init_info.ImageCount = VulkanInstance::MAX_FRAMES_IN_FLIGHT;
 		init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
 		init_info.Allocator = nullptr;
 		init_info.CheckVkResultFn = VkCheckResult;
-		ImGui_ImplVulkan_Init(&init_info, data.imgui.render_pass);
+		ImGui_ImplVulkan_Init(&init_info, data->imgui.render_pass);
 
 		// Upload imgui font
 		VkCommandBuffer command_buffer = Vulkan::BeginSingleTimeCommands();
@@ -1004,17 +877,16 @@ namespace Renderer
 		ImGui_ImplGlfw_Shutdown();
 		ImGui::DestroyContext();
 
-		vkDestroyRenderPass(vk_inst.device, data.imgui.render_pass, nullptr);
-		vkDestroyDescriptorPool(vk_inst.device, data.imgui.descriptor_pool, nullptr);
+		vkDestroyRenderPass(vk_inst.device, data->imgui.render_pass, nullptr);
+		vkDestroyDescriptorPool(vk_inst.device, data->imgui.descriptor_pool, nullptr);
 	}
 
 	void Init(::GLFWwindow* window)
 	{
-		data.window = window;
 		Vulkan::Init(window);
 
-		CreateDescriptorSetLayouts();
-		CreateDescriptorBuffers();
+		data = new Data();
+		data->window = window;
 
 		CreateRenderPasses();
 		CreateFramebuffers();
@@ -1039,31 +911,25 @@ namespace Renderer
 		// Clean up vulkan stuff
 		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
-			vkDestroyFence(vk_inst.device, data.in_flight_fences[i], nullptr);
-			vkDestroySemaphore(vk_inst.device, data.render_finished_semaphores[i], nullptr);
-			vkDestroySemaphore(vk_inst.device, data.image_available_semaphores[i], nullptr);
+			vkDestroyFence(vk_inst.device, data->in_flight_fences[i], nullptr);
+			vkDestroySemaphore(vk_inst.device, data->render_finished_semaphores[i], nullptr);
+			vkDestroySemaphore(vk_inst.device, data->image_available_semaphores[i], nullptr);
 		}
 
 		DestroyFramebuffers();
-		vkDestroyRenderPass(vk_inst.device, data.lighting_pass.render_pass, nullptr);
-		vkDestroyPipeline(vk_inst.device, data.lighting_pass.pipeline, nullptr);
+		vkDestroyRenderPass(vk_inst.device, data->lighting_pass.render_pass, nullptr);
+		vkDestroyPipeline(vk_inst.device, data->lighting_pass.pipeline, nullptr);
 
 		for (size_t i = 0; i < VulkanInstance::VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
-			Vulkan::DestroyBuffer(data.camera_uniform_buffers[i]);
-			Vulkan::DestroyBuffer(data.instance_buffers[i]);
+			Vulkan::DestroyBuffer(data->camera_uniform_buffers[i]);
+			Vulkan::DestroyBuffer(data->instance_buffers[i]);
 		}
-		Vulkan::DestroyBuffer(data.material_buffer);
-
-		delete data.reserved_descriptor_buffer;
-		delete data.bindless_descriptor_buffer;
-
-		vkDestroyDescriptorSetLayout(vk_inst.device, data.reserved_descriptor_set_layout, nullptr);
-		vkDestroyDescriptorSetLayout(vk_inst.device, data.bindless_descriptor_set_layout, nullptr);
-		vkDestroyPipelineLayout(vk_inst.device, data.lighting_pass.pipeline_layout, nullptr);
+		Vulkan::DestroyBuffer(data->material_buffer);
+		vkDestroyPipelineLayout(vk_inst.device, data->lighting_pass.pipeline_layout, nullptr);
 
 		// Clean up the renderer data
-		data.~Data();
+		delete data;
 
 		// Finally, exit the vulkan render backend
 		Vulkan::Exit();
@@ -1079,17 +945,17 @@ namespace Renderer
 		ubo.view = view;
 		ubo.proj = proj;
 
-		memcpy(data.camera_uniform_buffers[data.current_frame].ptr, &ubo, sizeof(ubo));
+		memcpy(data->camera_uniform_buffers[data->current_frame].ptr, &ubo, sizeof(ubo));
 	}
 
 	void RenderFrame()
 	{
 		// Wait for completion of all rendering on the GPU
-		vkWaitForFences(vk_inst.device, 1, &data.in_flight_fences[data.current_frame], VK_TRUE, UINT64_MAX);
+		vkWaitForFences(vk_inst.device, 1, &data->in_flight_fences[data->current_frame], VK_TRUE, UINT64_MAX);
 
 		// Get an available image index from the swap chain
 		uint32_t image_index;
-		VkResult image_result = vkAcquireNextImageKHR(vk_inst.device, vk_inst.swapchain.swapchain, UINT64_MAX, data.image_available_semaphores[data.current_frame], VK_NULL_HANDLE, &image_index);
+		VkResult image_result = vkAcquireNextImageKHR(vk_inst.device, vk_inst.swapchain.swapchain, UINT64_MAX, data->image_available_semaphores[data->current_frame], VK_NULL_HANDLE, &image_index);
 
 		if (image_result == VK_ERROR_OUT_OF_DATE_KHR || image_result == VK_SUBOPTIMAL_KHR)
 		{
@@ -1104,10 +970,10 @@ namespace Renderer
 		}
 
 		// Reset the fence
-		vkResetFences(vk_inst.device, 1, &data.in_flight_fences[data.current_frame]);
+		vkResetFences(vk_inst.device, 1, &data->in_flight_fences[data->current_frame]);
 
 		// Reset and record the command buffer
-		VkCommandBuffer command_buffer = data.command_buffers[data.current_frame];
+		VkCommandBuffer command_buffer = data->command_buffers[data->current_frame];
 		vkResetCommandBuffer(command_buffer, 0);
 		RecordCommandBuffer(command_buffer, image_index);
 
@@ -1115,7 +981,7 @@ namespace Renderer
 		VkSubmitInfo submit_info = {};
 		submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-		VkSemaphore wait_semaphores[] = { data.image_available_semaphores[data.current_frame] };
+		VkSemaphore wait_semaphores[] = { data->image_available_semaphores[data->current_frame] };
 		VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 		submit_info.waitSemaphoreCount = 1;
 		submit_info.pWaitSemaphores = wait_semaphores;
@@ -1123,11 +989,11 @@ namespace Renderer
 		submit_info.commandBufferCount = 1;
 		submit_info.pCommandBuffers = &command_buffer;
 
-		VkSemaphore signal_semaphores[] = { data.render_finished_semaphores[data.current_frame] };
+		VkSemaphore signal_semaphores[] = { data->render_finished_semaphores[data->current_frame] };
 		submit_info.signalSemaphoreCount = 1;
 		submit_info.pSignalSemaphores = signal_semaphores;
 
-		VkCheckResult(vkQueueSubmit(vk_inst.queues.graphics, 1, &submit_info, data.in_flight_fences[data.current_frame]));
+		VkCheckResult(vkQueueSubmit(vk_inst.queues.graphics, 1, &submit_info, data->in_flight_fences[data->current_frame]));
 
 		// Present
 		VkPresentInfoKHR present_info = {};
@@ -1154,13 +1020,13 @@ namespace Renderer
 			VkCheckResult(present_result);
 		}
 
-		data.current_frame = (data.current_frame + 1) % VulkanInstance::MAX_FRAMES_IN_FLIGHT;
+		data->current_frame = (data->current_frame + 1) % VulkanInstance::MAX_FRAMES_IN_FLIGHT;
 	}
 
 	void EndFrame()
 	{
 		ImGui::EndFrame();
-		data.draw_list.current_entry = 0;
+		data->draw_list.current_entry = 0;
 	}
 
 	TextureHandle_t CreateTexture(const CreateTextureArgs& args)
@@ -1177,7 +1043,7 @@ namespace Renderer
 		Vulkan::WriteBuffer(staging_buffer.ptr, (void*)args.pixels.data(), image_size);
 
 		// Create texture image
-		ResourceSlotmap<TextureResource>::ReservedResource reserved = data.texture_slotmap.Reserve();
+		ResourceSlotmap<TextureResource>::ReservedResource reserved = data->texture_slotmap.Reserve();
 		uint32_t num_mips = (uint32_t)std::floor(std::log2(std::max(args.width, args.height))) + 1;
 		Vulkan::CreateImage(args.width, args.height, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
 			VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, reserved.resource->image, num_mips);
@@ -1218,27 +1084,16 @@ namespace Renderer
 
 		VkCheckResult(vkCreateSampler(vk_inst.device, &sampler_info, nullptr, &reserved.resource->image.sampler));
 
-		// Update descriptor
-		VkDescriptorImageInfo image_info = {};
-		image_info.imageView = reserved.resource->image.view;
-		image_info.imageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
-		image_info.sampler = reserved.resource->image.sampler;
-
-		VkDescriptorGetInfoEXT descriptor_info = {};
-		descriptor_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
-		descriptor_info.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		descriptor_info.data.pCombinedImageSampler = &image_info;
-
-		reserved.resource->descriptor = data.bindless_descriptor_buffer->Allocate(DescriptorType_CombinedImageSampler);
-		vk_inst.pFunc.get_descriptor_ext(vk_inst.device, &descriptor_info,
-			vk_inst.descriptor_sizes.combined_image_sampler, reserved.resource->descriptor.GetDescriptor());
+		// Allocate and update descriptor
+		reserved.resource->descriptor = data->descriptor_buffer_images.Allocate();
+		reserved.resource->descriptor.WriteDescriptor(reserved.resource->image, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
 
 		return reserved.handle;
 	}
 
 	void DestroyTexture(TextureHandle_t handle)
 	{
-		data.texture_slotmap.Delete(handle);
+		data->texture_slotmap.Delete(handle);
 	}
 
 	MeshHandle_t CreateMesh(const CreateMeshArgs& args)
@@ -1255,7 +1110,7 @@ namespace Renderer
 		Vulkan::WriteBuffer((uint8_t*)staging_buffer.ptr + vertex_buffer_size, (void*)args.indices.data(), index_buffer_size);
 
 		// Reserve mesh resource
-		ResourceSlotmap<MeshResource>::ReservedResource reserved = data.mesh_slotmap.Reserve();
+		ResourceSlotmap<MeshResource>::ReservedResource reserved = data->mesh_slotmap.Reserve();
 
 		// Create vertex and index buffers
 		Vulkan::CreateVertexBuffer(vertex_buffer_size, reserved.resource->vertex_buffer);
@@ -1276,12 +1131,12 @@ namespace Renderer
 
 	void DestroyMesh(MeshHandle_t handle)
 	{
-		data.mesh_slotmap.Delete(handle);
+		data->mesh_slotmap.Delete(handle);
 	}
 
 	MaterialHandle_t CreateMaterial(const CreateMaterialArgs& args)
 	{
-		ResourceSlotmap<MaterialResource>::ReservedResource reserved = data.material_slotmap.Reserve();
+		ResourceSlotmap<MaterialResource>::ReservedResource reserved = data->material_slotmap.Reserve();
 
 		reserved.resource->data.base_color_factor = args.base_color_factor;
 		if (VK_RESOURCE_HANDLE_VALID(args.base_color_texture_handle))
@@ -1291,8 +1146,8 @@ namespace Renderer
 		}
 		else
 		{
-			reserved.resource->base_color_texture_handle = data.default_white_texture_handle;
-			reserved.resource->data.base_color_texture_index = data.default_white_texture_handle.index;
+			reserved.resource->base_color_texture_handle = data->default_white_texture_handle;
+			reserved.resource->data.base_color_texture_index = data->default_white_texture_handle.index;
 		}
 
 		if (VK_RESOURCE_HANDLE_VALID(args.normal_texture_handle))
@@ -1302,8 +1157,8 @@ namespace Renderer
 		}
 		else
 		{
-			reserved.resource->normal_texture_handle = data.default_normal_texture_handle;
-			reserved.resource->data.normal_texture_index = data.default_normal_texture_handle.index;
+			reserved.resource->normal_texture_handle = data->default_normal_texture_handle;
+			reserved.resource->data.normal_texture_index = data->default_normal_texture_handle.index;
 		}
 
 		if (VK_RESOURCE_HANDLE_VALID(args.metallic_roughness_texture_handle))
@@ -1313,8 +1168,8 @@ namespace Renderer
 		}
 		else
 		{
-			reserved.resource->metallic_roughness_texture_handle = data.default_white_texture_handle;
-			reserved.resource->data.metallic_roughness_texture_index = data.default_white_texture_handle.index;
+			reserved.resource->metallic_roughness_texture_handle = data->default_white_texture_handle;
+			reserved.resource->data.metallic_roughness_texture_index = data->default_white_texture_handle.index;
 		}
 
 		VkDeviceSize material_size = sizeof(MaterialData);
@@ -1328,7 +1183,7 @@ namespace Renderer
 		Vulkan::WriteBuffer(staging_buffer.ptr, (void*)&reserved.resource->data, material_size);
 
 		// Copy staging buffer material resource into device local material buffer
-		Vulkan::CopyBuffer(staging_buffer, data.material_buffer, material_size, 0, reserved.handle.index * material_size);
+		Vulkan::CopyBuffer(staging_buffer, data->material_buffer, material_size, 0, reserved.handle.index * material_size);
 
 		// Destroy staging buffer
 		Vulkan::DestroyBuffer(staging_buffer);
@@ -1338,17 +1193,17 @@ namespace Renderer
 
 	void DestroyMaterial(MaterialHandle_t handle)
 	{
-		data.material_slotmap.Delete(handle);
+		data->material_slotmap.Delete(handle);
 		// NOTE: We could update the material buffer entry here to be 0 or some invalid value,
 		// but it will be overwritten anyways when the slot is re-used
 	}
 
 	void SubmitMesh(MeshHandle_t mesh_handle, MaterialHandle_t material_handle, const glm::mat4& transform)
 	{
-		Vulkan::Buffer& instance_buffer = data.instance_buffers[data.current_frame];
-		memcpy((glm::mat4*)instance_buffer.ptr + data.draw_list.current_entry, &transform, sizeof(glm::mat4));
+		Vulkan::Buffer& instance_buffer = data->instance_buffers[data->current_frame];
+		memcpy((glm::mat4*)instance_buffer.ptr + data->draw_list.current_entry, &transform, sizeof(glm::mat4));
 
-		DrawList::Entry& entry = data.draw_list.GetNextEntry();
+		DrawList::Entry& entry = data->draw_list.GetNextEntry();
 		entry.mesh_handle = mesh_handle;
 		entry.material_handle = material_handle;
 		entry.transform = transform;

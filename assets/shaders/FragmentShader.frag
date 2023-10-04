@@ -5,12 +5,12 @@
 #include "Shared.glsl.h"
 #include "BRDF.glsl"
 
-layout(std140, set = 0, binding = 0) readonly buffer MaterialBuffer
+layout(std140, set = 1, binding = 0) readonly buffer MaterialBuffer
 {
 	MaterialData mat[MAX_UNIQUE_MATERIALS];
 } g_materials;
 
-layout(set = 1, binding = 2) uniform sampler2D g_tex_samplers[];
+layout(set = 2, binding = 0) uniform sampler2D g_tex_samplers[];
 
 layout(std140, push_constant) uniform constants
 {
