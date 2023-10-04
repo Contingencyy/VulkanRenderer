@@ -353,6 +353,10 @@ namespace Vulkan
 		buffer_device_address_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES_EXT;
 		descriptor_buffer_features.pNext = &buffer_device_address_features;
 
+		VkPhysicalDeviceSynchronization2Features sync_2_features = {};
+		sync_2_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES;
+		buffer_device_address_features.pNext = &sync_2_features;
+
 		VkPhysicalDeviceFeatures2 device_features2 = {};
 		device_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
 		device_features2.features.samplerAnisotropy = VK_TRUE;
@@ -538,46 +542,57 @@ namespace Vulkan
 		return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
 	}
 
-	static void GetAccessMaskAndStage(VkImageLayout layout, VkAccessFlags& access_flags, VkPipelineStageFlags& stage_flags)
+	static inline bool HasImageLayoutBitSet(VkImageLayout layout, VkImageLayout check)
 	{
+		return (layout & check) == 1;
+	}
+
+	static void GetImageLayoutAccessAndStageFlags(VkImageLayout layout, VkAccessFlags2& access_flags, VkPipelineStageFlags2& stage_flags)
+	{
+		// Access mask
 		switch (layout)
 		{
 		case VK_IMAGE_LAYOUT_UNDEFINED:
-		{
-			access_flags = 0;
-			stage_flags = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-		} break;
-		case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
-		{
-			access_flags = VK_ACCESS_TRANSFER_READ_BIT;
-			stage_flags = VK_PIPELINE_STAGE_TRANSFER_BIT;
-		} break;
-		case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-		{
-			access_flags = VK_ACCESS_TRANSFER_WRITE_BIT;
-			stage_flags = VK_PIPELINE_STAGE_TRANSFER_BIT;
-		} break;
-		case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
-		{
-			access_flags = VK_ACCESS_SHADER_READ_BIT;
-			stage_flags = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-		} break;
-		case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-		{
-			access_flags = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-			stage_flags = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-		} break;
-		case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
-		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-		{
-			access_flags = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-			stage_flags = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-		} break;
 		case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
+			access_flags = VK_ACCESS_2_NONE;
+			break;
+		case VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL:
+		case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
+		case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+			access_flags = VK_ACCESS_2_MEMORY_READ_BIT;
+			break;
+		case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+		case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+			access_flags = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+			break;
+		}
+
+		// Pipeline stage flag
+		switch (layout)
 		{
-			access_flags = VK_ACCESS_NONE;
-			stage_flags = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-		} break;
+		case VK_IMAGE_LAYOUT_UNDEFINED:
+			stage_flags = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+			break;
+		case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
+			stage_flags = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
+			break;
+		case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+		case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+			stage_flags = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+			break;
+		case VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL:
+		case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+			stage_flags = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+			break;
+		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
+		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+			stage_flags = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
+			break;
+		case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+			stage_flags = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+			break;
 		}
 	}
 
@@ -828,7 +843,7 @@ namespace Vulkan
 			);
 
 			barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-			barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			barrier.newLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
 			barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
 			barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
@@ -845,7 +860,7 @@ namespace Vulkan
 
 		barrier.subresourceRange.baseMipLevel = num_mips - 1;
 		barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-		barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		barrier.newLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
 		barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
 		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
@@ -963,14 +978,19 @@ namespace Vulkan
 
 	void TransitionImageLayout(VkCommandBuffer command_buffer, const Image& image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout, uint32_t num_mips)
 	{
-		VkImageMemoryBarrier barrier = {};
-		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		VkImageMemoryBarrier2 barrier = {};
+		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+		barrier.image = image.image;
 		barrier.oldLayout = old_layout;
 		barrier.newLayout = new_layout;
 		// NOTE: Used to transfer ownership of the resource if EXCLUSIVE flag is used
 		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		barrier.image = image.image;
+		barrier.subresourceRange.baseMipLevel = 0;
+		barrier.subresourceRange.levelCount = num_mips;
+		barrier.subresourceRange.baseArrayLayer = 0;
+		barrier.subresourceRange.layerCount = 1;
 
 		if (new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
 		{
@@ -984,25 +1004,17 @@ namespace Vulkan
 		{
 			barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		}
-		barrier.subresourceRange.baseMipLevel = 0;
-		barrier.subresourceRange.levelCount = num_mips;
-		barrier.subresourceRange.baseArrayLayer = 0;
-		barrier.subresourceRange.layerCount = 1;
 
-		VkPipelineStageFlags src_stage = VK_PIPELINE_STAGE_NONE;
-		VkPipelineStageFlags dst_stage = VK_PIPELINE_STAGE_NONE;
+		GetImageLayoutAccessAndStageFlags(old_layout, barrier.srcAccessMask, barrier.srcStageMask);
+		GetImageLayoutAccessAndStageFlags(new_layout, barrier.dstAccessMask, barrier.dstStageMask);
 
-		GetAccessMaskAndStage(old_layout, barrier.srcAccessMask, src_stage);
-		GetAccessMaskAndStage(new_layout, barrier.dstAccessMask, dst_stage);
+		VkDependencyInfo dependency_info = {};
+		dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+		dependency_info.imageMemoryBarrierCount = 1;
+		dependency_info.pImageMemoryBarriers = &barrier;
+		dependency_info.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
-		vkCmdPipelineBarrier(
-			command_buffer,
-			src_stage, dst_stage,
-			0,
-			0, nullptr,
-			0, nullptr,
-			1, &barrier
-		);
+		vkCmdPipelineBarrier2(command_buffer, &dependency_info);
 	}
 
 	void TransitionImageLayout(const Image& image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout, uint32_t num_mips)

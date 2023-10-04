@@ -1185,7 +1185,7 @@ namespace Renderer
 		// Copy staging buffer data into final texture image memory (device local)
 		Vulkan::TransitionImageLayout(reserved.resource->image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, num_mips);
 		Vulkan::CopyBufferToImage(staging_buffer, reserved.resource->image, args.width, args.height);
-
+		
 		// Generate mips using blit
 		Vulkan::GenerateMips(args.width, args.height, num_mips, VK_FORMAT_R8G8B8A8_SRGB, reserved.resource->image);
 
@@ -1221,7 +1221,7 @@ namespace Renderer
 		// Update descriptor
 		VkDescriptorImageInfo image_info = {};
 		image_info.imageView = reserved.resource->image.view;
-		image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		image_info.imageLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
 		image_info.sampler = reserved.resource->image.sampler;
 
 		VkDescriptorGetInfoEXT descriptor_info = {};
