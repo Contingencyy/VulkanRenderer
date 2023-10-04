@@ -538,6 +538,49 @@ namespace Vulkan
 		return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
 	}
 
+	static void GetAccessMaskAndStage(VkImageLayout layout, VkAccessFlags& access_flags, VkPipelineStageFlags& stage_flags)
+	{
+		switch (layout)
+		{
+		case VK_IMAGE_LAYOUT_UNDEFINED:
+		{
+			access_flags = 0;
+			stage_flags = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+		} break;
+		case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+		{
+			access_flags = VK_ACCESS_TRANSFER_READ_BIT;
+			stage_flags = VK_PIPELINE_STAGE_TRANSFER_BIT;
+		} break;
+		case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+		{
+			access_flags = VK_ACCESS_TRANSFER_WRITE_BIT;
+			stage_flags = VK_PIPELINE_STAGE_TRANSFER_BIT;
+		} break;
+		case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+		{
+			access_flags = VK_ACCESS_SHADER_READ_BIT;
+			stage_flags = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+		} break;
+		case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+		{
+			access_flags = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+			stage_flags = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+		} break;
+		case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
+		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+		{
+			access_flags = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+			stage_flags = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+		} break;
+		case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
+		{
+			access_flags = VK_ACCESS_NONE;
+			stage_flags = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+		} break;
+		}
+	}
+
 	void Init(::GLFWwindow* window)
 	{
 		vk_inst.window = window;
@@ -949,40 +992,8 @@ namespace Vulkan
 		VkPipelineStageFlags src_stage = VK_PIPELINE_STAGE_NONE;
 		VkPipelineStageFlags dst_stage = VK_PIPELINE_STAGE_NONE;
 
-		// TODO: This can be written much nicer, old_layout defines what goes into srcAccessMask and src_stage
-		// and new_layout defines what goes into dstAccessMask and dst_stage, no need for these weird if combinations
-		if (old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
-		{
-			barrier.srcAccessMask = 0;
-			barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-
-			src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-			dst_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-		}
-		else if (old_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
-		{
-			barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-			barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-			src_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-			dst_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-		}
-		else if (old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-		{
-			barrier.srcAccessMask = 0;
-			barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-
-			src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-			dst_stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-		}
-		else if (old_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && new_layout == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR)
-		{
-			barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-			barrier.dstAccessMask = VK_ACCESS_NONE_KHR;
-
-			src_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-			dst_stage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-		}
+		GetAccessMaskAndStage(old_layout, barrier.srcAccessMask, src_stage);
+		GetAccessMaskAndStage(new_layout, barrier.dstAccessMask, dst_stage);
 
 		vkCmdPipelineBarrier(
 			command_buffer,
