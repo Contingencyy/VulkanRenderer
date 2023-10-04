@@ -12,6 +12,7 @@ namespace Renderer
 	void Exit();
 	void BeginFrame(const glm::mat4& view, const glm::mat4& proj);
 	void RenderFrame();
+	void RenderUI();
 	void EndFrame();
 
 	struct CreateTextureArgs

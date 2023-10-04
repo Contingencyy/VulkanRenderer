@@ -171,6 +171,18 @@ namespace Renderer
 
 		uint32_t current_frame = 0;
 
+		struct Statistics
+		{
+			uint32_t total_vertex_count = 0;
+			uint32_t total_triangle_count = 0;
+
+			void Reset()
+			{
+				total_vertex_count = 0;
+				total_triangle_count = 0;
+			}
+		} stats;
+
 		struct ImGui
 		{
 			VkDescriptorPool descriptor_pool;
@@ -633,145 +645,6 @@ namespace Renderer
 		}
 	}
 
-	static void RecordCommandBuffer(VkCommandBuffer command_buffer, uint32_t image_index)
-	{
-		// Lighting pass
-		VkCommandBufferBeginInfo begin_info = {};
-		begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-		begin_info.flags = 0;
-		begin_info.pInheritanceInfo = nullptr;
-
-		VkCheckResult(vkBeginCommandBuffer(command_buffer, &begin_info));
-
-		VkRenderPassBeginInfo render_pass_info = {};
-		render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-		render_pass_info.renderPass = data->lighting_pass.render_pass;
-		render_pass_info.framebuffer = data->lighting_pass.framebuffer;
-		// NOTE: Define the render area, which defines where shader loads and stores will take place
-		// Pixels outside this region will have undefined values
-		render_pass_info.renderArea.offset = { 0, 0 };
-		render_pass_info.renderArea.extent = vk_inst.swapchain.extent;
-
-		std::array<VkClearValue, 2> clear_values = {};
-		clear_values[0].color = { { 0.0f, 0.0f, 0.0f, 1.0f } };
-		clear_values[1].depthStencil = { 1.0f, 0 };
-
-		render_pass_info.clearValueCount = (uint32_t)clear_values.size();
-		render_pass_info.pClearValues = clear_values.data();
-
-		vkCmdBeginRenderPass(command_buffer, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
-		vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, data->lighting_pass.pipeline);
-
-		// Viewport and scissor
-		VkViewport viewport = {};
-		viewport.x = 0.0f;
-		viewport.y = 0.0f;
-		viewport.width = (float)vk_inst.swapchain.extent.width;
-		viewport.height = (float)vk_inst.swapchain.extent.height;
-		viewport.minDepth = 0.0f;
-		viewport.maxDepth = 1.0f;
-		vkCmdSetViewport(command_buffer, 0, 1, &viewport);
-
-		VkRect2D scissor = {};
-		scissor.offset = { 0, 0 };
-		scissor.extent = vk_inst.swapchain.extent;
-		vkCmdSetScissor(command_buffer, 0, 1, &scissor);
-
-		// Push constants
-		uint32_t camera_ubo_index = data->current_frame;
-		vkCmdPushConstants(command_buffer, data->lighting_pass.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(uint32_t), &camera_ubo_index);
-
-		// Bind descriptor buffers
-		std::array<VkDescriptorBufferBindingInfoEXT, 3> descriptor_buffer_binding_infos = {};
-		descriptor_buffer_binding_infos[0] = data->descriptor_buffer_uniform.GetBindingInfo();
-		descriptor_buffer_binding_infos[1] = data->descriptor_buffer_storage.GetBindingInfo();
-		descriptor_buffer_binding_infos[2] = data->descriptor_buffer_images.GetBindingInfo();
-		vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)descriptor_buffer_binding_infos.size(), descriptor_buffer_binding_infos.data());
-
-		uint32_t buffer_indices[3] = { 0, 1, 2 };
-		VkDeviceSize buffer_offsets[3] = { 0, 0, 0 };
-		vk_inst.pFunc.cmd_set_descriptor_buffer_offsets_ext(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-			data->lighting_pass.pipeline_layout, 0, 3, &buffer_indices[0], &buffer_offsets[0]);
-
-		// Instance buffer
-		const Vulkan::Buffer& instance_buffer = data->instance_buffers[data->current_frame];
-
-		for (size_t i = 0; i < data->draw_list.current_entry; ++i)
-		{
-			const DrawList::Entry& entry = data->draw_list.entries[i];
-
-			// TODO: Default mesh
-			MeshResource* mesh = nullptr;
-			if (VK_RESOURCE_HANDLE_VALID(entry.mesh_handle))
-			{
-				mesh = data->mesh_slotmap.Find(entry.mesh_handle);
-			}
-			VK_ASSERT(mesh && "Tried to render a mesh with an invalid mesh handle");
-			
-			// Check material handles for validity
-			VK_ASSERT(VK_RESOURCE_HANDLE_VALID(entry.material_handle));
-			MaterialResource* material = data->material_slotmap.Find(entry.material_handle);
-			VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->base_color_texture_handle));
-			VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->normal_texture_handle));
-			VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->metallic_roughness_texture_handle));
-
-			vkCmdPushConstants(command_buffer, data->lighting_pass.pipeline_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 16, sizeof(uint32_t), &entry.material_handle.index);
-
-			// Vertex and index buffers
-			VkBuffer vertex_buffers[] = { mesh->vertex_buffer.buffer, instance_buffer.buffer };
-			VkDeviceSize offsets[] = { 0, i * sizeof(glm::mat4) };
-			vkCmdBindVertexBuffers(command_buffer, 0, 2, vertex_buffers, offsets);
-			vkCmdBindIndexBuffer(command_buffer, mesh->index_buffer.buffer, 0, VK_INDEX_TYPE_UINT32);
-
-			// Draw call
-			vkCmdDrawIndexed(command_buffer, mesh->index_buffer.num_elements, 1, 0, 0, 0);
-		}
-
-		vkCmdEndRenderPass(command_buffer);
-
-		// Render ImGui
-		VkRenderPassBeginInfo imgui_pass_info = {};
-		imgui_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-		imgui_pass_info.renderPass = data->imgui.render_pass;
-		imgui_pass_info.framebuffer = data->lighting_pass.framebuffer;
-		imgui_pass_info.renderArea.offset = { 0, 0 };
-		imgui_pass_info.renderArea.extent = vk_inst.swapchain.extent;
-
-		vkCmdBeginRenderPass(command_buffer, &imgui_pass_info, VK_SUBPASS_CONTENTS_INLINE);
-
-		ImGui::Render();
-		ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer, nullptr);
-
-		vkCmdEndRenderPass(command_buffer);
-
-		// Copy final result to swapchain image
-		VkImageCopy copy_region = {};
-		copy_region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		copy_region.srcSubresource.mipLevel = 0;
-		copy_region.srcSubresource.baseArrayLayer = 0;
-		copy_region.srcSubresource.layerCount = 1;
-		copy_region.srcOffset = { 0, 0, 0 };
-		copy_region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		copy_region.dstSubresource.mipLevel = 0;
-		copy_region.dstSubresource.baseArrayLayer = 0;
-		copy_region.dstSubresource.layerCount = 1;
-		copy_region.dstOffset = { 0, 0, 0 };
-		copy_region.extent = { vk_inst.swapchain.extent.width, vk_inst.swapchain.extent.height, 1 };
-
-		// Note: Temporary hack
-		Vulkan::Image swapchain_image = {};
-		swapchain_image.image = vk_inst.swapchain.images[image_index];
-
-		Vulkan::TransitionImageLayout(command_buffer, swapchain_image, VK_FORMAT_B8G8R8A8_UNORM,
-			VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-		vkCmdCopyImage(command_buffer, data->lighting_pass.color_attachments[0].image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-			swapchain_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy_region);
-		Vulkan::TransitionImageLayout(command_buffer, swapchain_image, VK_FORMAT_B8G8R8A8_UNORM,
-			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
-
-		VkCheckResult(vkEndCommandBuffer(command_buffer));
-	}
-
 	static void InitDearImGui()
 	{
 		IMGUI_CHECKVERSION();
@@ -946,10 +819,7 @@ namespace Renderer
 		ubo.proj = proj;
 
 		memcpy(data->camera_uniform_buffers[data->current_frame].ptr, &ubo, sizeof(ubo));
-	}
 
-	void RenderFrame()
-	{
 		// Wait for completion of all rendering on the GPU
 		vkWaitForFences(vk_inst.device, 1, &data->in_flight_fences[data->current_frame], VK_TRUE, UINT64_MAX);
 
@@ -975,7 +845,165 @@ namespace Renderer
 		// Reset and record the command buffer
 		VkCommandBuffer command_buffer = data->command_buffers[data->current_frame];
 		vkResetCommandBuffer(command_buffer, 0);
-		RecordCommandBuffer(command_buffer, image_index);
+	}
+
+	void RenderFrame()
+	{
+		VkCommandBuffer command_buffer = data->command_buffers[data->current_frame];
+
+		// Lighting pass
+		VkCommandBufferBeginInfo begin_info = {};
+		begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		begin_info.flags = 0;
+		begin_info.pInheritanceInfo = nullptr;
+
+		VkCheckResult(vkBeginCommandBuffer(command_buffer, &begin_info));
+
+		VkRenderPassBeginInfo render_pass_info = {};
+		render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+		render_pass_info.renderPass = data->lighting_pass.render_pass;
+		render_pass_info.framebuffer = data->lighting_pass.framebuffer;
+		// NOTE: Define the render area, which defines where shader loads and stores will take place
+		// Pixels outside this region will have undefined values
+		render_pass_info.renderArea.offset = { 0, 0 };
+		render_pass_info.renderArea.extent = vk_inst.swapchain.extent;
+
+		std::array<VkClearValue, 2> clear_values = {};
+		clear_values[0].color = { { 0.0f, 0.0f, 0.0f, 1.0f } };
+		clear_values[1].depthStencil = { 1.0f, 0 };
+
+		render_pass_info.clearValueCount = (uint32_t)clear_values.size();
+		render_pass_info.pClearValues = clear_values.data();
+
+		vkCmdBeginRenderPass(command_buffer, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
+		vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, data->lighting_pass.pipeline);
+
+		// Viewport and scissor
+		VkViewport viewport = {};
+		viewport.x = 0.0f;
+		viewport.y = 0.0f;
+		viewport.width = (float)vk_inst.swapchain.extent.width;
+		viewport.height = (float)vk_inst.swapchain.extent.height;
+		viewport.minDepth = 0.0f;
+		viewport.maxDepth = 1.0f;
+		vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+
+		VkRect2D scissor = {};
+		scissor.offset = { 0, 0 };
+		scissor.extent = vk_inst.swapchain.extent;
+		vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+
+		// Push constants
+		uint32_t camera_ubo_index = data->current_frame;
+		vkCmdPushConstants(command_buffer, data->lighting_pass.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(uint32_t), &camera_ubo_index);
+
+		// Bind descriptor buffers
+		std::array<VkDescriptorBufferBindingInfoEXT, 3> descriptor_buffer_binding_infos = {};
+		descriptor_buffer_binding_infos[0] = data->descriptor_buffer_uniform.GetBindingInfo();
+		descriptor_buffer_binding_infos[1] = data->descriptor_buffer_storage.GetBindingInfo();
+		descriptor_buffer_binding_infos[2] = data->descriptor_buffer_images.GetBindingInfo();
+		vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)descriptor_buffer_binding_infos.size(), descriptor_buffer_binding_infos.data());
+
+		uint32_t buffer_indices[3] = { 0, 1, 2 };
+		VkDeviceSize buffer_offsets[3] = { 0, 0, 0 };
+		vk_inst.pFunc.cmd_set_descriptor_buffer_offsets_ext(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+			data->lighting_pass.pipeline_layout, 0, 3, &buffer_indices[0], &buffer_offsets[0]);
+
+		// Instance buffer
+		const Vulkan::Buffer& instance_buffer = data->instance_buffers[data->current_frame];
+
+		for (size_t i = 0; i < data->draw_list.current_entry; ++i)
+		{
+			const DrawList::Entry& entry = data->draw_list.entries[i];
+
+			// TODO: Default mesh
+			MeshResource* mesh = nullptr;
+			if (VK_RESOURCE_HANDLE_VALID(entry.mesh_handle))
+			{
+				mesh = data->mesh_slotmap.Find(entry.mesh_handle);
+			}
+			VK_ASSERT(mesh && "Tried to render a mesh with an invalid mesh handle");
+
+			// Check material handles for validity
+			VK_ASSERT(VK_RESOURCE_HANDLE_VALID(entry.material_handle));
+			MaterialResource* material = data->material_slotmap.Find(entry.material_handle);
+			VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->base_color_texture_handle));
+			VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->normal_texture_handle));
+			VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->metallic_roughness_texture_handle));
+
+			vkCmdPushConstants(command_buffer, data->lighting_pass.pipeline_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 16, sizeof(uint32_t), &entry.material_handle.index);
+
+			// Vertex and index buffers
+			VkBuffer vertex_buffers[] = { mesh->vertex_buffer.buffer, instance_buffer.buffer };
+			VkDeviceSize offsets[] = { 0, i * sizeof(glm::mat4) };
+			vkCmdBindVertexBuffers(command_buffer, 0, 2, vertex_buffers, offsets);
+			vkCmdBindIndexBuffer(command_buffer, mesh->index_buffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+
+			// Draw call
+			vkCmdDrawIndexed(command_buffer, mesh->index_buffer.num_elements, 1, 0, 0, 0);
+
+			data->stats.total_vertex_count += mesh->vertex_buffer.num_elements;
+			data->stats.total_triangle_count += mesh->index_buffer.num_elements / 3;
+		}
+
+		vkCmdEndRenderPass(command_buffer);
+	}
+
+	void RenderUI()
+	{
+		ImGui::Begin("Renderer");
+
+		ImGui::Text("Total vertex count: %u", data->stats.total_vertex_count);
+		ImGui::Text("Total triangle count: %u", data->stats.total_triangle_count);
+
+		ImGui::End();
+	}
+
+	void EndFrame()
+	{
+		VkCommandBuffer command_buffer = data->command_buffers[data->current_frame];
+
+		// Render ImGui
+		VkRenderPassBeginInfo imgui_pass_info = {};
+		imgui_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+		imgui_pass_info.renderPass = data->imgui.render_pass;
+		imgui_pass_info.framebuffer = data->lighting_pass.framebuffer;
+		imgui_pass_info.renderArea.offset = { 0, 0 };
+		imgui_pass_info.renderArea.extent = vk_inst.swapchain.extent;
+
+		vkCmdBeginRenderPass(command_buffer, &imgui_pass_info, VK_SUBPASS_CONTENTS_INLINE);
+
+		ImGui::Render();
+		ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer, nullptr);
+
+		vkCmdEndRenderPass(command_buffer);
+
+		// Copy final result to swapchain image
+		VkImageCopy copy_region = {};
+		copy_region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		copy_region.srcSubresource.mipLevel = 0;
+		copy_region.srcSubresource.baseArrayLayer = 0;
+		copy_region.srcSubresource.layerCount = 1;
+		copy_region.srcOffset = { 0, 0, 0 };
+		copy_region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		copy_region.dstSubresource.mipLevel = 0;
+		copy_region.dstSubresource.baseArrayLayer = 0;
+		copy_region.dstSubresource.layerCount = 1;
+		copy_region.dstOffset = { 0, 0, 0 };
+		copy_region.extent = { vk_inst.swapchain.extent.width, vk_inst.swapchain.extent.height, 1 };
+
+		// Note: Temporary hack
+		Vulkan::Image swapchain_image = {};
+		swapchain_image.image = vk_inst.swapchain.images[data->current_frame];
+
+		Vulkan::TransitionImageLayout(command_buffer, swapchain_image, VK_FORMAT_B8G8R8A8_UNORM,
+			VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+		vkCmdCopyImage(command_buffer, data->lighting_pass.color_attachments[0].image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+			swapchain_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy_region);
+		Vulkan::TransitionImageLayout(command_buffer, swapchain_image, VK_FORMAT_B8G8R8A8_UNORM,
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+
+		VkCheckResult(vkEndCommandBuffer(command_buffer));
 
 		// Submit the command buffer for execution
 		VkSubmitInfo submit_info = {};
@@ -1004,7 +1032,7 @@ namespace Renderer
 		VkSwapchainKHR swapchains[] = { vk_inst.swapchain.swapchain };
 		present_info.swapchainCount = 1;
 		present_info.pSwapchains = swapchains;
-		present_info.pImageIndices = &image_index;
+		present_info.pImageIndices = &data->current_frame;
 		present_info.pResults = nullptr;
 
 		VkResult present_result = vkQueuePresentKHR(vk_inst.queues.graphics, &present_info);
@@ -1020,13 +1048,12 @@ namespace Renderer
 			VkCheckResult(present_result);
 		}
 
-		data->current_frame = (data->current_frame + 1) % VulkanInstance::MAX_FRAMES_IN_FLIGHT;
-	}
-
-	void EndFrame()
-	{
 		ImGui::EndFrame();
+
+		// Reset/Update some per-frame data
+		data->stats.Reset();
 		data->draw_list.current_entry = 0;
+		data->current_frame = (data->current_frame + 1) % VulkanInstance::MAX_FRAMES_IN_FLIGHT;
 	}
 
 	TextureHandle_t CreateTexture(const CreateTextureArgs& args)

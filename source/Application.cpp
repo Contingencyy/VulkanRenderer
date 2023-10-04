@@ -25,6 +25,8 @@ namespace Application
 		glm::mat4 view = glm::identity<glm::mat4>();
 		glm::mat4 proj = glm::identity<glm::mat4>();
 		float camera_speed = 10.0f;
+
+		std::chrono::duration<float> delta_time = std::chrono::duration<float>(0.0f);
 	} static data;
 
 	const uint32_t DEFAULT_WINDOW_WIDTH = 1280;
@@ -165,40 +167,52 @@ namespace Application
 		DestroyWindow();
 	}
 
+	static void Update(float dt)
+	{
+		UpdateCamera(dt);
+		Input::Update();
+
+		// NOTE: Temporary test setup, we should have a proper scene soon
+		Assets::Model car = Assets::GetModel("car");
+		glm::mat4 transform = glm::scale(glm::identity<glm::mat4>(), glm::vec3(1.0));
+		SubmitModel(car, transform);
+	}
+
+	static void RenderUI()
+	{
+		Renderer::RenderUI();
+
+		// NOTE: Temporary menu code
+		ImGui::Begin("General");
+		float delta_time_ms = data.delta_time.count() * 1000.0f;
+
+		ImGui::Text("FPS: %u", (uint32_t)(1000.0f / delta_time_ms));
+		ImGui::Text("Frametime: %.3fms", delta_time_ms);
+		ImGui::End();
+	}
+
+	static void Render()
+	{
+		Renderer::BeginFrame(data.view, data.proj);
+		Renderer::RenderFrame();
+		RenderUI();
+		Renderer::EndFrame();
+	}
+
 	void Run()
 	{
 		std::chrono::high_resolution_clock high_res_clock = {};
 		std::chrono::high_resolution_clock::time_point curr_time = high_res_clock.now();
 		std::chrono::high_resolution_clock::time_point prev_time = high_res_clock.now();
-		std::chrono::duration<float> delta_time = std::chrono::duration<float>(0.0f);
 
 		while (!data.should_close)
 		{
 			curr_time = high_res_clock.now();
-			delta_time = curr_time - prev_time;
+			data.delta_time = curr_time - prev_time;
 
 			PollEvents();
-
-			UpdateCamera(delta_time.count());
-			Input::Update();
-
-			Renderer::BeginFrame(data.view, data.proj);
-
-			// NOTE: Temporary test setup, we should have a proper scene soon
-			Assets::Model car = Assets::GetModel("car");
-			glm::mat4 transform = glm::scale(glm::identity<glm::mat4>(), glm::vec3(1.0));
-			SubmitModel(car, transform);
-
-			// NOTE: Temporary menu code
-			ImGui::Begin("General");
-			float delta_time_ms = delta_time.count() * 1000.0f;
-
-			ImGui::Text("FPS: %u", (uint32_t)(1000.0f / delta_time_ms));
-			ImGui::Text("Frametime: %.3fms", delta_time_ms);
-			ImGui::End();
-
-			Renderer::RenderFrame();
-			Renderer::EndFrame();
+			Update(data.delta_time.count());
+			Render();
 
 			prev_time = curr_time;
 		}
