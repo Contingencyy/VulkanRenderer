@@ -55,11 +55,14 @@ namespace Vulkan
 
 	void CopyBufferToImage(const Buffer& src_buffer, const Image& dst_image, uint32_t width, uint32_t height, VkDeviceSize src_offset = 0);
 	
+	void CreateFramebuffer(const std::vector<VkImageView>& image_views, VkRenderPass render_pass, uint32_t width, uint32_t height, VkFramebuffer& framebuffer);
+
 	VkFormat FindDepthFormat();
 	uint32_t FindMemoryType(uint32_t type_filter, VkMemoryPropertyFlags mem_properties);
 
 	VkCommandBuffer BeginSingleTimeCommands();
 	void EndSingleTimeCommands(VkCommandBuffer command_buffer);
+	void TransitionImageLayout(VkCommandBuffer command_buffer, const Image& image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout, uint32_t num_mips = 1);
 	void TransitionImageLayout(const Image& image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout, uint32_t num_mips = 1);
 
 }
@@ -104,11 +107,10 @@ struct VulkanInstance
 	{
 		VkSurfaceKHR surface = VK_NULL_HANDLE;
 		VkSwapchainKHR swapchain = VK_NULL_HANDLE;
+		VkFormat format;
 		VkExtent2D extent = { 0, 0 };
-		std::vector<Vulkan::Image> images;
-		std::vector<VkFramebuffer> framebuffers;
-		// TODO: Depth images will be removed from swapchain, swapchain color buffers will only be copied to eventually
-		Vulkan::Image depth_image;
+
+		std::vector<VkImage> images;
 	} swapchain;
 
 	struct QueueIndices

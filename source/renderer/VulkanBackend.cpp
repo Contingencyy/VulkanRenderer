@@ -473,9 +473,7 @@ namespace Vulkan
 		create_info.imageColorSpace = surface_format.colorSpace;
 		create_info.imageExtent = extent;
 		create_info.imageArrayLayers = 1;
-		// TODO: We set the VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT here because we want to render to the swap chain image
-		// later on we change this to VK_IMAGE_USAGE_TRANSFER_DST_BIT to simply copy a texture to it
-		create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+		create_info.imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
 		uint32_t queue_family_indices[] = { vk_inst.queue_indices.graphics, vk_inst.queue_indices.present };
 
@@ -502,33 +500,16 @@ namespace Vulkan
 
 		VkCheckResult(vkCreateSwapchainKHR(vk_inst.device, &create_info, nullptr, &vk_inst.swapchain.swapchain));
 		VkCheckResult(vkGetSwapchainImagesKHR(vk_inst.device, vk_inst.swapchain.swapchain, &image_count, nullptr));
+
 		vk_inst.swapchain.images.resize(image_count);
+		VkCheckResult(vkGetSwapchainImagesKHR(vk_inst.device, vk_inst.swapchain.swapchain, &image_count, vk_inst.swapchain.images.data()));
 
-		std::vector<VkImage> swapchain_images(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
-		VkCheckResult(vkGetSwapchainImagesKHR(vk_inst.device, vk_inst.swapchain.swapchain, &image_count, swapchain_images.data()));
-
-		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
-		{
-			vk_inst.swapchain.images[i].image = swapchain_images[i];
-			vk_inst.swapchain.images[i].format = surface_format.format;
-		}
 		vk_inst.swapchain.extent = extent;
-
-		for (size_t i = 0; i < vk_inst.swapchain.images.size(); ++i)
-		{
-			CreateImageView(VK_IMAGE_ASPECT_COLOR_BIT, vk_inst.swapchain.images[i]);
-		}
+		vk_inst.swapchain.format = create_info.imageFormat;
 	}
 
 	static void DestroySwapChain()
 	{
-		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
-		{
-			vkDestroyFramebuffer(vk_inst.device, vk_inst.swapchain.framebuffers[i], nullptr);
-			vkDestroyImageView(vk_inst.device, vk_inst.swapchain.images[i].view, nullptr);
-		}
-
-		DestroyImage(vk_inst.swapchain.depth_image);
 		vkDestroySwapchainKHR(vk_inst.device, vk_inst.swapchain.swapchain, nullptr);
 	}
 
@@ -557,28 +538,19 @@ namespace Vulkan
 		return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
 	}
 
-	static void CreateDepthResources()
-	{
-		VkFormat depth_format = FindDepthFormat();
-		CreateImage(vk_inst.swapchain.extent.width, vk_inst.swapchain.extent.height, depth_format, VK_IMAGE_TILING_OPTIMAL,
-			VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vk_inst.swapchain.depth_image);
-		Vulkan::CreateImageView(VK_IMAGE_ASPECT_DEPTH_BIT, vk_inst.swapchain.depth_image);
-		TransitionImageLayout(vk_inst.swapchain.depth_image, depth_format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-	}
-
 	void Init(::GLFWwindow* window)
 	{
 		vk_inst.window = window;
 
 		CreateInstance();
 		EnableValidationLayers();
+
 		VkCheckResult(glfwCreateWindowSurface(vk_inst.instance, vk_inst.window, nullptr, &vk_inst.swapchain.surface));
 		CreatePhysicalDevice();
 		CreateDevice();
-		CreateCommandPool();
 
+		CreateCommandPool();
 		CreateSwapChain();
-		CreateDepthResources();
 	}
 
 	void Exit()
@@ -613,9 +585,7 @@ namespace Vulkan
 		vkDeviceWaitIdle(vk_inst.device);
 
 		DestroySwapChain();
-
 		CreateSwapChain();
-		CreateDepthResources();
 	}
 
 	void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags mem_flags, Buffer& buffer)
@@ -874,6 +844,20 @@ namespace Vulkan
 		Vulkan::EndSingleTimeCommands(command_buffer);
 	}
 
+	void CreateFramebuffer(const std::vector<VkImageView>& image_views, VkRenderPass render_pass, uint32_t width, uint32_t height, VkFramebuffer& framebuffer)
+	{
+		VkFramebufferCreateInfo framebuffer_info = {};
+		framebuffer_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+		framebuffer_info.renderPass = render_pass;
+		framebuffer_info.attachmentCount = (uint32_t)image_views.size();
+		framebuffer_info.pAttachments = image_views.data();
+		framebuffer_info.width = width;
+		framebuffer_info.height = height;
+		framebuffer_info.layers = 1;
+
+		VkCheckResult(vkCreateFramebuffer(vk_inst.device, &framebuffer_info, nullptr, &framebuffer));
+	}
+
 	VkFormat FindDepthFormat()
 	{
 		return FindSupportedFormat(
@@ -934,10 +918,8 @@ namespace Vulkan
 		vkFreeCommandBuffers(vk_inst.device, vk_inst.cmd_pools.graphics, 1, &command_buffer);
 	}
 
-	void TransitionImageLayout(const Image& image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout, uint32_t num_mips)
+	void TransitionImageLayout(VkCommandBuffer command_buffer, const Image& image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout, uint32_t num_mips)
 	{
-		VkCommandBuffer command_buffer = BeginSingleTimeCommands();
-
 		VkImageMemoryBarrier barrier = {};
 		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
 		barrier.oldLayout = old_layout;
@@ -964,8 +946,8 @@ namespace Vulkan
 		barrier.subresourceRange.baseArrayLayer = 0;
 		barrier.subresourceRange.layerCount = 1;
 
-		VkPipelineStageFlags src_stage;
-		VkPipelineStageFlags dst_stage;
+		VkPipelineStageFlags src_stage = VK_PIPELINE_STAGE_NONE;
+		VkPipelineStageFlags dst_stage = VK_PIPELINE_STAGE_NONE;
 
 		// TODO: This can be written much nicer, old_layout defines what goes into srcAccessMask and src_stage
 		// and new_layout defines what goes into dstAccessMask and dst_stage, no need for these weird if combinations
@@ -993,6 +975,14 @@ namespace Vulkan
 			src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
 			dst_stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
 		}
+		else if (old_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && new_layout == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR)
+		{
+			barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+			barrier.dstAccessMask = VK_ACCESS_NONE_KHR;
+
+			src_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+			dst_stage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+		}
 
 		vkCmdPipelineBarrier(
 			command_buffer,
@@ -1002,7 +992,12 @@ namespace Vulkan
 			0, nullptr,
 			1, &barrier
 		);
+	}
 
+	void TransitionImageLayout(const Image& image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout, uint32_t num_mips)
+	{
+		VkCommandBuffer command_buffer = BeginSingleTimeCommands();
+		TransitionImageLayout(command_buffer, image, format, old_layout, new_layout, num_mips);
 		EndSingleTimeCommands(command_buffer);
 	}
 

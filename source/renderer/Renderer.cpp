@@ -27,9 +27,7 @@ namespace Renderer
 {
 
 	static constexpr uint32_t BINDLESS_DEFAULT_DESCRIPTOR_COUNT_PER_TYPE = 1000;
-
 	static constexpr uint32_t MAX_DRAW_LIST_ENTRIES = 10000;
-	static constexpr uint32_t MAX_UNIQUE_MATERIALS = 1000;
 
 	struct TextureResource
 	{
@@ -92,6 +90,36 @@ namespace Renderer
 		ReservedDescriptorStorage_NumDescriptors
 	};
 
+	struct GraphicsPass
+	{
+		VkRenderPass render_pass = VK_NULL_HANDLE;
+		VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
+		VkPipeline pipeline = VK_NULL_HANDLE;
+		VkFramebuffer framebuffer = VK_NULL_HANDLE;
+
+		std::vector<Vulkan::Image> color_attachments;
+		Vulkan::Image depth_stencil_attachment;
+		bool depth_enabled = false;
+
+		std::vector<VkImageView> GetAttachmentViews() const
+		{
+			std::vector<VkImageView> attachment_views;
+			attachment_views.reserve(color_attachments.size() + depth_enabled);
+
+			for (auto& color_attachment : color_attachments)
+			{
+				attachment_views.push_back(color_attachment.view);
+			}
+
+			if (depth_enabled)
+			{
+				attachment_views.push_back(depth_stencil_attachment.view);
+			}
+
+			return attachment_views;
+		}
+	};
+
 	struct Data
 	{
 		~Data() {}
@@ -102,9 +130,7 @@ namespace Renderer
 		ResourceSlotmap<MeshResource> mesh_slotmap;
 		ResourceSlotmap<MaterialResource> material_slotmap;
 
-		VkRenderPass render_pass = VK_NULL_HANDLE;
-		VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
-		VkPipeline graphics_pipeline = VK_NULL_HANDLE;
+		GraphicsPass lighting_pass;
 
 		VkDescriptorSetLayout reserved_descriptor_set_layout = VK_NULL_HANDLE;
 		VkDescriptorSetLayout bindless_descriptor_set_layout = VK_NULL_HANDLE;
@@ -206,31 +232,6 @@ namespace Renderer
 		attribute_desc[5].offset = 48;
 
 		return attribute_desc;
-	}
-
-	static void CreateFramebuffers()
-	{
-		vk_inst.swapchain.framebuffers.resize(vk_inst.swapchain.images.size());
-
-		for (size_t i = 0; i < vk_inst.swapchain.images.size(); ++i)
-		{
-			std::array<VkImageView, 2> attachments
-			{
-				vk_inst.swapchain.images[i].view,
-				vk_inst.swapchain.depth_image.view
-			};
-
-			VkFramebufferCreateInfo frame_buffer_info = {};
-			frame_buffer_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-			frame_buffer_info.renderPass = data.render_pass;
-			frame_buffer_info.attachmentCount = (uint32_t)attachments.size();
-			frame_buffer_info.pAttachments = attachments.data();
-			frame_buffer_info.width = vk_inst.swapchain.extent.width;
-			frame_buffer_info.height = vk_inst.swapchain.extent.height;
-			frame_buffer_info.layers = 1;
-
-			VkCheckResult(vkCreateFramebuffer(vk_inst.device, &frame_buffer_info, nullptr, &vk_inst.swapchain.framebuffers[i]));
-		}
 	}
 
 	static void CreateDescriptorSetLayouts()
@@ -470,70 +471,13 @@ namespace Renderer
 		return shader_module;
 	}
 
-	static void CreateRenderPass()
-	{
-		VkAttachmentDescription color_attachment = {};
-		color_attachment.format = vk_inst.swapchain.images[0].format;
-		color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-		color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-		color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		color_attachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		
-		VkAttachmentDescription depth_attachment = {};
-		depth_attachment.format = Vulkan::FindDepthFormat();
-		depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-		depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-		VkAttachmentReference color_attachment_ref = {};
-		color_attachment_ref.attachment = 0;
-		color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-		VkAttachmentReference depth_attachment_ref = {};
-		depth_attachment_ref.attachment = 1;
-		depth_attachment_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-		VkSubpassDescription subpass = {};
-		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-		subpass.colorAttachmentCount = 1;
-		subpass.pColorAttachments = &color_attachment_ref;
-		subpass.pDepthStencilAttachment = &depth_attachment_ref;
-
-		VkSubpassDependency dependency = {};
-		dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-		dependency.dstSubpass = 0;
-		dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-		dependency.srcAccessMask = 0;
-		dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-		dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-		
-		std::array<VkAttachmentDescription, 2> attachments = { color_attachment, depth_attachment };
-		VkRenderPassCreateInfo render_pass_info = {};
-		render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-		render_pass_info.attachmentCount = (uint32_t)attachments.size();
-		render_pass_info.pAttachments = attachments.data();
-		render_pass_info.subpassCount = 1;
-		render_pass_info.pSubpasses = &subpass;
-		render_pass_info.dependencyCount = 1;
-		render_pass_info.pDependencies = &dependency;
-
-		VkCheckResult(vkCreateRenderPass(vk_inst.device, &render_pass_info, nullptr, &data.render_pass));
-	}
-
-	static void CreateGraphicsPipeline()
+	static void CreateGraphicsPipeline(const char* vs_path, const char* ps_path, GraphicsPass& pass)
 	{
 		// TODO: Use libshaderc to compile shaders into SPIR-V from code
 		// TODO: Vulkan extension for shader objects? No longer need to make compiled pipeline states then
 		// https://www.khronos.org/blog/you-can-use-vulkan-without-pipelines-today
-		auto vert_shader_code = ReadFile("assets/shaders/bin/VertexShader.spv");
-		auto frag_shader_code = ReadFile("assets/shaders/bin/FragmentShader.spv");
+		auto vert_shader_code = ReadFile(vs_path);
+		auto frag_shader_code = ReadFile(ps_path);
 
 		VkShaderModule vert_shader_module = CreateShaderModule(vert_shader_code);
 		VkShaderModule frag_shader_module = CreateShaderModule(frag_shader_code);
@@ -609,7 +553,7 @@ namespace Renderer
 
 		VkPipelineDepthStencilStateCreateInfo depth_stencil = {};
 		depth_stencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-		depth_stencil.depthTestEnable = VK_TRUE;
+		depth_stencil.depthTestEnable = pass.depth_enabled;
 		depth_stencil.depthWriteEnable = VK_TRUE;
 		depth_stencil.depthCompareOp = VK_COMPARE_OP_LESS;
 		depth_stencil.depthBoundsTestEnable = VK_FALSE;
@@ -658,7 +602,7 @@ namespace Renderer
 		pipeline_layout_info.pushConstantRangeCount = (uint32_t)push_constants.size();
 		pipeline_layout_info.pPushConstantRanges = push_constants.data();
 
-		VkCheckResult(vkCreatePipelineLayout(vk_inst.device, &pipeline_layout_info, nullptr, &data.pipeline_layout));
+		VkCheckResult(vkCreatePipelineLayout(vk_inst.device, &pipeline_layout_info, nullptr, &pass.pipeline_layout));
 
 		VkGraphicsPipelineCreateInfo pipeline_info = {};
 		pipeline_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -672,21 +616,143 @@ namespace Renderer
 		pipeline_info.pDepthStencilState = &depth_stencil;
 		pipeline_info.pColorBlendState = &color_blend;
 		pipeline_info.pDynamicState = &dynamic_state;
-		pipeline_info.layout = data.pipeline_layout;
-		pipeline_info.renderPass = data.render_pass;
+		pipeline_info.layout = pass.pipeline_layout;
+		pipeline_info.renderPass = pass.render_pass;
 		pipeline_info.subpass = 0;
 		pipeline_info.basePipelineHandle = VK_NULL_HANDLE;
 		pipeline_info.basePipelineIndex = -1;
 		pipeline_info.flags = VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
 
-		VkCheckResult(vkCreateGraphicsPipelines(vk_inst.device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &data.graphics_pipeline));
+		VkCheckResult(vkCreateGraphicsPipelines(vk_inst.device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &pass.pipeline));
 
 		vkDestroyShaderModule(vk_inst.device, frag_shader_module, nullptr);
 		vkDestroyShaderModule(vk_inst.device, vert_shader_module, nullptr);
 	}
 
+	static void CreateComputePipeline(const char* cs_path)
+	{
+
+	}
+
+	static void CreateFramebuffers()
+	{
+		// Create lighting pass color attachment
+		data.lighting_pass.color_attachments.resize(1);
+		// VK_FORMAT_R16G16B16A16_SFLOAT
+		Vulkan::CreateImage(
+			vk_inst.swapchain.extent.width, vk_inst.swapchain.extent.height,
+			vk_inst.swapchain.format, VK_IMAGE_TILING_OPTIMAL,
+			VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+			data.lighting_pass.color_attachments[0]
+		);
+		Vulkan::CreateImageView(
+			VK_IMAGE_ASPECT_COLOR_BIT,
+			data.lighting_pass.color_attachments[0]
+		);
+
+		// Create lighting pass depth attachment
+		Vulkan::CreateImage(
+			vk_inst.swapchain.extent.width, vk_inst.swapchain.extent.height,
+			Vulkan::FindDepthFormat(),
+			VK_IMAGE_TILING_OPTIMAL,
+			VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+			data.lighting_pass.depth_stencil_attachment
+		);
+		Vulkan::CreateImageView(
+			VK_IMAGE_ASPECT_DEPTH_BIT,
+			data.lighting_pass.depth_stencil_attachment
+		);
+
+		// Create lighting pass framebuffer
+		Vulkan::CreateFramebuffer(data.lighting_pass.GetAttachmentViews(), data.lighting_pass.render_pass,
+			vk_inst.swapchain.extent.width, vk_inst.swapchain.extent.height, data.lighting_pass.framebuffer);
+	}
+
+	static void DestroyFramebuffers()
+	{
+		for (auto& color_attachment : data.lighting_pass.color_attachments)
+		{
+			vkDestroyImageView(vk_inst.device, color_attachment.view, nullptr);
+			vkDestroyImage(vk_inst.device, color_attachment.image, nullptr);
+			vkFreeMemory(vk_inst.device, color_attachment.memory, nullptr);
+		}
+		if (data.lighting_pass.depth_enabled)
+		{
+			vkDestroyImageView(vk_inst.device, data.lighting_pass.depth_stencil_attachment.view, nullptr);
+			vkDestroyImage(vk_inst.device, data.lighting_pass.depth_stencil_attachment.image, nullptr);
+			vkFreeMemory(vk_inst.device, data.lighting_pass.depth_stencil_attachment.memory, nullptr);
+		}
+		vkDestroyFramebuffer(vk_inst.device, data.lighting_pass.framebuffer, nullptr);
+	}
+
+	static void CreateRenderPasses()
+	{
+		// Lighting render pass
+		{
+			VkAttachmentDescription color_attachment = {};
+			color_attachment.format = vk_inst.swapchain.format;
+			color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+			color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+			color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+			color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+			color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+			color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+			color_attachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+			VkAttachmentDescription depth_attachment = {};
+			depth_attachment.format = Vulkan::FindDepthFormat();
+			depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+			depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+			depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+			depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+			depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+			depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+			depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+			VkAttachmentReference color_attachment_ref = {};
+			color_attachment_ref.attachment = 0;
+			color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+			VkAttachmentReference depth_attachment_ref = {};
+			depth_attachment_ref.attachment = 1;
+			depth_attachment_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+			VkSubpassDescription subpass = {};
+			subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+			subpass.colorAttachmentCount = 1;
+			subpass.pColorAttachments = &color_attachment_ref;
+			subpass.pDepthStencilAttachment = &depth_attachment_ref;
+
+			VkSubpassDependency dependency = {};
+			dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+			dependency.dstSubpass = 0;
+			dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+			dependency.srcAccessMask = 0;
+			dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+			dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+			std::array<VkAttachmentDescription, 2> attachments = { color_attachment, depth_attachment };
+			VkRenderPassCreateInfo render_pass_info = {};
+			render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+			render_pass_info.attachmentCount = (uint32_t)attachments.size();
+			render_pass_info.pAttachments = attachments.data();
+			render_pass_info.subpassCount = 1;
+			render_pass_info.pSubpasses = &subpass;
+			render_pass_info.dependencyCount = 1;
+			render_pass_info.pDependencies = &dependency;
+
+			VkCheckResult(vkCreateRenderPass(vk_inst.device, &render_pass_info, nullptr, &data.lighting_pass.render_pass));
+			data.lighting_pass.depth_enabled = true;
+
+			CreateGraphicsPipeline("assets/shaders/bin/VertexShader.spv", "assets/shaders/bin/FragmentShader.spv", data.lighting_pass);
+		}
+	}
+
 	static void RecordCommandBuffer(VkCommandBuffer command_buffer, uint32_t image_index)
 	{
+		// Lighting pass
 		VkCommandBufferBeginInfo begin_info = {};
 		begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 		begin_info.flags = 0;
@@ -696,8 +762,8 @@ namespace Renderer
 
 		VkRenderPassBeginInfo render_pass_info = {};
 		render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-		render_pass_info.renderPass = data.render_pass;
-		render_pass_info.framebuffer = vk_inst.swapchain.framebuffers[image_index];
+		render_pass_info.renderPass = data.lighting_pass.render_pass;
+		render_pass_info.framebuffer = data.lighting_pass.framebuffer;
 		// NOTE: Define the render area, which defines where shader loads and stores will take place
 		// Pixels outside this region will have undefined values
 		render_pass_info.renderArea.offset = { 0, 0 };
@@ -711,7 +777,7 @@ namespace Renderer
 		render_pass_info.pClearValues = clear_values.data();
 
 		vkCmdBeginRenderPass(command_buffer, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
-		vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, data.graphics_pipeline);
+		vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, data.lighting_pass.pipeline);
 
 		// Viewport and scissor
 		VkViewport viewport = {};
@@ -730,7 +796,7 @@ namespace Renderer
 
 		// Push constants
 		uint32_t camera_ubo_index = data.current_frame;
-		vkCmdPushConstants(command_buffer, data.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(uint32_t), &camera_ubo_index);
+		vkCmdPushConstants(command_buffer, data.lighting_pass.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(uint32_t), &camera_ubo_index);
 
 		// Bind descriptor buffers
 		std::array<VkBufferDeviceAddressInfo, 2> buffer_address_infos =
@@ -752,7 +818,7 @@ namespace Renderer
 		uint32_t buffer_indices[2] = { 0, 1 };
 		VkDeviceSize buffer_offsets[2] = { 0, 0 };
 		vk_inst.pFunc.cmd_set_descriptor_buffer_offsets_ext(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-			data.pipeline_layout, 0, 2, &buffer_indices[0], &buffer_offsets[0]);
+			data.lighting_pass.pipeline_layout, 0, 2, &buffer_indices[0], &buffer_offsets[0]);
 
 		// Instance buffer
 		const Vulkan::Buffer& instance_buffer = data.instance_buffers[data.current_frame];
@@ -776,7 +842,7 @@ namespace Renderer
 			VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->normal_texture_handle));
 			VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->metallic_roughness_texture_handle));
 
-			vkCmdPushConstants(command_buffer, data.pipeline_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 16, sizeof(uint32_t), &entry.material_handle.index);
+			vkCmdPushConstants(command_buffer, data.lighting_pass.pipeline_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 16, sizeof(uint32_t), &entry.material_handle.index);
 
 			// Vertex and index buffers
 			VkBuffer vertex_buffers[] = { mesh->vertex_buffer.buffer, instance_buffer.buffer };
@@ -794,7 +860,7 @@ namespace Renderer
 		VkRenderPassBeginInfo imgui_pass_info = {};
 		imgui_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 		imgui_pass_info.renderPass = data.imgui.render_pass;
-		imgui_pass_info.framebuffer = vk_inst.swapchain.framebuffers[image_index];
+		imgui_pass_info.framebuffer = data.lighting_pass.framebuffer;
 		imgui_pass_info.renderArea.offset = { 0, 0 };
 		imgui_pass_info.renderArea.extent = vk_inst.swapchain.extent;
 
@@ -804,6 +870,31 @@ namespace Renderer
 		ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer, nullptr);
 
 		vkCmdEndRenderPass(command_buffer);
+
+		// Copy final result to swapchain image
+		VkImageCopy copy_region = {};
+		copy_region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		copy_region.srcSubresource.mipLevel = 0;
+		copy_region.srcSubresource.baseArrayLayer = 0;
+		copy_region.srcSubresource.layerCount = 1;
+		copy_region.srcOffset = { 0, 0, 0 };
+		copy_region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		copy_region.dstSubresource.mipLevel = 0;
+		copy_region.dstSubresource.baseArrayLayer = 0;
+		copy_region.dstSubresource.layerCount = 1;
+		copy_region.dstOffset = { 0, 0, 0 };
+		copy_region.extent = { vk_inst.swapchain.extent.width, vk_inst.swapchain.extent.height, 1 };
+
+		// Note: Temporary hack
+		Vulkan::Image swapchain_image = {};
+		swapchain_image.image = vk_inst.swapchain.images[image_index];
+
+		Vulkan::TransitionImageLayout(command_buffer, swapchain_image, VK_FORMAT_B8G8R8A8_UNORM,
+			VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+		vkCmdCopyImage(command_buffer, data.lighting_pass.color_attachments[0].image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+			swapchain_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy_region);
+		Vulkan::TransitionImageLayout(command_buffer, swapchain_image, VK_FORMAT_B8G8R8A8_UNORM,
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
 		VkCheckResult(vkEndCommandBuffer(command_buffer));
 	}
@@ -829,14 +920,14 @@ namespace Renderer
 
 		// Create imgui render pass
 		VkAttachmentDescription color_attachment = {};
-		color_attachment.format = vk_inst.swapchain.images[0].format;
+		color_attachment.format = vk_inst.swapchain.format;
 		color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
 		color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
 		color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 		color_attachment.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		color_attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+		color_attachment.finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 
 		VkAttachmentDescription depth_attachment = {};
 		depth_attachment.format = Vulkan::FindDepthFormat();
@@ -922,14 +1013,15 @@ namespace Renderer
 		data.window = window;
 		Vulkan::Init(window);
 
-		CreateRenderPass();
 		CreateDescriptorSetLayouts();
 		CreateDescriptorBuffers();
-		CreateGraphicsPipeline();
 
+		CreateRenderPasses();
 		CreateFramebuffers();
+
 		CreateCommandBuffers();
 		CreateSyncObjects();
+
 		CreateDefaultTextures();
 		CreateUniformBuffers();
 		CreateInstanceBuffers();
@@ -952,9 +1044,10 @@ namespace Renderer
 			vkDestroySemaphore(vk_inst.device, data.image_available_semaphores[i], nullptr);
 		}
 
-		// Destroying the command pool will also destroy any command buffers associated with that pool
-		vkDestroyRenderPass(vk_inst.device, data.render_pass, nullptr);
-		vkDestroyPipeline(vk_inst.device, data.graphics_pipeline, nullptr);
+		DestroyFramebuffers();
+		vkDestroyRenderPass(vk_inst.device, data.lighting_pass.render_pass, nullptr);
+		vkDestroyPipeline(vk_inst.device, data.lighting_pass.pipeline, nullptr);
+
 		for (size_t i = 0; i < VulkanInstance::VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
 			Vulkan::DestroyBuffer(data.camera_uniform_buffers[i]);
@@ -967,7 +1060,7 @@ namespace Renderer
 
 		vkDestroyDescriptorSetLayout(vk_inst.device, data.reserved_descriptor_set_layout, nullptr);
 		vkDestroyDescriptorSetLayout(vk_inst.device, data.bindless_descriptor_set_layout, nullptr);
-		vkDestroyPipelineLayout(vk_inst.device, data.pipeline_layout, nullptr);
+		vkDestroyPipelineLayout(vk_inst.device, data.lighting_pass.pipeline_layout, nullptr);
 
 		// Clean up the renderer data
 		data.~Data();
@@ -998,9 +1091,10 @@ namespace Renderer
 		uint32_t image_index;
 		VkResult image_result = vkAcquireNextImageKHR(vk_inst.device, vk_inst.swapchain.swapchain, UINT64_MAX, data.image_available_semaphores[data.current_frame], VK_NULL_HANDLE, &image_index);
 
-		if (image_result == VK_ERROR_OUT_OF_DATE_KHR)
+		if (image_result == VK_ERROR_OUT_OF_DATE_KHR || image_result == VK_SUBOPTIMAL_KHR)
 		{
 			Vulkan::RecreateSwapChain();
+			DestroyFramebuffers();
 			CreateFramebuffers();
 			return;
 		}
@@ -1013,8 +1107,9 @@ namespace Renderer
 		vkResetFences(vk_inst.device, 1, &data.in_flight_fences[data.current_frame]);
 
 		// Reset and record the command buffer
-		vkResetCommandBuffer(data.command_buffers[data.current_frame], 0);
-		RecordCommandBuffer(data.command_buffers[data.current_frame], image_index);
+		VkCommandBuffer command_buffer = data.command_buffers[data.current_frame];
+		vkResetCommandBuffer(command_buffer, 0);
+		RecordCommandBuffer(command_buffer, image_index);
 
 		// Submit the command buffer for execution
 		VkSubmitInfo submit_info = {};
@@ -1026,7 +1121,7 @@ namespace Renderer
 		submit_info.pWaitSemaphores = wait_semaphores;
 		submit_info.pWaitDstStageMask = wait_stages;
 		submit_info.commandBufferCount = 1;
-		submit_info.pCommandBuffers = &data.command_buffers[data.current_frame];
+		submit_info.pCommandBuffers = &command_buffer;
 
 		VkSemaphore signal_semaphores[] = { data.render_finished_semaphores[data.current_frame] };
 		submit_info.signalSemaphoreCount = 1;
@@ -1051,6 +1146,7 @@ namespace Renderer
 		if (present_result == VK_ERROR_OUT_OF_DATE_KHR || present_result == VK_SUBOPTIMAL_KHR)
 		{
 			Vulkan::RecreateSwapChain();
+			DestroyFramebuffers();
 			CreateFramebuffers();
 		}
 		else

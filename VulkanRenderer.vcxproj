@@ -179,6 +179,7 @@ C:/VulkanSDK/1.3.261.1/Bin/glslc.exe assets/shaders/FragmentShader.frag -o $(Out
     <ClInclude Include="include\renderer\VulkanBackend.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="assets\shaders\BRDF.glsl" />
     <None Include="assets\shaders\FragmentShader.frag" />
     <None Include="assets\shaders\VertexShader.vert" />
   </ItemGroup>

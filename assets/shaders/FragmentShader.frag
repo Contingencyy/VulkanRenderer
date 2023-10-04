@@ -3,10 +3,11 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 
 #include "Shared.glsl.h"
+#include "BRDF.glsl"
 
 layout(std140, set = 0, binding = 0) readonly buffer MaterialBuffer
 {
-	MaterialData mat[1000];
+	MaterialData mat[MAX_UNIQUE_MATERIALS];
 } g_materials;
 
 layout(set = 1, binding = 2) uniform sampler2D g_tex_samplers[];
