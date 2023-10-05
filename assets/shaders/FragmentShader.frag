@@ -8,7 +8,7 @@
 layout(std140, set = 1, binding = 0) readonly buffer MaterialBuffer
 {
 	MaterialData mat[MAX_UNIQUE_MATERIALS];
-} g_materials;
+} g_materials[];
 
 layout(set = 2, binding = 0) uniform sampler2D g_tex_samplers[];
 
@@ -23,6 +23,6 @@ layout(location = 0) out vec4 out_color;
 
 void main()
 {
-	MaterialData material = g_materials.mat[push_constants.mat_index];
+	MaterialData material = g_materials[RESERVED_DESCRIPTOR_STORAGE_MATERIAL].mat[push_constants.mat_index];
 	out_color = texture(g_tex_samplers[material.base_color_texture_index], frag_tex_coord) * material.base_color_factor;
 }

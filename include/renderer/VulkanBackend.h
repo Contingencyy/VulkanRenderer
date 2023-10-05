@@ -18,8 +18,6 @@ namespace Vulkan
 		VkBuffer buffer = VK_NULL_HANDLE;
 		VkDeviceMemory memory = VK_NULL_HANDLE;
 		void* ptr = nullptr;
-
-		DescriptorAllocation descriptors;
 		uint32_t num_elements = 0;
 	};
 
@@ -30,8 +28,6 @@ namespace Vulkan
 		VkDeviceMemory memory = VK_NULL_HANDLE;;
 		VkSampler sampler = VK_NULL_HANDLE;
 		VkFormat format = VK_FORMAT_UNDEFINED;
-
-		DescriptorAllocation descriptors;
 	};
 
 	void Init(::GLFWwindow* window);

@@ -28,14 +28,27 @@ namespace Renderer
 
 	static constexpr uint32_t MAX_DRAW_LIST_ENTRIES = 10000;
 
+	//struct BufferResource
+	//{
+	//	Vulkan::Buffer buffer;
+	//	DescriptorAllocation descriptors;
+
+	//	~BufferResource()
+	//	{
+	//		Vulkan::DestroyBuffer(buffer);
+	//		// TODO: Free descriptors
+	//	}
+	//};
+
 	struct TextureResource
 	{
 		Vulkan::Image image;
-		DescriptorAllocation descriptor;
+		DescriptorAllocation descriptors;
 
 		~TextureResource()
 		{
 			Vulkan::DestroyImage(image);
+			// TODO: Free descriptors
 		}
 	};
 
@@ -81,25 +94,6 @@ namespace Renderer
 			current_entry++;
 			return entry;
 		}
-	};
-
-	enum ReservedDescriptorUniform
-	{
-		ReservedDescriptorUniform_Camera,
-		ReservedDescriptorUniform_NumReserved
-	};
-
-	enum ReservedDescriptorStorage
-	{
-		ReservedDescriptorStorage_Material,
-		ReservedDescriptorStorage_NumReserved
-	};
-
-	enum ReservedDescriptorImage
-	{
-		ReservedDescriptorImage_DefaultWhite,
-		ReservedDescriptorImage_DefaultNormal,
-		ReservedDescriptorImage_NumReserved
 	};
 
 	struct GraphicsPass
@@ -159,10 +153,14 @@ namespace Renderer
 		DrawList draw_list;
 
 		// Uniform buffers
+		// TODO: Free reserved descriptors on Exit()
+		DescriptorAllocation reserved_ubo_descriptors;
 		std::vector<Vulkan::Buffer> camera_uniform_buffers;
 		std::vector<Vulkan::Buffer> instance_buffers;
 
 		// Storage buffers
+		// TODO: Free reserved descriptors on Exit()
+		DescriptorAllocation reserved_storage_descriptors;
 		Vulkan::Buffer material_buffer;
 
 		// Default resources
@@ -319,10 +317,8 @@ namespace Renderer
 		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
 			Vulkan::CreateUniformBuffer(buffer_size, data->camera_uniform_buffers[i]);
-
-			// Allocate and update descriptor
-			data->camera_uniform_buffers[i].descriptors = data->descriptor_buffer_uniform.Allocate();
-			data->camera_uniform_buffers[i].descriptors.WriteDescriptor(data->camera_uniform_buffers[i], buffer_size);
+			data->reserved_ubo_descriptors.WriteDescriptor(data->camera_uniform_buffers[i],
+				buffer_size, RESERVED_DESCRIPTOR_UNIFORM_CAMERA * VulkanInstance::MAX_FRAMES_IN_FLIGHT + i);
 		}
 	}
 
@@ -345,10 +341,7 @@ namespace Renderer
 		VkDeviceSize material_buffer_size = MAX_UNIQUE_MATERIALS * sizeof(MaterialResource);
 		Vulkan::CreateBuffer(material_buffer_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT |
 			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, data->material_buffer);
-
-		// Allocate and update descriptor
-		data->material_buffer.descriptors = data->descriptor_buffer_storage.Allocate();
-		data->material_buffer.descriptors.WriteDescriptor(data->material_buffer, material_buffer_size);
+		data->reserved_storage_descriptors.WriteDescriptor(data->material_buffer, material_buffer_size, RESERVED_DESCRIPTOR_STORAGE_MATERIAL);
 	}
 
 	static VkShaderModule CreateShaderModule(const std::vector<char>& code)
@@ -767,10 +760,13 @@ namespace Renderer
 		CreateCommandBuffers();
 		CreateSyncObjects();
 
-		CreateDefaultTextures();
+		data->reserved_ubo_descriptors = data->descriptor_buffer_uniform.Allocate(RESERVED_DESCRIPTOR_UNIFORM_COUNT * VulkanInstance::MAX_FRAMES_IN_FLIGHT);
 		CreateUniformBuffers();
-		CreateInstanceBuffers();
+		data->reserved_storage_descriptors = data->descriptor_buffer_storage.Allocate(RESERVED_DESCRIPTOR_STORAGE_COUNT);
 		CreateMaterialBuffer();
+		CreateInstanceBuffers();
+
+		CreateDefaultTextures();
 
 		InitDearImGui();
 	}
@@ -825,7 +821,8 @@ namespace Renderer
 
 		// Get an available image index from the swap chain
 		uint32_t image_index;
-		VkResult image_result = vkAcquireNextImageKHR(vk_inst.device, vk_inst.swapchain.swapchain, UINT64_MAX, data->image_available_semaphores[data->current_frame], VK_NULL_HANDLE, &image_index);
+		VkResult image_result = vkAcquireNextImageKHR(vk_inst.device, vk_inst.swapchain.swapchain, UINT64_MAX,
+			data->image_available_semaphores[data->current_frame], VK_NULL_HANDLE, &image_index);
 
 		if (image_result == VK_ERROR_OUT_OF_DATE_KHR || image_result == VK_SUBOPTIMAL_KHR)
 		{
@@ -894,7 +891,7 @@ namespace Renderer
 		vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
 		// Push constants
-		uint32_t camera_ubo_index = data->current_frame;
+		uint32_t camera_ubo_index = RESERVED_DESCRIPTOR_UNIFORM_CAMERA * VulkanInstance::MAX_FRAMES_IN_FLIGHT + data->current_frame;
 		vkCmdPushConstants(command_buffer, data->lighting_pass.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(uint32_t), &camera_ubo_index);
 
 		// Bind descriptor buffers
@@ -1050,7 +1047,7 @@ namespace Renderer
 
 		ImGui::EndFrame();
 
-		// Reset/Update some per-frame data
+		// Reset/Update per-frame data
 		data->stats.Reset();
 		data->draw_list.current_entry = 0;
 		data->current_frame = (data->current_frame + 1) % VulkanInstance::MAX_FRAMES_IN_FLIGHT;
@@ -1112,8 +1109,8 @@ namespace Renderer
 		VkCheckResult(vkCreateSampler(vk_inst.device, &sampler_info, nullptr, &reserved.resource->image.sampler));
 
 		// Allocate and update descriptor
-		reserved.resource->descriptor = data->descriptor_buffer_images.Allocate();
-		reserved.resource->descriptor.WriteDescriptor(reserved.resource->image, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
+		reserved.resource->descriptors = data->descriptor_buffer_images.Allocate();
+		reserved.resource->descriptors.WriteDescriptor(reserved.resource->image, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
 
 		return reserved.handle;
 	}

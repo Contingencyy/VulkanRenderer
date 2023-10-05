@@ -21,7 +21,7 @@ public:
 	bool IsNull();
 
 private:
-	VkDescriptorType m_descriptor_type;
+	VkDescriptorType m_descriptor_type = VK_DESCRIPTOR_TYPE_MAX_ENUM;
 
 	uint32_t m_num_descriptors = 0;
 	uint32_t m_descriptor_size = 0;
