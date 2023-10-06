@@ -220,9 +220,9 @@ namespace Renderer
 		return binding_descs;
 	}
 
-	static std::array<VkVertexInputAttributeDescription, 6> GetVertexAttributeDescription()
+	static std::array<VkVertexInputAttributeDescription, 7> GetVertexAttributeDescription()
 	{
-		std::array<VkVertexInputAttributeDescription, 6> attribute_desc = {};
+		std::array<VkVertexInputAttributeDescription, 7> attribute_desc = {};
 		attribute_desc[0].binding = 0;
 		attribute_desc[0].location = 0;
 		attribute_desc[0].format = VK_FORMAT_R32G32B32_SFLOAT;
@@ -233,25 +233,30 @@ namespace Renderer
 		attribute_desc[1].format = VK_FORMAT_R32G32_SFLOAT;
 		attribute_desc[1].offset = offsetof(Vertex, tex_coord);
 
-		attribute_desc[2].binding = 1;
+		attribute_desc[2].binding = 0;
 		attribute_desc[2].location = 2;
-		attribute_desc[2].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-		attribute_desc[2].offset = 0;
+		attribute_desc[2].format = VK_FORMAT_R32G32B32_SFLOAT;
+		attribute_desc[2].offset = offsetof(Vertex, normal);
 
 		attribute_desc[3].binding = 1;
 		attribute_desc[3].location = 3;
 		attribute_desc[3].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-		attribute_desc[3].offset = 16;
+		attribute_desc[3].offset = 0;
 
 		attribute_desc[4].binding = 1;
 		attribute_desc[4].location = 4;
 		attribute_desc[4].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-		attribute_desc[4].offset = 32;
+		attribute_desc[4].offset = 16;
 
 		attribute_desc[5].binding = 1;
 		attribute_desc[5].location = 5;
 		attribute_desc[5].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-		attribute_desc[5].offset = 48;
+		attribute_desc[5].offset = 32;
+
+		attribute_desc[6].binding = 1;
+		attribute_desc[6].location = 6;
+		attribute_desc[6].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+		attribute_desc[6].offset = 48;
 
 		return attribute_desc;
 	}
@@ -471,14 +476,10 @@ namespace Renderer
 		color_blend.blendConstants[2] = 0.0f;
 		color_blend.blendConstants[3] = 0.0f;
 
-		std::array<VkPushConstantRange, 2> push_constants = {};
+		std::array<VkPushConstantRange, 1> push_constants = {};
 		push_constants[0].offset = 0;
-		push_constants[0].size = sizeof(uint32_t);
-		push_constants[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-		push_constants[1].offset = VK_ALIGN_POW2(4 + alignof(uint32_t), 16);
-		push_constants[1].size = sizeof(uint32_t);
-		push_constants[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+		push_constants[0].size = 2 * sizeof(uint32_t);
+		push_constants[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
 		std::array<VkDescriptorSetLayout, 3> descriptor_set_layouts = { data->descriptor_buffer_uniform.GetDescriptorSetLayout(),
 			data->descriptor_buffer_storage.GetDescriptorSetLayout(), data->descriptor_buffer_images.GetDescriptorSetLayout() };
@@ -813,6 +814,7 @@ namespace Renderer
 		CameraData ubo = {};
 		ubo.view = view;
 		ubo.proj = proj;
+		ubo.view_pos = glm::inverse(view)[3];
 
 		memcpy(data->camera_uniform_buffers[data->current_frame].ptr, &ubo, sizeof(ubo));
 
@@ -892,7 +894,7 @@ namespace Renderer
 
 		// Push constants
 		uint32_t camera_ubo_index = RESERVED_DESCRIPTOR_UNIFORM_CAMERA * VulkanInstance::MAX_FRAMES_IN_FLIGHT + data->current_frame;
-		vkCmdPushConstants(command_buffer, data->lighting_pass.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(uint32_t), &camera_ubo_index);
+		vkCmdPushConstants(command_buffer, data->lighting_pass.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(uint32_t), &camera_ubo_index);
 
 		// Bind descriptor buffers
 		std::array<VkDescriptorBufferBindingInfoEXT, 3> descriptor_buffer_binding_infos = {};
@@ -928,7 +930,7 @@ namespace Renderer
 			VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->normal_texture_handle));
 			VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->metallic_roughness_texture_handle));
 
-			vkCmdPushConstants(command_buffer, data->lighting_pass.pipeline_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 16, sizeof(uint32_t), &entry.material_handle.index);
+			vkCmdPushConstants(command_buffer, data->lighting_pass.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 4, sizeof(uint32_t), &entry.material_handle.index);
 
 			// Vertex and index buffers
 			VkBuffer vertex_buffers[] = { mesh->vertex_buffer.buffer, instance_buffer.buffer };
@@ -1162,6 +1164,7 @@ namespace Renderer
 	{
 		ResourceSlotmap<MaterialResource>::ReservedResource reserved = data->material_slotmap.Reserve();
 
+		// Base color factor and texture
 		reserved.resource->data.base_color_factor = args.base_color_factor;
 		if (VK_RESOURCE_HANDLE_VALID(args.base_color_texture_handle))
 		{
@@ -1174,6 +1177,7 @@ namespace Renderer
 			reserved.resource->data.base_color_texture_index = data->default_white_texture_handle.index;
 		}
 
+		// Normal texture
 		if (VK_RESOURCE_HANDLE_VALID(args.normal_texture_handle))
 		{
 			reserved.resource->normal_texture_handle = args.normal_texture_handle;
@@ -1185,6 +1189,9 @@ namespace Renderer
 			reserved.resource->data.normal_texture_index = data->default_normal_texture_handle.index;
 		}
 
+		// Metallic roughness factors and texture
+		reserved.resource->data.metallic_factor = args.metallic_factor;
+		reserved.resource->data.roughness_factor = args.roughness_factor;
 		if (VK_RESOURCE_HANDLE_VALID(args.metallic_roughness_texture_handle))
 		{
 			reserved.resource->metallic_roughness_texture_handle = args.metallic_roughness_texture_handle;

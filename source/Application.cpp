@@ -151,7 +151,7 @@ namespace Application
 
 		Assets::Init();
 		Assets::LoadTexture("assets/textures/statue.jpg", "statue");
-		Assets::LoadGLTF("assets/models/gltf/bmw_m6_rigged/scene.gltf", "car");
+		Assets::LoadGLTF("assets/models/gltf/ABeautifulGame/ABeautifulGame.gltf", "car");
 
 		data.is_running = true;
 	}

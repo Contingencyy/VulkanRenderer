@@ -210,6 +210,16 @@ namespace Assets
 						}
 						break;
 					}
+					case cgltf_attribute_type_normal:
+					{
+						glm::vec3* normal_ptr = CGLTFGetDataPointer<glm::vec3>(attribute.data);
+
+						for (size_t l = 0; l < attribute.data->count; ++l)
+						{
+							mesh_args.vertices[l].normal = normal_ptr[l];
+						}
+						break;
+					}
 					}
 				}
 
