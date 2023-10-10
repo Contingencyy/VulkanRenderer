@@ -257,8 +257,7 @@ namespace Renderer
 		struct ImGui
 		{
 			VkDescriptorPool descriptor_pool;
-			// TODO: Imgui with dynamic rendering, remove render pass
-			VkRenderPass render_pass;
+			GraphicsPass pass;
 		} imgui;
 	} static *data;
 
@@ -780,60 +779,13 @@ namespace Renderer
 		VkCheckResult(vkCreateDescriptorPool(vk_inst.device, &pool_info, nullptr, &data->imgui.descriptor_pool));
 
 		// Create imgui render pass
-		VkAttachmentDescription color_attachment = {};
-		color_attachment.format = vk_inst.swapchain.format;
-		color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-		color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-		color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-		color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		color_attachment.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		color_attachment.finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+		data->imgui.pass.color_attachment_infos.resize(1);
+		data->imgui.pass.color_attachment_infos[0].sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+		data->imgui.pass.color_attachment_infos[0].imageView = data->post_process_pass.attachments[0].view;
+		data->imgui.pass.color_attachment_infos[0].imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		data->imgui.pass.color_attachment_infos[0].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+		data->imgui.pass.color_attachment_infos[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		
-		VkAttachmentDescription depth_attachment = {};
-		depth_attachment.format = Vulkan::FindDepthFormat();
-		depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-		depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-		VkAttachmentReference color_attachment_ref = {};
-		color_attachment_ref.attachment = 0;
-		color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-		VkAttachmentReference depth_attachment_ref = {};
-		depth_attachment_ref.attachment = 1;
-		depth_attachment_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-		VkSubpassDescription subpass = {};
-		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-		subpass.colorAttachmentCount = 1;
-		subpass.pColorAttachments = &color_attachment_ref;
-		subpass.pDepthStencilAttachment = &depth_attachment_ref;
-
-		VkSubpassDependency dependency = {};
-		dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-		dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-		dependency.srcAccessMask = 0;
-		dependency.dstSubpass = 0;
-		dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-		dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-
-		std::array<VkAttachmentDescription, 2> attachments = { color_attachment, depth_attachment };
-		VkRenderPassCreateInfo render_pass_info = {};
-		render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-		render_pass_info.attachmentCount = (uint32_t)attachments.size();
-		render_pass_info.pAttachments = attachments.data();
-		render_pass_info.subpassCount = 1;
-		render_pass_info.pSubpasses = &subpass;
-		render_pass_info.dependencyCount = 1;
-		render_pass_info.pDependencies = &dependency;
-
-		VkCheckResult(vkCreateRenderPass(vk_inst.device, &render_pass_info, nullptr, &data->imgui.render_pass));
-
 		// Init imgui
 		ImGui_ImplGlfw_InitForVulkan(vk_inst.window, true);
 		ImGui_ImplVulkan_InitInfo init_info = {};
@@ -844,13 +796,14 @@ namespace Renderer
 		init_info.Queue = vk_inst.queues.graphics;
 		init_info.PipelineCache = VK_NULL_HANDLE;
 		init_info.DescriptorPool = data->imgui.descriptor_pool;
-		init_info.Subpass = 0;
 		init_info.MinImageCount = VulkanInstance::MAX_FRAMES_IN_FLIGHT;
 		init_info.ImageCount = VulkanInstance::MAX_FRAMES_IN_FLIGHT;
 		init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
 		init_info.Allocator = nullptr;
+		init_info.UseDynamicRendering = true;
+		init_info.ColorAttachmentFormat = data->post_process_pass.attachments[0].format;
 		init_info.CheckVkResultFn = VkCheckResult;
-		ImGui_ImplVulkan_Init(&init_info, data->imgui.render_pass);
+		ImGui_ImplVulkan_Init(&init_info, nullptr);
 
 		// Upload imgui font
 		VkCommandBuffer command_buffer = Vulkan::BeginSingleTimeCommands();
@@ -865,7 +818,6 @@ namespace Renderer
 		ImGui_ImplGlfw_Shutdown();
 		ImGui::DestroyContext();
 
-		vkDestroyRenderPass(vk_inst.device, data->imgui.render_pass, nullptr);
 		vkDestroyDescriptorPool(vk_inst.device, data->imgui.descriptor_pool, nullptr);
 	}
 
@@ -1088,19 +1040,15 @@ namespace Renderer
 		VkCommandBuffer command_buffer = data->command_buffers[data->current_frame];
 
 		//// Render ImGui
-		//VkRenderPassBeginInfo imgui_pass_info = {};
-		//imgui_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-		//imgui_pass_info.renderPass = data->imgui.render_pass;
-		//imgui_pass_info.framebuffer = data->imgui.framebuffer;
-		//imgui_pass_info.renderArea.offset = { 0, 0 };
-		//imgui_pass_info.renderArea.extent = vk_inst.swapchain.extent;
+		Vulkan::TransitionImageLayout(command_buffer, data->post_process_pass.attachments[0], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
-		//vkCmdBeginRenderPass(command_buffer, &imgui_pass_info, VK_SUBPASS_CONTENTS_INLINE);
+		VkRenderingInfo imgui_rendering_info = data->imgui.pass.GetRenderingInfo();
+		vkCmdBeginRendering(command_buffer, &imgui_rendering_info);
 
-		//ImGui::Render();
-		//ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer, nullptr);
+		ImGui::Render();
+		ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer, nullptr);
 
-		//vkCmdEndRenderPass(command_buffer);
+		vkCmdEndRendering(command_buffer);
 
 		// Copy final result to swapchain image
 		VkImageCopy copy_region = {};

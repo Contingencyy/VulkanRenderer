@@ -31,7 +31,7 @@ void main()
 {
 	frag_pos = transform * vec4(position, 1.0f);
 	frag_tex_coord = tex_coord;
-	frag_normal = (transform * vec4(normal, 0.0f)).xyz;
+	frag_normal = normalize(transform * vec4(normal, 0.0f)).xyz;
 	
 	gl_Position = g_camera[push_constants.camera_ubo_index].cam.proj * g_camera[push_constants.camera_ubo_index].cam.view * frag_pos;
 }

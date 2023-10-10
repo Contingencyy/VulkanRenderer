@@ -93,7 +93,7 @@ namespace Application
 		for (size_t i = 0; i < model.root_nodes.size(); ++i)
 		{
 			const Assets::Model::Node& root_node = model.nodes[model.root_nodes[i]];
-			glm::mat4 root_transform = root_node.transform * transform;
+			glm::mat4 root_transform = transform * root_node.transform;
 			SubmitModelNode(model, root_node, root_transform);
 		}
 	}
@@ -138,7 +138,7 @@ namespace Application
 
 		int width, height;
 		glfwGetFramebufferSize(data.window, &width, &height);
-		data.proj = glm::perspective(glm::radians(60.0f), (float)width / height, 0.1f, 10000.0f);
+		data.proj = glm::perspective(glm::radians(60.0f), (float)width / height, 0.001f, 1000.0f);
 		data.proj[1][1] *= -1.0f;
 	}
 
@@ -174,7 +174,7 @@ namespace Application
 
 		// NOTE: Temporary test setup, we should have a proper scene soon
 		Assets::Model car = Assets::GetModel("car");
-		glm::mat4 transform = glm::scale(glm::identity<glm::mat4>(), glm::vec3(1.0));
+		glm::mat4 transform = glm::scale(glm::identity<glm::mat4>(), glm::vec3(10.0f));
 		SubmitModel(car, transform);
 	}
 

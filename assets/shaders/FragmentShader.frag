@@ -39,7 +39,7 @@ void main()
 	vec2 metallic_roughness = texture(sampler2D(g_textures[material.metallic_roughness_texture_index], g_samplers[material.sampler_index]), frag_tex_coord).bg * vec2(material.metallic_factor, material.roughness_factor);
 
 	// TEMP: Single point light
-	vec3 light_pos = vec3(0.0f, 5.0f, 0.0f);
+	vec3 light_pos = vec3(0.0f, 50.0f, 0.0f);
 	vec3 light_color = vec3(5.0f, 5.0f, 5.0f);
 	vec3 falloff = vec3(1.0f, 0.007f, 0.0002f);
 
