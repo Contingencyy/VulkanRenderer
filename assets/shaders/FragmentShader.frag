@@ -1,21 +1,24 @@
 #version 450
+#pragma once
+
 #extension GL_KHR_vulkan_glsl : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 
 #include "Shared.glsl.h"
 #include "BRDF.glsl"
 
-layout(set = 0, binding = 0) uniform Camera
+layout(set = DESCRIPTOR_SET_UNIFORM_BUFFER, binding = 0) uniform Camera
 {
 	CameraData cam;
 } g_camera[];
 
-layout(std140, set = 1, binding = 0) readonly buffer MaterialBuffer
+layout(std140, set = DESCRIPTOR_SET_STORAGE_BUFFER, binding = 0) readonly buffer MaterialBuffer
 {
 	MaterialData mat[MAX_UNIQUE_MATERIALS];
 } g_materials[];
 
-layout(set = 2, binding = 0) uniform sampler2D g_tex_samplers[];
+layout(set = DESCRIPTOR_SET_SAMPLED_IMAGE, binding = 0) uniform texture2D g_textures[];
+layout(set = DESCRIPTOR_SET_SAMPLER, binding = 0) uniform sampler g_samplers[];
 
 layout(std140, push_constant) uniform constants
 {
@@ -31,13 +34,13 @@ layout(location = 0) out vec4 out_color;
 
 void main()
 {
-	MaterialData material = g_materials[RESERVED_DESCRIPTOR_STORAGE_MATERIAL].mat[push_constants.mat_index];
-	vec4 base_color = texture(g_tex_samplers[material.base_color_texture_index], frag_tex_coord) * material.base_color_factor;
-	vec2 metallic_roughness = texture(g_tex_samplers[material.metallic_roughness_texture_index], frag_tex_coord).bg * vec2(material.metallic_factor, material.roughness_factor);
+	MaterialData material = g_materials[RESERVED_DESCRIPTOR_STORAGE_BUFFER_MATERIAL].mat[push_constants.mat_index];
+	vec4 base_color = texture(sampler2D(g_textures[material.base_color_texture_index], g_samplers[material.sampler_index]), frag_tex_coord) * material.base_color_factor;
+	vec2 metallic_roughness = texture(sampler2D(g_textures[material.metallic_roughness_texture_index], g_samplers[material.sampler_index]), frag_tex_coord).bg * vec2(material.metallic_factor, material.roughness_factor);
 
 	// TEMP: Single point light
-	vec3 light_pos = vec3(0.0f, 50.0f, 0.0f);
-	vec3 light_color = vec3(200.0f, 200.0f, 200.0f);
+	vec3 light_pos = vec3(0.0f, 5.0f, 0.0f);
+	vec3 light_color = vec3(5.0f, 5.0f, 5.0f);
 	vec3 falloff = vec3(1.0f, 0.007f, 0.0002f);
 
 	vec3 view_pos = g_camera[push_constants.camera_ubo_index].cam.view_pos.xyz;

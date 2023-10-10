@@ -105,9 +105,10 @@
     <PostBuildEvent>
       <Command>xcopy /q /y /e "$(SolutionDir)assets\" "$(OutDir)assets\"
 if not exist $(OutDir)assets\shaders\bin mkdir $(OutDir)assets\shaders\bin
-C:/VulkanSDK/1.3.261.1/Bin/glslc.exe assets/shaders/VertexShader.vert -o $(OutDir)assets\shaders\bin\VertexShader.spv
 
-C:/VulkanSDK/1.3.261.1/Bin/glslc.exe assets/shaders/FragmentShader.frag -o $(OutDir)assets\shaders\bin\FragmentShader.spv</Command>
+C:/VulkanSDK/1.3.261.1/Bin/glslc.exe --target-env=vulkan1.3 --target-spv=spv1.6 -fshader-stage=vertex assets/shaders/VertexShader.vert -o $(OutDir)assets\shaders\bin\VertexShader.spv
+C:/VulkanSDK/1.3.261.1/Bin/glslc.exe --target-env=vulkan1.3 --target-spv=spv1.6 -fshader-stage=fragment assets/shaders/FragmentShader.frag -o $(OutDir)assets\shaders\bin\FragmentShader.spv
+C:/VulkanSDK/1.3.261.1/Bin/glslc.exe --target-env=vulkan1.3 --target-spv=spv1.6 -fshader-stage=compute assets/shaders/PostProcessCS.glsl -o $(OutDir)assets\shaders\bin\PostProcessCS.spv</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -140,9 +141,10 @@ C:/VulkanSDK/1.3.261.1/Bin/glslc.exe assets/shaders/FragmentShader.frag -o $(Out
     <PostBuildEvent>
       <Command>xcopy /q /y /e "$(SolutionDir)assets\" "$(OutDir)assets\"
 if not exist $(OutDir)assets\shaders\bin mkdir $(OutDir)assets\shaders\bin
-C:/VulkanSDK/1.3.261.1/Bin/glslc.exe assets/shaders/VertexShader.vert -o $(OutDir)assets\shaders\bin\VertexShader.spv
 
-C:/VulkanSDK/1.3.261.1/Bin/glslc.exe assets/shaders/FragmentShader.frag -o $(OutDir)assets\shaders\bin\FragmentShader.spv</Command>
+C:/VulkanSDK/1.3.261.1/Bin/glslc.exe --target-env=vulkan1.3 --target-spv=spv1.6 -fshader-stage=vertex assets/shaders/VertexShader.vert -o $(OutDir)assets\shaders\bin\VertexShader.spv
+C:/VulkanSDK/1.3.261.1/Bin/glslc.exe --target-env=vulkan1.3 --target-spv=spv1.6 -fshader-stage=fragment assets/shaders/FragmentShader.frag -o $(OutDir)assets\shaders\bin\FragmentShader.spv
+C:/VulkanSDK/1.3.261.1/Bin/glslc.exe --target-env=vulkan1.3 --target-spv=spv1.6 -fshader-stage=compute assets/shaders/PostProcessCS.glsl -o $(OutDir)assets\shaders\bin\PostProcessCS.spv</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -183,6 +185,7 @@ C:/VulkanSDK/1.3.261.1/Bin/glslc.exe assets/shaders/FragmentShader.frag -o $(Out
   <ItemGroup>
     <None Include="assets\shaders\BRDF.glsl" />
     <None Include="assets\shaders\FragmentShader.frag" />
+    <None Include="assets\shaders\PostProcessCS.glsl" />
     <None Include="assets\shaders\VertexShader.vert" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

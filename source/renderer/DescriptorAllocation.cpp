@@ -50,15 +50,35 @@ void DescriptorAllocation::WriteDescriptor(const Vulkan::Image& image, VkImageLa
 	VkDescriptorImageInfo image_info = {};
 	image_info.imageView = image.view;
 	image_info.imageLayout = layout;
-	image_info.sampler = image.sampler;
+	image_info.sampler = VK_NULL_HANDLE;
 
 	VkDescriptorGetInfoEXT descriptor_info = {};
 	descriptor_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
-	descriptor_info.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-	descriptor_info.data.pCombinedImageSampler = &image_info;
+
+	if (m_descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+	{
+		descriptor_info.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+		descriptor_info.data.pStorageImage = &image_info;
+	}
+	else if (m_descriptor_type == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
+	{
+		descriptor_info.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+		descriptor_info.data.pSampledImage = &image_info;
+	}
 
 	vk_inst.pFunc.get_descriptor_ext(vk_inst.device, &descriptor_info,
-		vk_inst.descriptor_sizes.combined_image_sampler, GetDescriptor(offset));
+		vk_inst.descriptor_sizes.sampled_image, GetDescriptor(offset));
+}
+
+void DescriptorAllocation::WriteDescriptor(const VkSampler sampler, uint32_t offset)
+{
+	VkDescriptorGetInfoEXT descriptor_info = {};
+	descriptor_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
+	descriptor_info.type = VK_DESCRIPTOR_TYPE_SAMPLER;
+	descriptor_info.data.pSampler = &sampler;
+
+	vk_inst.pFunc.get_descriptor_ext(vk_inst.device, &descriptor_info,
+		vk_inst.descriptor_sizes.sampler, GetDescriptor(offset));
 }
 
 bool DescriptorAllocation::IsNull()

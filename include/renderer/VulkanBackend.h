@@ -26,8 +26,8 @@ namespace Vulkan
 		VkImage image = VK_NULL_HANDLE;;
 		VkImageView view = VK_NULL_HANDLE;;
 		VkDeviceMemory memory = VK_NULL_HANDLE;;
-		VkSampler sampler = VK_NULL_HANDLE;
 		VkFormat format = VK_FORMAT_UNDEFINED;
+		VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
 	};
 
 	void Init(::GLFWwindow* window);
@@ -55,16 +55,14 @@ namespace Vulkan
 	void DestroyImage(const Image& image);
 
 	void CopyBufferToImage(const Buffer& src_buffer, const Image& dst_image, uint32_t width, uint32_t height, VkDeviceSize src_offset = 0);
-	
-	void CreateFramebuffer(const std::vector<VkImageView>& image_views, VkRenderPass render_pass, uint32_t width, uint32_t height, VkFramebuffer& framebuffer);
 
 	VkFormat FindDepthFormat();
 	uint32_t FindMemoryType(uint32_t type_filter, VkMemoryPropertyFlags mem_properties);
 
 	VkCommandBuffer BeginSingleTimeCommands();
 	void EndSingleTimeCommands(VkCommandBuffer command_buffer);
-	void TransitionImageLayout(VkCommandBuffer command_buffer, const Image& image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout, uint32_t num_mips = 1);
-	void TransitionImageLayout(const Image& image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout, uint32_t num_mips = 1);
+	void TransitionImageLayout(VkCommandBuffer command_buffer, Image& image, VkImageLayout new_layout, uint32_t num_mips = 1);
+	void TransitionImageLayout(Image& image, VkImageLayout new_layout, uint32_t num_mips = 1);
 
 }
 
@@ -82,6 +80,7 @@ struct VulkanInstance
 	std::vector<const char*> extensions =
 	{
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+		VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
 		//VK_EXT_SHADER_OBJECT_EXTENSION_NAME,
 		//VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
 		VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME,
@@ -101,7 +100,9 @@ struct VulkanInstance
 	{
 		size_t uniform_buffer;
 		size_t storage_buffer;
-		size_t combined_image_sampler;
+		size_t storage_image;
+		size_t sampled_image;
+		size_t sampler;
 	} descriptor_sizes;
 
 	struct Swapchain
@@ -116,8 +117,9 @@ struct VulkanInstance
 
 	struct QueueIndices
 	{
+		// NOTE: We are using a combined graphics compute queue for now..
 		uint32_t present = ~0u;
-		uint32_t graphics = ~0u;
+		uint32_t graphics_compute = ~0u;
 		//uint32_t compute = ~0u;
 		//uint32_t transfer = ~0u;
 	} queue_indices;

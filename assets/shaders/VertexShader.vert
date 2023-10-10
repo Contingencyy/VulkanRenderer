@@ -1,10 +1,12 @@
 #version 450
+#pragma once
+
 #extension GL_KHR_vulkan_glsl : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 
 #include "Shared.glsl.h"
 
-layout(set = 0, binding = 0) uniform Camera
+layout(set = DESCRIPTOR_SET_UNIFORM_BUFFER, binding = 0) uniform Camera
 {
 	CameraData cam;
 } g_camera[];

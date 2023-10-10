@@ -17,6 +17,7 @@ public:
 	void* GetDescriptor(uint32_t offset = 0);
 	void WriteDescriptor(const Vulkan::Buffer& buffer, VkDeviceSize size, uint32_t offset = 0);
 	void WriteDescriptor(const Vulkan::Image& image, VkImageLayout layout, uint32_t offset = 0);
+	void WriteDescriptor(const VkSampler sampler, uint32_t offset = 0);
 
 	bool IsNull();
 

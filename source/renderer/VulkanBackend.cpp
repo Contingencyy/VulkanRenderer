@@ -91,14 +91,14 @@ namespace Vulkan
 				vk_inst.queue_indices.present = i;
 			}
 
-			// Check queue for graphics capabilities
-			if (queue_family.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+			// Check queue for graphics and compute capabilities
+			if ((queue_family.queueFlags & VK_QUEUE_GRAPHICS_BIT) && (queue_family.queueFlags & VK_QUEUE_COMPUTE_BIT))
 			{
-				vk_inst.queue_indices.graphics = i;
+				vk_inst.queue_indices.graphics_compute = i;
 			}
 
 			// Early-out if we found a graphics and a present queue family
-			if (vk_inst.queue_indices.graphics != ~0u && vk_inst.queue_indices.present != ~0u)
+			if (vk_inst.queue_indices.graphics_compute != ~0u && vk_inst.queue_indices.present != ~0u)
 			{
 				break;
 			}
@@ -111,9 +111,9 @@ namespace Vulkan
 			VK_EXCEPT("Vulkan", "No present queue family found");
 		}
 
-		if (vk_inst.queue_indices.graphics == ~0u)
+		if (vk_inst.queue_indices.graphics_compute == ~0u)
 		{
-			VK_EXCEPT("Vulkan", "No graphics queue family found");
+			VK_EXCEPT("Vulkan", "No graphics/compute queue family found");
 		}
 	}
 
@@ -249,7 +249,7 @@ namespace Vulkan
 		{
 			uint32_t extension_count = 0;
 			vkEnumerateDeviceExtensionProperties(device, nullptr, &extension_count, nullptr);
-			
+
 			std::vector<VkExtensionProperties> available_extensions(extension_count);
 			vkEnumerateDeviceExtensionProperties(device, nullptr, &extension_count, available_extensions.data());
 
@@ -275,29 +275,27 @@ namespace Vulkan
 			device_properties2.pNext = &descriptor_buffer_properties;
 			vkGetPhysicalDeviceProperties2(device, &device_properties2);
 
-			VkPhysicalDeviceDescriptorIndexingFeatures descriptor_indexing_features = {};
-			descriptor_indexing_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
-
 			VkPhysicalDeviceDescriptorBufferFeaturesEXT descriptor_buffer_features = {};
 			descriptor_buffer_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT;
-			descriptor_indexing_features.pNext = &descriptor_buffer_features;
+
+			VkPhysicalDeviceMaintenance4Features maintenance4_features = {};
+			maintenance4_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_4_FEATURES;
+			descriptor_buffer_features.pNext = &maintenance4_features;
+
+			VkPhysicalDeviceDynamicRenderingFeatures dynamic_rendering_features = {};
+			dynamic_rendering_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES;
+			maintenance4_features.pNext = &dynamic_rendering_features;
 
 			VkPhysicalDeviceFeatures2 device_features2 = {};
 			device_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-			device_features2.pNext = &descriptor_indexing_features;
+			device_features2.pNext = &descriptor_buffer_features;
 			vkGetPhysicalDeviceFeatures2(device, &device_features2);
 
 			if (device_properties2.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU &&
 				required_extensions.empty() && swapchain_suitable &&
 				device_features2.features.samplerAnisotropy &&
-				descriptor_indexing_features.shaderUniformBufferArrayNonUniformIndexing &&
-				descriptor_indexing_features.descriptorBindingUniformBufferUpdateAfterBind &&
-				descriptor_indexing_features.shaderStorageBufferArrayNonUniformIndexing &&
-				descriptor_indexing_features.descriptorBindingStorageBufferUpdateAfterBind &&
-				descriptor_indexing_features.shaderSampledImageArrayNonUniformIndexing &&
-				descriptor_indexing_features.descriptorBindingSampledImageUpdateAfterBind &&
-				descriptor_indexing_features.descriptorBindingPartiallyBound &&
-				descriptor_buffer_features.descriptorBuffer)
+				descriptor_buffer_features.descriptorBuffer &&
+				maintenance4_features.maintenance4)
 			{
 				vk_inst.physical_device = device;
 
@@ -305,8 +303,9 @@ namespace Vulkan
 
 				vk_inst.descriptor_sizes.uniform_buffer = descriptor_buffer_properties.uniformBufferDescriptorSize;
 				vk_inst.descriptor_sizes.storage_buffer = descriptor_buffer_properties.storageBufferDescriptorSize;
-				vk_inst.descriptor_sizes.combined_image_sampler = descriptor_buffer_properties.combinedImageSamplerDescriptorSize;
-
+				vk_inst.descriptor_sizes.storage_image = descriptor_buffer_properties.storageImageDescriptorSize;
+				vk_inst.descriptor_sizes.sampled_image = descriptor_buffer_properties.sampledImageDescriptorSize;
+				vk_inst.descriptor_sizes.sampler = descriptor_buffer_properties.samplerDescriptorSize;
 				break;
 			}
 		}
@@ -322,7 +321,7 @@ namespace Vulkan
 		FindQueueIndices();
 
 		std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
-		std::set<uint32_t> unique_queue_families = { vk_inst.queue_indices.graphics, vk_inst.queue_indices.present };
+		std::set<uint32_t> unique_queue_families = { vk_inst.queue_indices.present, vk_inst.queue_indices.graphics_compute };
 		float queue_priority = 1.0;
 
 		for (uint32_t queue_family : unique_queue_families)
@@ -357,6 +356,14 @@ namespace Vulkan
 		sync_2_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES;
 		buffer_device_address_features.pNext = &sync_2_features;
 
+		VkPhysicalDeviceMaintenance4Features maintenance4_features = {};
+		maintenance4_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_4_FEATURES;
+		sync_2_features.pNext = &maintenance4_features;
+
+		VkPhysicalDeviceDynamicRenderingFeatures dynamic_rendering_features = {};
+		dynamic_rendering_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES;
+		maintenance4_features.pNext = &dynamic_rendering_features;
+
 		VkPhysicalDeviceFeatures2 device_features2 = {};
 		device_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
 		device_features2.features.samplerAnisotropy = VK_TRUE;
@@ -378,7 +385,7 @@ namespace Vulkan
 
 		// Create queues
 		vkGetDeviceQueue(vk_inst.device, vk_inst.queue_indices.present, 0, &vk_inst.queues.present);
-		vkGetDeviceQueue(vk_inst.device, vk_inst.queue_indices.graphics, 0, &vk_inst.queues.graphics);
+		vkGetDeviceQueue(vk_inst.device, vk_inst.queue_indices.graphics_compute, 0, &vk_inst.queues.graphics);
 
 		// Load function pointers for extensions
 		LoadVulkanFunction<PFN_vkGetDescriptorEXT>("vkGetDescriptorEXT", vk_inst.pFunc.get_descriptor_ext);
@@ -393,8 +400,7 @@ namespace Vulkan
 		VkCommandPoolCreateInfo pool_info = {};
 		pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 		pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-		pool_info.queueFamilyIndex = vk_inst.queue_indices.graphics;
-
+		pool_info.queueFamilyIndex = vk_inst.queue_indices.graphics_compute;
 		VkCheckResult(vkCreateCommandPool(vk_inst.device, &pool_info, nullptr, &vk_inst.cmd_pools.graphics));
 	}
 
@@ -479,9 +485,9 @@ namespace Vulkan
 		create_info.imageArrayLayers = 1;
 		create_info.imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
-		uint32_t queue_family_indices[] = { vk_inst.queue_indices.graphics, vk_inst.queue_indices.present };
+		uint32_t queue_family_indices[] = { vk_inst.queue_indices.graphics_compute, vk_inst.queue_indices.present };
 
-		if (vk_inst.queue_indices.graphics != vk_inst.queue_indices.present)
+		if (vk_inst.queue_indices.graphics_compute != vk_inst.queue_indices.present)
 		{
 			// NOTE: VK_SHARING_MODE_CONCURRENT specifies that swap chain images are shared between multiple queue families without explicit ownership
 			create_info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
@@ -876,7 +882,6 @@ namespace Vulkan
 
 	void DestroyImage(const Image& image)
 	{
-		vkDestroySampler(vk_inst.device, image.sampler, nullptr);
 		vkDestroyImageView(vk_inst.device, image.view, nullptr);
 		vkDestroyImage(vk_inst.device, image.image, nullptr);
 		vkFreeMemory(vk_inst.device, image.memory, nullptr);
@@ -900,20 +905,6 @@ namespace Vulkan
 		vkCmdCopyBufferToImage(command_buffer, src_buffer.buffer, dst_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
 		Vulkan::EndSingleTimeCommands(command_buffer);
-	}
-
-	void CreateFramebuffer(const std::vector<VkImageView>& image_views, VkRenderPass render_pass, uint32_t width, uint32_t height, VkFramebuffer& framebuffer)
-	{
-		VkFramebufferCreateInfo framebuffer_info = {};
-		framebuffer_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		framebuffer_info.renderPass = render_pass;
-		framebuffer_info.attachmentCount = (uint32_t)image_views.size();
-		framebuffer_info.pAttachments = image_views.data();
-		framebuffer_info.width = width;
-		framebuffer_info.height = height;
-		framebuffer_info.layers = 1;
-
-		VkCheckResult(vkCreateFramebuffer(vk_inst.device, &framebuffer_info, nullptr, &framebuffer));
 	}
 
 	VkFormat FindDepthFormat()
@@ -976,12 +967,12 @@ namespace Vulkan
 		vkFreeCommandBuffers(vk_inst.device, vk_inst.cmd_pools.graphics, 1, &command_buffer);
 	}
 
-	void TransitionImageLayout(VkCommandBuffer command_buffer, const Image& image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout, uint32_t num_mips)
+	void TransitionImageLayout(VkCommandBuffer command_buffer, Image& image, VkImageLayout new_layout, uint32_t num_mips)
 	{
 		VkImageMemoryBarrier2 barrier = {};
 		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
 		barrier.image = image.image;
-		barrier.oldLayout = old_layout;
+		barrier.oldLayout = image.layout;
 		barrier.newLayout = new_layout;
 		// NOTE: Used to transfer ownership of the resource if EXCLUSIVE flag is used
 		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -992,10 +983,10 @@ namespace Vulkan
 		barrier.subresourceRange.baseArrayLayer = 0;
 		barrier.subresourceRange.layerCount = 1;
 
-		if (new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+		if (new_layout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL || new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
 		{
 			barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-			if (HasStencilComponent(format))
+			if (HasStencilComponent(image.format))
 			{
 				barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
 			}
@@ -1005,7 +996,7 @@ namespace Vulkan
 			barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		}
 
-		GetImageLayoutAccessAndStageFlags(old_layout, barrier.srcAccessMask, barrier.srcStageMask);
+		GetImageLayoutAccessAndStageFlags(image.layout, barrier.srcAccessMask, barrier.srcStageMask);
 		GetImageLayoutAccessAndStageFlags(new_layout, barrier.dstAccessMask, barrier.dstStageMask);
 
 		VkDependencyInfo dependency_info = {};
@@ -1015,12 +1006,13 @@ namespace Vulkan
 		dependency_info.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
 		vkCmdPipelineBarrier2(command_buffer, &dependency_info);
+		image.layout = new_layout;
 	}
 
-	void TransitionImageLayout(const Image& image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout, uint32_t num_mips)
+	void TransitionImageLayout(Image& image, VkImageLayout new_layout, uint32_t num_mips)
 	{
 		VkCommandBuffer command_buffer = BeginSingleTimeCommands();
-		TransitionImageLayout(command_buffer, image, format, old_layout, new_layout, num_mips);
+		TransitionImageLayout(command_buffer, image, new_layout, num_mips);
 		EndSingleTimeCommands(command_buffer);
 	}
 

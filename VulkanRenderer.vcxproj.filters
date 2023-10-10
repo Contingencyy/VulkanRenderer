@@ -115,5 +115,6 @@
     <None Include="assets\shaders\FragmentShader.frag" />
     <None Include="assets\shaders\VertexShader.vert" />
     <None Include="assets\shaders\BRDF.glsl" />
+    <None Include="assets\shaders\PostProcessCS.glsl" />
   </ItemGroup>
 </Project>
