@@ -123,6 +123,7 @@ namespace Renderer
 			{
 				Vulkan::DestroyImage(color_attachment);
 			}
+			color_attachments.clear();
 
 			if (depth_enabled)
 			{
@@ -188,6 +189,7 @@ namespace Renderer
 			{
 				Vulkan::DestroyImage(attachment);
 			}
+			attachments.clear();
 		}
 	};
 
@@ -240,6 +242,7 @@ namespace Renderer
 		// TODO: Free reserved descriptors on Exit()
 		DescriptorAllocation reserved_sampler_descriptors;
 
+		uint32_t swapchain_image_index = 0;
 		uint32_t current_frame = 0;
 
 		struct Statistics
@@ -715,14 +718,14 @@ namespace Renderer
 		data->lighting_pass.color_attachment_infos.resize(1);
 		data->lighting_pass.color_attachment_infos[0].sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
 		data->lighting_pass.color_attachment_infos[0].imageView = data->lighting_pass.color_attachments[0].view;
-		data->lighting_pass.color_attachment_infos[0].imageLayout = data->lighting_pass.color_attachments[0].layout;
+		data->lighting_pass.color_attachment_infos[0].imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 		data->lighting_pass.color_attachment_infos[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 		data->lighting_pass.color_attachment_infos[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		data->lighting_pass.color_attachment_infos[0].clearValue.color = { 0.0f, 0.0f, 0.0f, 1.0f };
 
 		data->lighting_pass.depth_attachment_info.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
 		data->lighting_pass.depth_attachment_info.imageView = data->lighting_pass.depth_attachment.view;
-		data->lighting_pass.depth_attachment_info.imageLayout = data->lighting_pass.depth_attachment.layout;
+		data->lighting_pass.depth_attachment_info.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
 		data->lighting_pass.depth_attachment_info.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 		data->lighting_pass.depth_attachment_info.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		data->lighting_pass.depth_attachment_info.clearValue.depthStencil = { 1.0, 0 };
@@ -734,6 +737,14 @@ namespace Renderer
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, data->post_process_pass.attachments[0]);
 		Vulkan::CreateImageView(VK_IMAGE_ASPECT_COLOR_BIT, data->post_process_pass.attachments[0]);
 		data->reserved_storage_image_descriptors.WriteDescriptor(data->post_process_pass.attachments[0], VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL, 1);
+
+		// Create imgui color attachment info
+		data->imgui.pass.color_attachment_infos.resize(1);
+		data->imgui.pass.color_attachment_infos[0].sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+		data->imgui.pass.color_attachment_infos[0].imageView = data->post_process_pass.attachments[0].view;
+		data->imgui.pass.color_attachment_infos[0].imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		data->imgui.pass.color_attachment_infos[0].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+		data->imgui.pass.color_attachment_infos[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 	}
 
 	static void DestroyFramebuffers()
@@ -777,14 +788,6 @@ namespace Renderer
 		pool_info.poolSizeCount = 1;
 		pool_info.pPoolSizes = &pool_size;
 		VkCheckResult(vkCreateDescriptorPool(vk_inst.device, &pool_info, nullptr, &data->imgui.descriptor_pool));
-
-		// Create imgui render pass
-		data->imgui.pass.color_attachment_infos.resize(1);
-		data->imgui.pass.color_attachment_infos[0].sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-		data->imgui.pass.color_attachment_infos[0].imageView = data->post_process_pass.attachments[0].view;
-		data->imgui.pass.color_attachment_infos[0].imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		data->imgui.pass.color_attachment_infos[0].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-		data->imgui.pass.color_attachment_infos[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		
 		// Init imgui
 		ImGui_ImplGlfw_InitForVulkan(vk_inst.window, true);
@@ -879,10 +882,12 @@ namespace Renderer
 		// Wait for completion of all rendering for the current swapchain image
 		VkCheckResult(vkWaitForFences(vk_inst.device, 1, &data->in_flight_fences[data->current_frame], VK_TRUE, UINT64_MAX));
 
+		// Reset the fence
+		VkCheckResult(vkResetFences(vk_inst.device, 1, &data->in_flight_fences[data->current_frame]));
+
 		// Get an available image index from the swap chain
-		uint32_t image_index;
 		VkResult image_result = vkAcquireNextImageKHR(vk_inst.device, vk_inst.swapchain.swapchain, UINT64_MAX,
-			data->image_available_semaphores[data->current_frame], VK_NULL_HANDLE, &image_index);
+			data->image_available_semaphores[data->current_frame], VK_NULL_HANDLE, &data->swapchain_image_index);
 
 		if (image_result == VK_ERROR_OUT_OF_DATE_KHR || image_result == VK_SUBOPTIMAL_KHR)
 		{
@@ -895,9 +900,6 @@ namespace Renderer
 		{
 			VkCheckResult(image_result);
 		}
-
-		// Reset the fence
-		VkCheckResult(vkResetFences(vk_inst.device, 1, &data->in_flight_fences[data->current_frame]));
 
 		// Reset and record the command buffer
 		VkCommandBuffer graphics_command_buffer = data->command_buffers[data->current_frame];
@@ -1066,8 +1068,8 @@ namespace Renderer
 
 		// Note: Temporary hack
 		Vulkan::Image swapchain_image = {};
-		swapchain_image.image = vk_inst.swapchain.images[data->current_frame];
-		swapchain_image.format = VK_FORMAT_B8G8R8A8_UNORM;
+		swapchain_image.image = vk_inst.swapchain.images[data->swapchain_image_index];
+		swapchain_image.format = vk_inst.swapchain.format;
 
 		Vulkan::TransitionImageLayout(command_buffer, data->post_process_pass.attachments[0], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 		Vulkan::TransitionImageLayout(command_buffer, swapchain_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
@@ -1106,7 +1108,7 @@ namespace Renderer
 		VkSwapchainKHR swapchains[] = { vk_inst.swapchain.swapchain };
 		present_info.swapchainCount = 1;
 		present_info.pSwapchains = swapchains;
-		present_info.pImageIndices = &data->current_frame;
+		present_info.pImageIndices = &data->swapchain_image_index;
 		present_info.pResults = nullptr;
 
 		VkResult present_result = vkQueuePresentKHR(vk_inst.queues.graphics, &present_info);
