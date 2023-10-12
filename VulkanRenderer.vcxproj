@@ -99,7 +99,7 @@
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Console</SubSystem>
-      <AdditionalDependencies>vulkan-1.lib;glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>vulkan-1.lib;glfw3.lib;shaderc_combinedd.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(SolutionDir)extern\glfw-3.3.8-win64\lib-vc2022;C:\VulkanSDK\1.3.261.1\Lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <PostBuildEvent>
@@ -135,7 +135,7 @@ C:/VulkanSDK/1.3.261.1/Bin/glslc.exe --target-env=vulkan1.3 --target-spv=spv1.6 
       <SubSystem>Console</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>vulkan-1.lib;glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>vulkan-1.lib;glfw3.lib;shaderc_combined.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(SolutionDir)extern\glfw-3.3.8-win64\lib-vc2022;C:\VulkanSDK\1.3.261.1\Lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <PostBuildEvent>
@@ -162,6 +162,7 @@ C:/VulkanSDK/1.3.261.1/Bin/glslc.exe --target-env=vulkan1.3 --target-spv=spv1.6 
     <ClCompile Include="source\renderer\DescriptorAllocation.cpp" />
     <ClCompile Include="source\renderer\DescriptorBuffer.cpp" />
     <ClCompile Include="source\renderer\Renderer.cpp" />
+    <ClCompile Include="source\renderer\RenderPass.cpp" />
     <ClCompile Include="source\renderer\VulkanBackend.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -178,6 +179,7 @@ C:/VulkanSDK/1.3.261.1/Bin/glslc.exe --target-env=vulkan1.3 --target-spv=spv1.6 
     <ClInclude Include="include\renderer\DescriptorAllocation.h" />
     <ClInclude Include="include\renderer\DescriptorBuffer.h" />
     <ClInclude Include="include\renderer\Renderer.h" />
+    <ClInclude Include="include\renderer\RenderPass.h" />
     <ClInclude Include="include\renderer\RenderTypes.h" />
     <ClInclude Include="include\renderer\ResourceSlotmap.h" />
     <ClInclude Include="include\renderer\VulkanBackend.h" />

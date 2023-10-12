@@ -7,6 +7,7 @@
 
 #include "vulkan/vulkan.h"
 #include "vulkan/vk_enum_string_helper.h"
+#include "shaderc/shaderc.hpp"
 
 #include "GLFW/glfw3.h"
 
@@ -23,6 +24,7 @@
 #include <exception>
 #include <fstream>
 #include <numeric>
+#include <string>
 
 namespace Renderer
 {
@@ -94,6 +96,11 @@ namespace Renderer
 			Entry& entry = entries[current_entry];
 			current_entry++;
 			return entry;
+		}
+
+		void Reset()
+		{
+			current_entry = 0;
 		}
 	};
 
@@ -193,6 +200,61 @@ namespace Renderer
 		}
 	};
 
+	static std::vector<char> ReadFile(const char* filepath)
+	{
+		std::ifstream file(filepath, std::ios::ate | std::ios::binary);
+		if (!file.is_open())
+		{
+			VK_EXCEPT("Assets", "Could not open file: {}", filepath);
+		}
+
+		size_t file_size = (size_t)file.tellg();
+		std::vector<char> buffer(file_size);
+
+		file.seekg(0);
+		file.read(buffer.data(), file_size);
+		file.close();
+
+		return buffer;
+	}
+
+	class ShadercIncluder : public shaderc::CompileOptions::IncluderInterface
+	{
+	public:
+		virtual shaderc_include_result* GetInclude(const char* requested_source, shaderc_include_type type,
+			const char* requesting_source, size_t include_depth) override
+		{
+			shaderc_include_result* result = new shaderc_include_result();
+			result->source_name = requested_source;
+			result->source_name_length = strlen(requested_source);
+
+			std::string requested_source_filepath = MakeRequestedFilepathFromRequestingSource(requesting_source, requested_source);
+			std::vector<char> requested_source_text = ReadFile(requested_source_filepath.c_str());
+
+			result->content = new char[requested_source_text.size()];
+			memcpy((void*)result->content, requested_source_text.data(), requested_source_text.size());
+			result->content_length = requested_source_text.size();
+
+			return result;
+		}
+
+		// Handles shaderc_include_result_release_fn callbacks.
+		virtual void ReleaseInclude(shaderc_include_result* data) override
+		{
+			delete data->content;
+			delete data;
+		}
+
+	private:
+		std::string MakeRequestedFilepathFromRequestingSource(const char* requesting_source, const char* requested_source)
+		{
+			std::string filepath = std::string(requesting_source).substr(0, std::string(requesting_source).find_last_of("\\/") + 1);
+			std::string requested_source_filepath = filepath + requested_source;
+			return requested_source_filepath;
+		}
+
+	};
+
 	struct Data
 	{
 		::GLFWwindow* window = nullptr;
@@ -241,6 +303,9 @@ namespace Renderer
 		// TODO: Free reserved descriptors on Exit()
 		DescriptorAllocation reserved_sampler_descriptors;
 
+		shaderc::Compiler shader_compiler;
+		ShadercIncluder shader_includer;
+
 		struct Statistics
 		{
 			uint32_t total_vertex_count = 0;
@@ -259,24 +324,6 @@ namespace Renderer
 			GraphicsPass pass;
 		} imgui;
 	} static *data;
-
-	static std::vector<char> ReadFile(const char* filepath)
-	{
-		std::ifstream file(filepath, std::ios::ate | std::ios::binary);
-		if (!file.is_open())
-		{
-			VK_EXCEPT("Assets", "Could not open file: {}", filepath);
-		}
-
-		size_t file_size = (size_t)file.tellg();
-		std::vector<char> buffer(file_size);
-
-		file.seekg(0);
-		file.read(buffer.data(), file_size);
-		file.close();
-
-		return buffer;
-	}
 	
 	static std::array<VkVertexInputBindingDescription, 2> GetVertexBindingDescription()
 	{
@@ -450,12 +497,35 @@ namespace Renderer
 		data->reserved_storage_descriptors.WriteDescriptor(data->material_buffer, material_buffer_size, RESERVED_DESCRIPTOR_STORAGE_BUFFER_MATERIAL);
 	}
 
-	static VkShaderModule CreateShaderModule(const std::vector<char>& code)
+	static std::vector<uint32_t> CompileShader(const char* filepath, shaderc_shader_kind shader_type)
+	{
+		auto shader_text = ReadFile(filepath);
+
+		shaderc::CompileOptions compile_options = {};
+#ifdef _DEBUG
+		compile_options.SetOptimizationLevel(shaderc_optimization_level_zero);
+#else
+		compile_options.SetOptimizationLevel(shaderc_optimization_level_performance);
+#endif
+		compile_options.SetIncluder(std::make_unique<ShadercIncluder>());
+
+		shaderc::SpvCompilationResult shader_compile_result = data->shader_compiler.CompileGlslToSpv(
+			shader_text.data(), shader_text.size(),	shader_type, filepath, "main", compile_options);
+
+		if (shader_compile_result.GetCompilationStatus() != shaderc_compilation_status_success)
+		{
+			VK_EXCEPT("Vulkan", shader_compile_result.GetErrorMessage());
+		}
+
+		return { shader_compile_result.begin(), shader_compile_result.end() };
+	}
+
+	static VkShaderModule CreateShaderModule(const std::vector<uint32_t>& code)
 	{
 		VkShaderModuleCreateInfo create_info = {};
 		create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-		create_info.codeSize = code.size();
-		create_info.pCode = reinterpret_cast<const uint32_t*>(code.data());
+		create_info.codeSize = code.size() * sizeof(uint32_t);
+		create_info.pCode = code.data();
 
 		VkShaderModule shader_module;
 		VkCheckResult(vkCreateShaderModule(vk_inst.device, &create_info, nullptr, &shader_module));
@@ -465,14 +535,13 @@ namespace Renderer
 
 	static void CreateGraphicsPipeline(const char* vs_path, const char* ps_path, GraphicsPass& pass)
 	{
-		// TODO: Use libshaderc to compile shaders into SPIR-V from code
 		// TODO: Vulkan extension for shader objects? No longer need to make compiled pipeline states then
 		// https://www.khronos.org/blog/you-can-use-vulkan-without-pipelines-today
-		auto vert_shader_code = ReadFile(vs_path);
-		auto frag_shader_code = ReadFile(ps_path);
+		std::vector<uint32_t> vert_spv = CompileShader(vs_path, shaderc_vertex_shader);
+		std::vector<uint32_t> frag_spv = CompileShader(ps_path, shaderc_fragment_shader);
 
-		VkShaderModule vert_shader_module = CreateShaderModule(vert_shader_code);
-		VkShaderModule frag_shader_module = CreateShaderModule(frag_shader_code);
+		VkShaderModule vert_shader_module = CreateShaderModule(vert_spv);
+		VkShaderModule frag_shader_module = CreateShaderModule(frag_spv);
 
 		VkPipelineShaderStageCreateInfo vert_shader_stage_info = {};
 		vert_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -636,9 +705,8 @@ namespace Renderer
 
 	static void CreateComputePipeline(const char* cs_path, ComputePass& pass)
 	{
-		auto compute_shader_code = ReadFile(cs_path);
-
-		VkShaderModule compute_shader_module = CreateShaderModule(compute_shader_code);
+		std::vector<uint32_t> compute_spv = CompileShader(cs_path, shaderc_compute_shader);
+		VkShaderModule compute_shader_module = CreateShaderModule(compute_spv);
 
 		VkPipelineShaderStageCreateInfo compute_shader_stage_info = {};
 		compute_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -755,12 +823,12 @@ namespace Renderer
 		// Lighting raster pass
 		{
 			data->lighting_pass.depth_enabled = true;
-			CreateGraphicsPipeline("assets/shaders/bin/VertexShader.spv", "assets/shaders/bin/FragmentShader.spv", data->lighting_pass);
+			CreateGraphicsPipeline("assets/shaders/VertexShader.vert", "assets/shaders/FragmentShader.frag", data->lighting_pass);
 		}
 
 		// Post-processing compute pass
 		{
-			CreateComputePipeline("assets/shaders/bin/PostProcessCS.spv", data->post_process_pass);
+			CreateComputePipeline("assets/shaders/PostProcessCS.glsl", data->post_process_pass);
 		}
 	}
 
@@ -914,8 +982,12 @@ namespace Renderer
 		// ----------------------------------------------------------------------------------------------------------------
 		// Lighting pass
 
-		Vulkan::CmdTransitionImageLayout(command_buffer, data->lighting_pass.color_attachments[0], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-		Vulkan::CmdTransitionImageLayout(command_buffer, data->lighting_pass.depth_attachment, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+		std::vector<VkImageMemoryBarrier2> lighting_pass_begin_transitions =
+		{
+			Vulkan::ImageMemoryBarrier(data->lighting_pass.color_attachments[0], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL),
+			Vulkan::ImageMemoryBarrier(data->lighting_pass.depth_attachment, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL)
+		};
+		Vulkan::CmdTransitionImageLayouts(command_buffer, lighting_pass_begin_transitions);
 
 		VkRenderingInfo light_pass_rendering_info = data->lighting_pass.GetRenderingInfo();
 		vkCmdBeginRendering(command_buffer, &light_pass_rendering_info);
@@ -997,8 +1069,12 @@ namespace Renderer
 		// ----------------------------------------------------------------------------------------------------------------
 		// Post-process pass
 
-		CmdTransitionImageLayout(command_buffer, data->lighting_pass.color_attachments[0], VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
-		CmdTransitionImageLayout(command_buffer, data->post_process_pass.attachments[0], VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL);
+		std::vector<VkImageMemoryBarrier2> post_process_begin_transitions =
+		{
+			Vulkan::ImageMemoryBarrier(data->lighting_pass.color_attachments[0], VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL),
+			Vulkan::ImageMemoryBarrier(data->post_process_pass.attachments[0], VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL)
+		};
+		Vulkan::CmdTransitionImageLayouts(command_buffer, post_process_begin_transitions);
 
 		vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, data->post_process_pass.pipeline);
 
@@ -1055,8 +1131,12 @@ namespace Renderer
 		// Note: Temporary hack
 		Vulkan::Image swapchain_image = Vulkan::SwapChainGetCurrentImage();
 
-		Vulkan::CmdTransitionImageLayout(command_buffer, data->post_process_pass.attachments[0], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-		Vulkan::CmdTransitionImageLayout(command_buffer, swapchain_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+		std::vector<VkImageMemoryBarrier2> swapchain_copy_begin_transitions =
+		{
+			Vulkan::ImageMemoryBarrier(data->post_process_pass.attachments[0], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL),
+			Vulkan::ImageMemoryBarrier(swapchain_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+		};
+		Vulkan::CmdTransitionImageLayouts(command_buffer, swapchain_copy_begin_transitions);
 
 		vkCmdCopyImage(command_buffer, data->post_process_pass.attachments[0].image, data->post_process_pass.attachments[0].layout,
 			swapchain_image.image, swapchain_image.layout, 1, &copy_region);
@@ -1095,7 +1175,7 @@ namespace Renderer
 
 		// Reset/Update per-frame data
 		data->stats.Reset();
-		data->draw_list.current_entry = 0;
+		data->draw_list.Reset();
 		vk_inst.current_frame = (vk_inst.current_frame + 1) % VulkanInstance::MAX_FRAMES_IN_FLIGHT;
 	}
 
