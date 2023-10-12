@@ -204,7 +204,6 @@ namespace Renderer
 
 		// Command buffers and synchronization primitives
 		std::vector<VkCommandBuffer> command_buffers;
-		std::vector<VkSemaphore> image_available_semaphores;
 		std::vector<VkSemaphore> render_finished_semaphores;
 		std::vector<VkFence> in_flight_fences;
 
@@ -241,9 +240,6 @@ namespace Renderer
 		VkSampler default_sampler = VK_NULL_HANDLE;
 		// TODO: Free reserved descriptors on Exit()
 		DescriptorAllocation reserved_sampler_descriptors;
-
-		uint32_t swapchain_image_index = 0;
-		uint32_t current_frame = 0;
 
 		struct Statistics
 		{
@@ -352,7 +348,6 @@ namespace Renderer
 
 	static void CreateSyncObjects()
 	{
-		data->image_available_semaphores.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
 		data->render_finished_semaphores.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
 		data->in_flight_fences.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
 
@@ -365,7 +360,6 @@ namespace Renderer
 
 		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
-			VkCheckResult(vkCreateSemaphore(vk_inst.device, &semaphore_info, nullptr, &data->image_available_semaphores[i]));
 			VkCheckResult(vkCreateSemaphore(vk_inst.device, &semaphore_info, nullptr, &data->render_finished_semaphores[i]));
 			VkCheckResult(vkCreateFence(vk_inst.device, &fence_info, nullptr, &data->in_flight_fences[i]));
 		}
@@ -809,9 +803,9 @@ namespace Renderer
 		ImGui_ImplVulkan_Init(&init_info, nullptr);
 
 		// Upload imgui font
-		VkCommandBuffer command_buffer = Vulkan::BeginSingleTimeCommands();
+		VkCommandBuffer command_buffer = Vulkan::BeginImmediateCommand();
 		ImGui_ImplVulkan_CreateFontsTexture(command_buffer);
-		Vulkan::EndSingleTimeCommands(command_buffer);
+		Vulkan::EndImmediateCommand(command_buffer);
 		ImGui_ImplVulkan_DestroyFontUploadObjects();
 	}
 
@@ -858,7 +852,6 @@ namespace Renderer
 		{
 			vkDestroyFence(vk_inst.device, data->in_flight_fences[i], nullptr);
 			vkDestroySemaphore(vk_inst.device, data->render_finished_semaphores[i], nullptr);
-			vkDestroySemaphore(vk_inst.device, data->image_available_semaphores[i], nullptr);
 		}
 
 		vkDestroySampler(vk_inst.device, data->default_sampler, nullptr);
@@ -880,29 +873,22 @@ namespace Renderer
 	void BeginFrame(const glm::mat4& view, const glm::mat4& proj)
 	{
 		// Wait for completion of all rendering for the current swapchain image
-		VkCheckResult(vkWaitForFences(vk_inst.device, 1, &data->in_flight_fences[data->current_frame], VK_TRUE, UINT64_MAX));
+		VkCheckResult(vkWaitForFences(vk_inst.device, 1, &data->in_flight_fences[vk_inst.current_frame], VK_TRUE, UINT64_MAX));
 
 		// Reset the fence
-		VkCheckResult(vkResetFences(vk_inst.device, 1, &data->in_flight_fences[data->current_frame]));
+		VkCheckResult(vkResetFences(vk_inst.device, 1, &data->in_flight_fences[vk_inst.current_frame]));
 
 		// Get an available image index from the swap chain
-		VkResult image_result = vkAcquireNextImageKHR(vk_inst.device, vk_inst.swapchain.swapchain, UINT64_MAX,
-			data->image_available_semaphores[data->current_frame], VK_NULL_HANDLE, &data->swapchain_image_index);
-
-		if (image_result == VK_ERROR_OUT_OF_DATE_KHR || image_result == VK_SUBOPTIMAL_KHR)
+		bool resized = Vulkan::SwapChainAcquireNextImage();
+		if (resized)
 		{
-			Vulkan::RecreateSwapChain();
 			DestroyFramebuffers();
 			CreateFramebuffers();
 			return;
 		}
-		else if (image_result != VK_SUCCESS && image_result != VK_SUBOPTIMAL_KHR)
-		{
-			VkCheckResult(image_result);
-		}
 
 		// Reset and record the command buffer
-		VkCommandBuffer graphics_command_buffer = data->command_buffers[data->current_frame];
+		VkCommandBuffer graphics_command_buffer = data->command_buffers[vk_inst.current_frame];
 		vkResetCommandBuffer(graphics_command_buffer, 0);
 
 		ImGui_ImplGlfw_NewFrame();
@@ -914,12 +900,12 @@ namespace Renderer
 		ubo.proj = proj;
 		ubo.view_pos = glm::inverse(view)[3];
 
-		memcpy(data->camera_uniform_buffers[data->current_frame].ptr, &ubo, sizeof(ubo));
+		memcpy(data->camera_uniform_buffers[vk_inst.current_frame].ptr, &ubo, sizeof(ubo));
 	}
 
 	void RenderFrame()
 	{
-		VkCommandBuffer command_buffer = data->command_buffers[data->current_frame];
+		VkCommandBuffer command_buffer = data->command_buffers[vk_inst.current_frame];
 
 		VkCommandBufferBeginInfo command_buffer_begin_info = {};
 		command_buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -928,8 +914,8 @@ namespace Renderer
 		// ----------------------------------------------------------------------------------------------------------------
 		// Lighting pass
 
-		Vulkan::TransitionImageLayout(command_buffer, data->lighting_pass.color_attachments[0], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-		Vulkan::TransitionImageLayout(command_buffer, data->lighting_pass.depth_attachment, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+		Vulkan::CmdTransitionImageLayout(command_buffer, data->lighting_pass.color_attachments[0], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+		Vulkan::CmdTransitionImageLayout(command_buffer, data->lighting_pass.depth_attachment, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
 
 		VkRenderingInfo light_pass_rendering_info = data->lighting_pass.GetRenderingInfo();
 		vkCmdBeginRendering(command_buffer, &light_pass_rendering_info);
@@ -951,7 +937,7 @@ namespace Renderer
 		vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
 		// Push constants
-		uint32_t camera_ubo_index = RESERVED_DESCRIPTOR_UNIFORM_BUFFER_CAMERA * VulkanInstance::MAX_FRAMES_IN_FLIGHT + data->current_frame;
+		uint32_t camera_ubo_index = RESERVED_DESCRIPTOR_UNIFORM_BUFFER_CAMERA * VulkanInstance::MAX_FRAMES_IN_FLIGHT + vk_inst.current_frame;
 		vkCmdPushConstants(command_buffer, data->lighting_pass.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(uint32_t), &camera_ubo_index);
 
 		// Bind descriptor buffers
@@ -971,7 +957,7 @@ namespace Renderer
 			data->lighting_pass.pipeline_layout, 0, 5, &buffer_indices[0], &buffer_offsets[0]);
 
 		// Instance buffer
-		const Vulkan::Buffer& instance_buffer = data->instance_buffers[data->current_frame];
+		const Vulkan::Buffer& instance_buffer = data->instance_buffers[vk_inst.current_frame];
 
 		for (size_t i = 0; i < data->draw_list.current_entry; ++i)
 		{
@@ -1001,18 +987,18 @@ namespace Renderer
 			vkCmdBindIndexBuffer(command_buffer, mesh->index_buffer.buffer, 0, VK_INDEX_TYPE_UINT32);
 
 			// Draw call
-			vkCmdDrawIndexed(command_buffer, mesh->index_buffer.num_elements, 1, 0, 0, 0);
+			vkCmdDrawIndexed(command_buffer, mesh->index_buffer.size / sizeof(uint32_t), 1, 0, 0, 0);
 
-			data->stats.total_vertex_count += mesh->vertex_buffer.num_elements;
-			data->stats.total_triangle_count += mesh->index_buffer.num_elements / 3;
+			data->stats.total_vertex_count += mesh->vertex_buffer.size / sizeof(Vertex);
+			data->stats.total_triangle_count += (mesh->index_buffer.size / sizeof(uint32_t)) / 3;
 		}
 		vkCmdEndRendering(command_buffer);
 
 		// ----------------------------------------------------------------------------------------------------------------
 		// Post-process pass
 
-		TransitionImageLayout(command_buffer, data->lighting_pass.color_attachments[0], VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
-		TransitionImageLayout(command_buffer, data->post_process_pass.attachments[0], VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL);
+		CmdTransitionImageLayout(command_buffer, data->lighting_pass.color_attachments[0], VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
+		CmdTransitionImageLayout(command_buffer, data->post_process_pass.attachments[0], VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL);
 
 		vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, data->post_process_pass.pipeline);
 
@@ -1039,10 +1025,10 @@ namespace Renderer
 
 	void EndFrame()
 	{
-		VkCommandBuffer command_buffer = data->command_buffers[data->current_frame];
+		VkCommandBuffer command_buffer = data->command_buffers[vk_inst.current_frame];
 
 		//// Render ImGui
-		Vulkan::TransitionImageLayout(command_buffer, data->post_process_pass.attachments[0], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+		Vulkan::CmdTransitionImageLayout(command_buffer, data->post_process_pass.attachments[0], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
 		VkRenderingInfo imgui_rendering_info = data->imgui.pass.GetRenderingInfo();
 		vkCmdBeginRendering(command_buffer, &imgui_rendering_info);
@@ -1067,17 +1053,15 @@ namespace Renderer
 		copy_region.extent = { vk_inst.swapchain.extent.width, vk_inst.swapchain.extent.height, 1 };
 
 		// Note: Temporary hack
-		Vulkan::Image swapchain_image = {};
-		swapchain_image.image = vk_inst.swapchain.images[data->swapchain_image_index];
-		swapchain_image.format = vk_inst.swapchain.format;
+		Vulkan::Image swapchain_image = Vulkan::SwapChainGetCurrentImage();
 
-		Vulkan::TransitionImageLayout(command_buffer, data->post_process_pass.attachments[0], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-		Vulkan::TransitionImageLayout(command_buffer, swapchain_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+		Vulkan::CmdTransitionImageLayout(command_buffer, data->post_process_pass.attachments[0], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+		Vulkan::CmdTransitionImageLayout(command_buffer, swapchain_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
 		vkCmdCopyImage(command_buffer, data->post_process_pass.attachments[0].image, data->post_process_pass.attachments[0].layout,
 			swapchain_image.image, swapchain_image.layout, 1, &copy_region);
 
-		Vulkan::TransitionImageLayout(command_buffer, swapchain_image, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+		Vulkan::CmdTransitionImageLayout(command_buffer, swapchain_image, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
 		VkCheckResult(vkEndCommandBuffer(command_buffer));
 
@@ -1085,7 +1069,7 @@ namespace Renderer
 		VkSubmitInfo submit_info = {};
 		submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-		VkSemaphore wait_semaphores[] = { data->image_available_semaphores[data->current_frame] };
+		VkSemaphore wait_semaphores[] = { vk_inst.swapchain.image_available_semaphores[vk_inst.current_frame] };
 		VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 		submit_info.waitSemaphoreCount = 1;
 		submit_info.pWaitSemaphores = wait_semaphores;
@@ -1093,35 +1077,18 @@ namespace Renderer
 		submit_info.commandBufferCount = 1;
 		submit_info.pCommandBuffers = &command_buffer;
 
-		VkSemaphore signal_semaphores[] = { data->render_finished_semaphores[data->current_frame] };
-		submit_info.signalSemaphoreCount = 1;
-		submit_info.pSignalSemaphores = signal_semaphores;
+		std::vector<VkSemaphore> signal_semaphores = { data->render_finished_semaphores[vk_inst.current_frame] };
+		submit_info.signalSemaphoreCount = (uint32_t)signal_semaphores.size();
+		submit_info.pSignalSemaphores = signal_semaphores.data();
 
-		VkCheckResult(vkQueueSubmit(vk_inst.queues.graphics, 1, &submit_info, data->in_flight_fences[data->current_frame]));
+		VkCheckResult(vkQueueSubmit(vk_inst.queues.graphics, 1, &submit_info, data->in_flight_fences[vk_inst.current_frame]));
 
 		// Present
-		VkPresentInfoKHR present_info = {};
-		present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-		present_info.waitSemaphoreCount = 1;
-		present_info.pWaitSemaphores = signal_semaphores;
-
-		VkSwapchainKHR swapchains[] = { vk_inst.swapchain.swapchain };
-		present_info.swapchainCount = 1;
-		present_info.pSwapchains = swapchains;
-		present_info.pImageIndices = &data->swapchain_image_index;
-		present_info.pResults = nullptr;
-
-		VkResult present_result = vkQueuePresentKHR(vk_inst.queues.graphics, &present_info);
-
-		if (present_result == VK_ERROR_OUT_OF_DATE_KHR || present_result == VK_SUBOPTIMAL_KHR)
+		bool resized = Vulkan::SwapChainPresent(signal_semaphores);
+		if (resized)
 		{
-			Vulkan::RecreateSwapChain();
 			DestroyFramebuffers();
 			CreateFramebuffers();
-		}
-		else
-		{
-			VkCheckResult(present_result);
 		}
 
 		ImGui::EndFrame();
@@ -1129,7 +1096,7 @@ namespace Renderer
 		// Reset/Update per-frame data
 		data->stats.Reset();
 		data->draw_list.current_entry = 0;
-		data->current_frame = (data->current_frame + 1) % VulkanInstance::MAX_FRAMES_IN_FLIGHT;
+		vk_inst.current_frame = (vk_inst.current_frame + 1) % VulkanInstance::MAX_FRAMES_IN_FLIGHT;
 	}
 
 	TextureHandle_t CreateTexture(const CreateTextureArgs& args)
@@ -1152,7 +1119,7 @@ namespace Renderer
 			VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, reserved.resource->image, num_mips);
 
 		// Copy staging buffer data into final texture image memory (device local)
-		Vulkan::TransitionImageLayout(reserved.resource->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, num_mips);
+		Vulkan::TransitionImageLayoutImmediate(reserved.resource->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, num_mips);
 		Vulkan::CopyBufferToImage(staging_buffer, reserved.resource->image, args.width, args.height);
 		
 		// Generate mips using blit
@@ -1199,9 +1166,6 @@ namespace Renderer
 		// Copy staging buffer data into vertex and index buffers
 		Vulkan::CopyBuffer(staging_buffer, reserved.resource->vertex_buffer, vertex_buffer_size);
 		Vulkan::CopyBuffer(staging_buffer, reserved.resource->index_buffer, index_buffer_size, vertex_buffer_size);
-		
-		reserved.resource->vertex_buffer.num_elements = (uint32_t)args.vertices.size();
-		reserved.resource->index_buffer.num_elements = (uint32_t)args.indices.size();
 
 		// Destroy staging buffer
 		Vulkan::DestroyBuffer(staging_buffer);
@@ -1289,7 +1253,7 @@ namespace Renderer
 
 	void SubmitMesh(MeshHandle_t mesh_handle, MaterialHandle_t material_handle, const glm::mat4& transform)
 	{
-		Vulkan::Buffer& instance_buffer = data->instance_buffers[data->current_frame];
+		Vulkan::Buffer& instance_buffer = data->instance_buffers[vk_inst.current_frame];
 		memcpy((glm::mat4*)instance_buffer.ptr + data->draw_list.current_entry, &transform, sizeof(glm::mat4));
 
 		DrawList::Entry& entry = data->draw_list.GetNextEntry();

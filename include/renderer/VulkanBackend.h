@@ -18,7 +18,9 @@ namespace Vulkan
 		VkBuffer buffer = VK_NULL_HANDLE;
 		VkDeviceMemory memory = VK_NULL_HANDLE;
 		void* ptr = nullptr;
-		uint32_t num_elements = 0;
+
+		VkDeviceSize size = 0;
+		VkDeviceSize offset = 0;
 	};
 
 	struct Image
@@ -33,6 +35,9 @@ namespace Vulkan
 	void Init(::GLFWwindow* window);
 	void Exit();
 	
+	bool SwapChainAcquireNextImage();
+	Image SwapChainGetCurrentImage();
+	bool SwapChainPresent(const std::vector<VkSemaphore>& signal_semaphores);
 	void RecreateSwapChain();
 
 	void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags mem_flags, Buffer& buffer);
@@ -59,10 +64,25 @@ namespace Vulkan
 	VkFormat FindDepthFormat();
 	uint32_t FindMemoryType(uint32_t type_filter, VkMemoryPropertyFlags mem_properties);
 
-	VkCommandBuffer BeginSingleTimeCommands();
-	void EndSingleTimeCommands(VkCommandBuffer command_buffer);
-	void TransitionImageLayout(VkCommandBuffer command_buffer, Image& image, VkImageLayout new_layout, uint32_t num_mips = 1);
-	void TransitionImageLayout(Image& image, VkImageLayout new_layout, uint32_t num_mips = 1);
+	VkCommandBuffer BeginImmediateCommand();
+	void EndImmediateCommand(VkCommandBuffer command_buffer);
+
+	VkBufferMemoryBarrier2 BufferMemoryBarrier(Buffer& buffer, VkAccessFlags2 src_access, VkPipelineStageFlags2 src_stage, VkAccessFlags2 dst_access, VkPipelineStageFlags2 dst_stage);
+	void CmdBufferMemoryBarrier(VkCommandBuffer command_buffer, Buffer& buffer, VkAccessFlags2 src_access, VkPipelineStageFlags2 src_stage, VkAccessFlags2 dst_access, VkPipelineStageFlags2 dst_stage);
+	void CmdBufferMemoryBarriers(VkCommandBuffer command_buffer, const std::vector<VkBufferMemoryBarrier2>& buffer_barriers);
+	void BufferMemoryBarrierImmediate(Buffer& buffer, VkAccessFlags2 src_access, VkPipelineStageFlags2 src_stage, VkAccessFlags2 dst_access, VkPipelineStageFlags2 dst_stage);
+
+	VkImageMemoryBarrier2 ImageMemoryBarrier(Image& image, VkImageLayout new_layout, uint32_t num_mips = 1);
+	void CmdTransitionImageLayout(VkCommandBuffer command_buffer, Image& image, VkImageLayout new_layout, uint32_t num_mips = 1);
+	void CmdTransitionImageLayouts(VkCommandBuffer command_buffer, const std::vector<VkImageMemoryBarrier2>& image_barriers);
+	void TransitionImageLayoutImmediate(Image& image, VkImageLayout new_layout, uint32_t num_mips = 1);
+
+	VkMemoryBarrier2 MemoryBarrier(VkAccessFlags2 src_access, VkPipelineStageFlags2 src_stage, VkAccessFlags2 dst_access, VkPipelineStageFlags2 dst_stage);
+	void CmdMemoryBarrier(VkCommandBuffer command_buffer, const VkMemoryBarrier2& memory_barrier);
+	void CmdMemoryBarriers(VkCommandBuffer command_buffer, const std::vector<VkMemoryBarrier2>& memory_barriers);
+
+	VkMemoryBarrier2 ExecutionBarrier(VkPipelineStageFlags2 src_stage, VkPipelineStageFlags2 dst_stage);
+	void CmdExecutionBarrier(VkCommandBuffer command_buffer, const VkMemoryBarrier2& memory_barrier);
 
 }
 
@@ -90,6 +110,7 @@ struct VulkanInstance
 	VkInstance instance = VK_NULL_HANDLE;
 	VkPhysicalDevice physical_device = VK_NULL_HANDLE;
 	VkDevice device = VK_NULL_HANDLE;
+	uint32_t current_frame = 0;
 
 	struct DeviceProperties
 	{
@@ -109,10 +130,12 @@ struct VulkanInstance
 	{
 		VkSurfaceKHR surface = VK_NULL_HANDLE;
 		VkSwapchainKHR swapchain = VK_NULL_HANDLE;
-		VkFormat format;
+		VkFormat format = VK_FORMAT_UNDEFINED;
 		VkExtent2D extent = { 0, 0 };
+		uint32_t current_image = 0;
 
 		std::vector<VkImage> images;
+		std::vector<VkSemaphore> image_available_semaphores;
 	} swapchain;
 
 	struct QueueIndices

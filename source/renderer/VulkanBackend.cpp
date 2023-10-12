@@ -516,6 +516,15 @@ namespace Vulkan
 
 		vk_inst.swapchain.extent = extent;
 		vk_inst.swapchain.format = create_info.imageFormat;
+
+		VkSemaphoreCreateInfo semaphore_info = {};
+		semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+		vk_inst.swapchain.image_available_semaphores.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
+
+		for (size_t i = 0; i < vk_inst.swapchain.image_available_semaphores.size(); ++i)
+		{
+			VkCheckResult(vkCreateSemaphore(vk_inst.device, &semaphore_info, nullptr, &vk_inst.swapchain.image_available_semaphores[i]));
+		}
 	}
 
 	static void DestroySwapChain()
@@ -568,10 +577,15 @@ namespace Vulkan
 		case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
 			access_flags = VK_ACCESS_2_MEMORY_READ_BIT;
 			break;
+		case VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL:
 		case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+		case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
 		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
 		case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
 			access_flags = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+			break;
+		default:
+			VK_EXCEPT("Vulkan", "No VkAccessFlags2 found for layout");
 			break;
 		}
 
@@ -592,12 +606,17 @@ namespace Vulkan
 		case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
 			stage_flags = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
 			break;
+		case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
 		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
 		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
 			stage_flags = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
 			break;
+		case VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL:
 		case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-			stage_flags = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+			stage_flags = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+			break;
+		default:
+			VK_EXCEPT("Vulkan", "No VkPipelineStageFlags2 found for layout");
 			break;
 		}
 	}
@@ -620,8 +639,14 @@ namespace Vulkan
 	void Exit()
 	{
 		vkDestroyCommandPool(vk_inst.device, vk_inst.cmd_pools.graphics, nullptr);
+
+		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
+		{
+			vkDestroySemaphore(vk_inst.device, vk_inst.swapchain.image_available_semaphores[i], nullptr);
+		}
 		DestroySwapChain();
-		vkDestroyDevice(vk_inst.device, nullptr);
+		vkDestroySurfaceKHR(vk_inst.instance, vk_inst.swapchain.surface, nullptr);
+
 		if (VulkanInstance::ENABLE_VALIDATION_LAYERS)
 		{
 			auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(vk_inst.instance, "vkDestroyDebugUtilsMessengerEXT");
@@ -632,8 +657,63 @@ namespace Vulkan
 
 			func(vk_inst.instance, vk_inst.debug.debug_messenger, nullptr);
 		}
-		vkDestroySurfaceKHR(vk_inst.instance, vk_inst.swapchain.surface, nullptr);
+
+		vkDestroyDevice(vk_inst.device, nullptr);
 		vkDestroyInstance(vk_inst.instance, nullptr);
+	}
+
+	bool SwapChainAcquireNextImage()
+	{
+		VkResult image_result = vkAcquireNextImageKHR(vk_inst.device, vk_inst.swapchain.swapchain, UINT64_MAX,
+			vk_inst.swapchain.image_available_semaphores[vk_inst.current_frame], VK_NULL_HANDLE, &vk_inst.swapchain.current_image);
+
+		if (image_result == VK_ERROR_OUT_OF_DATE_KHR || image_result == VK_SUBOPTIMAL_KHR)
+		{
+			Vulkan::RecreateSwapChain();
+			return true;
+		}
+		else if (image_result != VK_SUCCESS && image_result != VK_SUBOPTIMAL_KHR)
+		{
+			VkCheckResult(image_result);
+		}
+
+		return false;
+	}
+
+	Image SwapChainGetCurrentImage()
+	{
+		Image result;
+		result.image = vk_inst.swapchain.images[vk_inst.swapchain.current_image];
+		result.format = vk_inst.swapchain.format;
+
+		return result;
+	}
+
+	bool SwapChainPresent(const std::vector<VkSemaphore>& signal_semaphores)
+	{
+		VkPresentInfoKHR present_info = {};
+		present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+		present_info.waitSemaphoreCount = (uint32_t)signal_semaphores.size();
+		present_info.pWaitSemaphores = signal_semaphores.data();
+
+		present_info.swapchainCount = 1;
+		present_info.pSwapchains = &vk_inst.swapchain.swapchain;
+		present_info.pImageIndices = &vk_inst.swapchain.current_image;
+		present_info.pResults = nullptr;
+
+		VkResult present_result = vkQueuePresentKHR(vk_inst.queues.graphics, &present_info);
+
+		if (present_result == VK_ERROR_OUT_OF_DATE_KHR || present_result == VK_SUBOPTIMAL_KHR)
+		{
+			Vulkan::RecreateSwapChain();
+			return true;
+		}
+		else
+		{
+			VkCheckResult(present_result);
+		}
+
+		return false;
 	}
 
 	void RecreateSwapChain()
@@ -672,6 +752,10 @@ namespace Vulkan
 
 		VkCheckResult(vkAllocateMemory(vk_inst.device, &alloc_info, nullptr, &buffer.memory));
 		VkCheckResult(vkBindBufferMemory(vk_inst.device, buffer.buffer, buffer.memory, 0));
+
+		// TODO: Offset will be used later when we sub-allocate from large buffers
+		buffer.size = size;
+		buffer.offset = 0;
 	}
 
 	void CreateStagingBuffer(VkDeviceSize size, Buffer& buffer)
@@ -726,7 +810,7 @@ namespace Vulkan
 
 	void CopyBuffer(const Buffer& src_buffer, const Buffer& dst_buffer, VkDeviceSize size, VkDeviceSize src_offset, VkDeviceSize dst_offset)
 	{
-		VkCommandBuffer command_buffer = Vulkan::BeginSingleTimeCommands();
+		VkCommandBuffer command_buffer = Vulkan::BeginImmediateCommand();
 
 		VkBufferCopy copy_region = {};
 		copy_region.srcOffset = src_offset;
@@ -734,7 +818,7 @@ namespace Vulkan
 		copy_region.size = size;
 		vkCmdCopyBuffer(command_buffer, src_buffer.buffer, dst_buffer.buffer, 1, &copy_region);
 
-		Vulkan::EndSingleTimeCommands(command_buffer);
+		Vulkan::EndImmediateCommand(command_buffer);
 	}
 
 	void CreateImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,
@@ -797,7 +881,7 @@ namespace Vulkan
 			VK_EXCEPT("Vulkan", "Texture image format does not support linear filter in blitting operation");
 		}
 
-		VkCommandBuffer command_buffer = BeginSingleTimeCommands();
+		VkCommandBuffer command_buffer = BeginImmediateCommand();
 
 		VkImageMemoryBarrier barrier = {};
 		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -877,7 +961,7 @@ namespace Vulkan
 			1, &barrier
 		);
 
-		EndSingleTimeCommands(command_buffer);
+		EndImmediateCommand(command_buffer);
 	}
 
 	void DestroyImage(const Image& image)
@@ -889,7 +973,7 @@ namespace Vulkan
 
 	void CopyBufferToImage(const Buffer& src_buffer, const Image& dst_image, uint32_t width, uint32_t height, VkDeviceSize src_offset)
 	{
-		VkCommandBuffer command_buffer = Vulkan::BeginSingleTimeCommands();
+		VkCommandBuffer command_buffer = Vulkan::BeginImmediateCommand();
 
 		VkBufferImageCopy region = {};
 		region.bufferOffset = src_offset;
@@ -904,7 +988,7 @@ namespace Vulkan
 
 		vkCmdCopyBufferToImage(command_buffer, src_buffer.buffer, dst_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
-		Vulkan::EndSingleTimeCommands(command_buffer);
+		Vulkan::EndImmediateCommand(command_buffer);
 	}
 
 	VkFormat FindDepthFormat()
@@ -933,7 +1017,7 @@ namespace Vulkan
 		VK_EXCEPT("Vulkan", "Failed to find suitable memory type");
 	}
 
-	VkCommandBuffer BeginSingleTimeCommands()
+	VkCommandBuffer BeginImmediateCommand()
 	{
 		VkCommandBufferAllocateInfo alloc_info = {};
 		alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -952,7 +1036,7 @@ namespace Vulkan
 		return command_buffer;
 	}
 
-	void EndSingleTimeCommands(VkCommandBuffer command_buffer)
+	void EndImmediateCommand(VkCommandBuffer command_buffer)
 	{
 		VkCheckResult(vkEndCommandBuffer(command_buffer));
 
@@ -967,37 +1051,95 @@ namespace Vulkan
 		vkFreeCommandBuffers(vk_inst.device, vk_inst.cmd_pools.graphics, 1, &command_buffer);
 	}
 
-	void TransitionImageLayout(VkCommandBuffer command_buffer, Image& image, VkImageLayout new_layout, uint32_t num_mips)
+	VkBufferMemoryBarrier2 BufferMemoryBarrier(Buffer& buffer, VkAccessFlags2 src_access, VkPipelineStageFlags2 src_stage, VkAccessFlags2 dst_access, VkPipelineStageFlags2 dst_stage)
 	{
-		VkImageMemoryBarrier2 barrier = {};
-		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-		barrier.image = image.image;
-		barrier.oldLayout = image.layout;
-		barrier.newLayout = new_layout;
-		// NOTE: Used to transfer ownership of the resource if EXCLUSIVE flag is used
-		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.image = image.image;
-		barrier.subresourceRange.baseMipLevel = 0;
-		barrier.subresourceRange.levelCount = num_mips;
-		barrier.subresourceRange.baseArrayLayer = 0;
-		barrier.subresourceRange.layerCount = 1;
+		VkBufferMemoryBarrier2 buffer_memory_barrier = {};
+		buffer_memory_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+		buffer_memory_barrier.buffer = buffer.buffer;
+		buffer_memory_barrier.size = buffer.size;
+		buffer_memory_barrier.offset = buffer.offset;
+		buffer_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		buffer_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		buffer_memory_barrier.srcAccessMask = src_access;
+		buffer_memory_barrier.srcStageMask = src_stage;
+		buffer_memory_barrier.dstAccessMask = dst_access;
+		buffer_memory_barrier.dstStageMask = dst_stage;
+
+		return buffer_memory_barrier;
+	}
+
+	void CmdBufferMemoryBarrier(VkCommandBuffer command_buffer, Buffer& buffer, VkAccessFlags2 src_access, VkPipelineStageFlags2 src_stage, VkAccessFlags2 dst_access, VkPipelineStageFlags2 dst_stage)
+	{
+		VkBufferMemoryBarrier2 barrier = BufferMemoryBarrier(buffer, src_access, src_stage, dst_access, dst_stage);
+
+		VkDependencyInfo dependency_info = {};
+		dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+		dependency_info.bufferMemoryBarrierCount = 1;
+		dependency_info.pBufferMemoryBarriers = &barrier;
+		dependency_info.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+		vkCmdPipelineBarrier2(command_buffer, &dependency_info);
+	}
+
+	void CmdBufferMemoryBarriers(VkCommandBuffer command_buffer, const std::vector<VkBufferMemoryBarrier2>& buffer_barriers)
+	{
+		VkDependencyInfo dependency_info = {};
+		dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+		dependency_info.bufferMemoryBarrierCount = (uint32_t)buffer_barriers.size();
+		dependency_info.pBufferMemoryBarriers = buffer_barriers.data();
+		dependency_info.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+		vkCmdPipelineBarrier2(command_buffer, &dependency_info);
+	}
+
+	void BufferMemoryBarrierImmediate(Buffer& buffer, VkAccessFlags2 src_access, VkPipelineStageFlags2 src_stage, VkAccessFlags2 dst_access, VkPipelineStageFlags2 dst_stage)
+	{
+		VkCommandBuffer command_buffer = BeginImmediateCommand();
+		CmdBufferMemoryBarrier(command_buffer, buffer, src_access, src_stage, dst_access, dst_stage);
+		EndImmediateCommand(command_buffer);
+	}
+
+	VkImageMemoryBarrier2 ImageMemoryBarrier(Image& image, VkImageLayout new_layout, uint32_t num_mips)
+	{
+		VkImageMemoryBarrier2 image_memory_barrier = {};
+		image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+		image_memory_barrier.image = image.image;
+		image_memory_barrier.oldLayout = image.layout;
+		image_memory_barrier.newLayout = new_layout;
+
+		image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+
+		GetImageLayoutAccessAndStageFlags(image.layout, image_memory_barrier.srcAccessMask, image_memory_barrier.srcStageMask);
+		GetImageLayoutAccessAndStageFlags(new_layout, image_memory_barrier.dstAccessMask, image_memory_barrier.dstStageMask);
 
 		if (new_layout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL || new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
 		{
-			barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+			image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
 			if (HasStencilComponent(image.format))
 			{
-				barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+				image_memory_barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
 			}
 		}
 		else
 		{
-			barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		}
 
-		GetImageLayoutAccessAndStageFlags(image.layout, barrier.srcAccessMask, barrier.srcStageMask);
-		GetImageLayoutAccessAndStageFlags(new_layout, barrier.dstAccessMask, barrier.dstStageMask);
+		image_memory_barrier.subresourceRange.baseMipLevel = 0;
+		image_memory_barrier.subresourceRange.levelCount = num_mips;
+		image_memory_barrier.subresourceRange.baseArrayLayer = 0;
+		image_memory_barrier.subresourceRange.layerCount = 1;
+
+		// TODO: This smells bad, we are updating the images layout even though we haven't actually issued a pipeline barrier to be executed
+		// Probably having a resource tracker a la DX12 will do the trick here (hashmap with the VkImage pointer being the key)
+		image.layout = new_layout;
+		return image_memory_barrier;
+	}
+
+	void CmdTransitionImageLayout(VkCommandBuffer command_buffer, Image& image, VkImageLayout new_layout, uint32_t num_mips)
+	{
+		VkImageMemoryBarrier2 barrier = ImageMemoryBarrier(image, new_layout, num_mips);
 
 		VkDependencyInfo dependency_info = {};
 		dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -1006,14 +1148,76 @@ namespace Vulkan
 		dependency_info.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
 		vkCmdPipelineBarrier2(command_buffer, &dependency_info);
-		image.layout = new_layout;
 	}
 
-	void TransitionImageLayout(Image& image, VkImageLayout new_layout, uint32_t num_mips)
+	void CmdTransitionImageLayouts(VkCommandBuffer command_buffer, const std::vector<VkImageMemoryBarrier2>& image_barriers)
 	{
-		VkCommandBuffer command_buffer = BeginSingleTimeCommands();
-		TransitionImageLayout(command_buffer, image, new_layout, num_mips);
-		EndSingleTimeCommands(command_buffer);
+		VkDependencyInfo dependency_info = {};
+		dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+		dependency_info.imageMemoryBarrierCount = (uint32_t)image_barriers.size();
+		dependency_info.pImageMemoryBarriers = image_barriers.data();
+		dependency_info.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+		vkCmdPipelineBarrier2(command_buffer, &dependency_info);
+	}
+
+	void TransitionImageLayoutImmediate(Image& image, VkImageLayout new_layout, uint32_t num_mips)
+	{
+		VkCommandBuffer command_buffer = BeginImmediateCommand();
+		CmdTransitionImageLayout(command_buffer, image, new_layout, num_mips);
+		EndImmediateCommand(command_buffer);
+	}
+	
+	VkMemoryBarrier2 MemoryBarrier(VkAccessFlags2 src_access, VkPipelineStageFlags2 src_stage, VkAccessFlags2 dst_access, VkPipelineStageFlags2 dst_stage)
+	{
+		VkMemoryBarrier2 memory_barrier = {};
+		memory_barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+		memory_barrier.srcAccessMask = src_access;
+		memory_barrier.srcStageMask = src_stage;
+		memory_barrier.dstAccessMask = dst_access;
+		memory_barrier.dstStageMask = dst_stage;
+
+		return memory_barrier;
+	}
+
+	void CmdMemoryBarrier(VkCommandBuffer command_buffer, const VkMemoryBarrier2& memory_barrier)
+	{
+		VkDependencyInfo dependency_info = {};
+		dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+		dependency_info.memoryBarrierCount = 1;
+		dependency_info.pMemoryBarriers = &memory_barrier;
+
+		vkCmdPipelineBarrier2(command_buffer, &dependency_info);
+	}
+
+	void CmdMemoryBarriers(VkCommandBuffer command_buffer, const std::vector<VkMemoryBarrier2>& memory_barriers)
+	{
+		VkDependencyInfo dependency_info = {};
+		dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+		dependency_info.memoryBarrierCount = (uint32_t)memory_barriers.size();
+		dependency_info.pMemoryBarriers = memory_barriers.data();
+
+		vkCmdPipelineBarrier2(command_buffer, &dependency_info);
+	}
+
+	VkMemoryBarrier2 ExecutionBarrier(VkPipelineStageFlags2 src_stage, VkPipelineStageFlags2 dst_stage)
+	{
+		VkMemoryBarrier2 execution_barrier = {};
+		execution_barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+		execution_barrier.srcStageMask = src_stage;
+		execution_barrier.dstStageMask = dst_stage;
+
+		return execution_barrier;
+	}
+
+	void CmdExecutionBarrier(VkCommandBuffer command_buffer, const VkMemoryBarrier2& memory_barrier)
+	{
+		VkDependencyInfo dependency_info = {};
+		dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+		dependency_info.memoryBarrierCount = 1;
+		dependency_info.pMemoryBarriers = &memory_barrier;
+
+		vkCmdPipelineBarrier2(command_buffer, &dependency_info);
 	}
 
 }
