@@ -1,11 +1,14 @@
 #include "renderer/VulkanBackend.h"
 #include "Common.h"
 
+#include "shaderc/shaderc.hpp"
+
 #include "GLFW/glfw3.h"
 
 #include <assert.h>
 #include <set>
 #include <algorithm>
+#include <fstream>
 
 VulkanInstance vk_inst;
 
@@ -529,6 +532,11 @@ namespace Vulkan
 
 	static void DestroySwapChain()
 	{
+		for (size_t i = 0; i < vk_inst.swapchain.image_available_semaphores.size(); ++i)
+		{
+			vkDestroySemaphore(vk_inst.device, vk_inst.swapchain.image_available_semaphores[i], nullptr);
+		}
+
 		vkDestroySwapchainKHR(vk_inst.device, vk_inst.swapchain.swapchain, nullptr);
 	}
 
@@ -621,8 +629,109 @@ namespace Vulkan
 		}
 	}
 
+	static std::vector<char> ReadFile(const char* filepath)
+	{
+		std::ifstream file(filepath, std::ios::ate | std::ios::binary);
+		if (!file.is_open())
+		{
+			VK_EXCEPT("Assets", "Could not open file: {}", filepath);
+		}
+
+		size_t file_size = (size_t)file.tellg();
+		std::vector<char> buffer(file_size);
+
+		file.seekg(0);
+		file.read(buffer.data(), file_size);
+		file.close();
+
+		return buffer;
+	}
+
+	class ShadercIncluder : public shaderc::CompileOptions::IncluderInterface
+	{
+	public:
+		virtual shaderc_include_result* GetInclude(const char* requested_source, shaderc_include_type type,
+			const char* requesting_source, size_t include_depth) override
+		{
+			shaderc_include_result* result = new shaderc_include_result();
+			result->source_name = requested_source;
+			result->source_name_length = strlen(requested_source);
+
+			std::string requested_source_filepath = MakeRequestedFilepathFromRequestingSource(requesting_source, requested_source);
+			std::vector<char> requested_source_text = ReadFile(requested_source_filepath.c_str());
+
+			result->content = new char[requested_source_text.size()];
+			memcpy((void*)result->content, requested_source_text.data(), requested_source_text.size());
+			result->content_length = requested_source_text.size();
+
+			return result;
+		}
+
+		// Handles shaderc_include_result_release_fn callbacks.
+		virtual void ReleaseInclude(shaderc_include_result* data) override
+		{
+			delete data->content;
+			delete data;
+		}
+
+	private:
+		std::string MakeRequestedFilepathFromRequestingSource(const char* requesting_source, const char* requested_source)
+		{
+			std::string filepath = std::string(requesting_source).substr(0, std::string(requesting_source).find_last_of("\\/") + 1);
+			std::string requested_source_filepath = filepath + requested_source;
+			return requested_source_filepath;
+		}
+
+	};
+
+	struct Data
+	{
+		struct ShaderCompiler
+		{
+			shaderc::Compiler compiler;
+			ShadercIncluder includer;
+		} shader_compiler;
+	} static* data;
+
+	static std::vector<uint32_t> CompileShader(const char* filepath, shaderc_shader_kind shader_type)
+	{
+		auto shader_text = ReadFile(filepath);
+
+		shaderc::CompileOptions compile_options = {};
+#ifdef _DEBUG
+		compile_options.SetOptimizationLevel(shaderc_optimization_level_zero);
+#else
+		compile_options.SetOptimizationLevel(shaderc_optimization_level_performance);
+#endif
+		compile_options.SetIncluder(std::make_unique<ShadercIncluder>());
+
+		shaderc::SpvCompilationResult shader_compile_result = data->shader_compiler.compiler.CompileGlslToSpv(
+			shader_text.data(), shader_text.size(), shader_type, filepath, "main", compile_options);
+
+		if (shader_compile_result.GetCompilationStatus() != shaderc_compilation_status_success)
+		{
+			VK_EXCEPT("Vulkan", shader_compile_result.GetErrorMessage());
+		}
+
+		return { shader_compile_result.begin(), shader_compile_result.end() };
+	}
+
+	static VkShaderModule CreateShaderModule(const std::vector<uint32_t>& code)
+	{
+		VkShaderModuleCreateInfo create_info = {};
+		create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+		create_info.codeSize = code.size() * sizeof(uint32_t);
+		create_info.pCode = code.data();
+
+		VkShaderModule shader_module;
+		VkCheckResult(vkCreateShaderModule(vk_inst.device, &create_info, nullptr, &shader_module));
+
+		return shader_module;
+	}
+
 	void Init(::GLFWwindow* window)
 	{
+		data = new Data();
 		vk_inst.window = window;
 
 		CreateInstance();
@@ -638,12 +747,10 @@ namespace Vulkan
 
 	void Exit()
 	{
-		vkDestroyCommandPool(vk_inst.device, vk_inst.cmd_pools.graphics, nullptr);
+		delete data;
 
-		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
-		{
-			vkDestroySemaphore(vk_inst.device, vk_inst.swapchain.image_available_semaphores[i], nullptr);
-		}
+		vkDestroyCommandPool(vk_inst.device, vk_inst.cmd_pools.graphics, nullptr);
+		
 		DestroySwapChain();
 		vkDestroySurfaceKHR(vk_inst.instance, vk_inst.swapchain.surface, nullptr);
 
@@ -740,6 +847,7 @@ namespace Vulkan
 		buffer_info.usage = usage;
 		buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
+		buffer = {};
 		VkCheckResult(vkCreateBuffer(vk_inst.device, &buffer_info, nullptr, &buffer.buffer));
 
 		VkMemoryRequirements mem_requirements = {};
@@ -840,6 +948,7 @@ namespace Vulkan
 		image_info.samples = VK_SAMPLE_COUNT_1_BIT;
 		image_info.flags = 0;
 
+		image = {};
 		VkCheckResult(vkCreateImage(vk_inst.device, &image_info, nullptr, &image.image));
 		image.format = format;
 
@@ -1218,6 +1327,193 @@ namespace Vulkan
 		dependency_info.pMemoryBarriers = &memory_barrier;
 
 		vkCmdPipelineBarrier2(command_buffer, &dependency_info);
+	}
+
+	VkPipelineLayout CreatePipelineLayout(const std::vector<VkDescriptorSetLayout>& descriptor_set_layouts, const std::vector<VkPushConstantRange>& push_constant_ranges)
+	{
+		VkPipelineLayoutCreateInfo pipeline_layout_info = {};
+		pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+		pipeline_layout_info.setLayoutCount = (uint32_t)descriptor_set_layouts.size();
+		pipeline_layout_info.pSetLayouts = descriptor_set_layouts.data();
+		pipeline_layout_info.pushConstantRangeCount = (uint32_t)push_constant_ranges.size();
+		pipeline_layout_info.pPushConstantRanges = push_constant_ranges.data();
+
+		VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
+		vkCreatePipelineLayout(vk_inst.device, &pipeline_layout_info, nullptr, &pipeline_layout);
+
+		return pipeline_layout;
+	}
+
+	VkPipeline CreateGraphicsPipeline(const GraphicsPipelineInfo& info, VkPipelineLayout pipeline_layout)
+	{
+		// TODO: Vulkan extension for shader objects? No longer need to make compiled pipeline states then
+		// https://www.khronos.org/blog/you-can-use-vulkan-without-pipelines-today
+		std::vector<uint32_t> vert_spv = CompileShader(info.vs_path, shaderc_vertex_shader);
+		std::vector<uint32_t> frag_spv = CompileShader(info.fs_path, shaderc_fragment_shader);
+
+		VkShaderModule vert_shader_module = CreateShaderModule(vert_spv);
+		VkShaderModule frag_shader_module = CreateShaderModule(frag_spv);
+
+		VkPipelineShaderStageCreateInfo vert_shader_stage_info = {};
+		vert_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		vert_shader_stage_info.stage = VK_SHADER_STAGE_VERTEX_BIT;
+		vert_shader_stage_info.module = vert_shader_module;
+		vert_shader_stage_info.pName = "main";
+
+		VkPipelineShaderStageCreateInfo frag_shader_stage_info = {};
+		frag_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		frag_shader_stage_info.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+		frag_shader_stage_info.module = frag_shader_module;
+		frag_shader_stage_info.pName = "main";
+
+		VkPipelineShaderStageCreateInfo shader_stages[] = { vert_shader_stage_info, frag_shader_stage_info };
+
+		// TODO: Vertex pulling, we won't need vertex input layouts, or maybe even mesh shaders
+		// https://www.khronos.org/blog/mesh-shading-for-vulkan
+		VkPipelineVertexInputStateCreateInfo vertex_input_info = {};
+		vertex_input_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+		vertex_input_info.vertexBindingDescriptionCount = (uint32_t)info.input_bindings.size();
+		vertex_input_info.pVertexBindingDescriptions = info.input_bindings.data();
+		vertex_input_info.vertexAttributeDescriptionCount = (uint32_t)info.input_attributes.size();
+		vertex_input_info.pVertexAttributeDescriptions = info.input_attributes.data();
+
+		VkPipelineInputAssemblyStateCreateInfo input_assembly_info = {};
+		input_assembly_info.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+		input_assembly_info.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+		input_assembly_info.primitiveRestartEnable = VK_FALSE;
+
+		std::vector<VkDynamicState> dynamic_states =
+		{
+			VK_DYNAMIC_STATE_VIEWPORT,
+			VK_DYNAMIC_STATE_SCISSOR
+		};
+
+		VkPipelineDynamicStateCreateInfo dynamic_state = {};
+		dynamic_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+		dynamic_state.dynamicStateCount = (uint32_t)dynamic_states.size();
+		dynamic_state.pDynamicStates = dynamic_states.data();
+
+		VkPipelineViewportStateCreateInfo viewport_state = {};
+		viewport_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+		viewport_state.viewportCount = 1;
+		viewport_state.scissorCount = 1;
+
+		VkPipelineRasterizationStateCreateInfo rasterizer = {};
+		rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+		rasterizer.depthClampEnable = VK_FALSE;
+		rasterizer.rasterizerDiscardEnable = VK_FALSE;
+		rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+		rasterizer.lineWidth = 1.0f;
+		rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+		rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+		rasterizer.depthBiasEnable = VK_FALSE;
+		rasterizer.depthBiasConstantFactor = 0.0f;
+		rasterizer.depthBiasClamp = 0.0f;
+		rasterizer.depthBiasSlopeFactor = 0.0f;
+
+		VkPipelineMultisampleStateCreateInfo multisampling = {};
+		multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+		multisampling.sampleShadingEnable = VK_FALSE;
+		multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+		multisampling.minSampleShading = 1.0f;
+		multisampling.pSampleMask = nullptr;
+		multisampling.alphaToCoverageEnable = VK_FALSE;
+		multisampling.alphaToOneEnable = VK_FALSE;
+
+		VkPipelineDepthStencilStateCreateInfo depth_stencil = {};
+		depth_stencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+		depth_stencil.depthTestEnable = info.depth_enabled;
+		depth_stencil.depthWriteEnable = VK_TRUE;
+		depth_stencil.depthCompareOp = VK_COMPARE_OP_LESS;
+		depth_stencil.depthBoundsTestEnable = VK_FALSE;
+		depth_stencil.minDepthBounds = 0.0f;
+		depth_stencil.maxDepthBounds = 1.0f;
+		depth_stencil.stencilTestEnable = VK_FALSE;
+		depth_stencil.front = {};
+		depth_stencil.back = {};
+
+		VkPipelineColorBlendAttachmentState color_blend_attachment = {};
+		color_blend_attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
+			VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+		color_blend_attachment.blendEnable = VK_FALSE;// VK_TRUE;
+		color_blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+		color_blend_attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+		color_blend_attachment.colorBlendOp = VK_BLEND_OP_ADD;
+		color_blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+		color_blend_attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+		color_blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD;
+
+		VkPipelineColorBlendStateCreateInfo color_blend = {};
+		color_blend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+		color_blend.logicOpEnable = VK_FALSE;
+		color_blend.logicOp = VK_LOGIC_OP_COPY;
+		color_blend.attachmentCount = 1;
+		color_blend.pAttachments = &color_blend_attachment;
+		color_blend.blendConstants[0] = 0.0f;
+		color_blend.blendConstants[1] = 0.0f;
+		color_blend.blendConstants[2] = 0.0f;
+		color_blend.blendConstants[3] = 0.0f;
+
+		VkGraphicsPipelineCreateInfo pipeline_info = {};
+		pipeline_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+		pipeline_info.stageCount = 2;
+		pipeline_info.pStages = shader_stages;
+		pipeline_info.pVertexInputState = &vertex_input_info;
+		pipeline_info.pInputAssemblyState = &input_assembly_info;
+		pipeline_info.pViewportState = &viewport_state;
+		pipeline_info.pRasterizationState = &rasterizer;
+		pipeline_info.pMultisampleState = &multisampling;
+		pipeline_info.pDepthStencilState = &depth_stencil;
+		pipeline_info.pColorBlendState = &color_blend;
+		pipeline_info.pDynamicState = &dynamic_state;
+		pipeline_info.layout = pipeline_layout;
+		pipeline_info.renderPass = VK_NULL_HANDLE;
+		pipeline_info.subpass = 0;
+		pipeline_info.basePipelineHandle = VK_NULL_HANDLE;
+		pipeline_info.basePipelineIndex = -1;
+		pipeline_info.flags = VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
+
+		VkPipelineRenderingCreateInfo pipeline_rendering_info = {};
+		pipeline_rendering_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+		pipeline_rendering_info.colorAttachmentCount = (uint32_t)info.color_attachment_formats.size();
+		pipeline_rendering_info.pColorAttachmentFormats = info.color_attachment_formats.data();
+		pipeline_rendering_info.depthAttachmentFormat = info.depth_stencil_attachment_format;
+		pipeline_rendering_info.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
+		pipeline_rendering_info.viewMask = 0;
+		pipeline_info.pNext = &pipeline_rendering_info;
+
+		VkPipeline pipeline = VK_NULL_HANDLE;
+		VkCheckResult(vkCreateGraphicsPipelines(vk_inst.device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &pipeline));
+
+		vkDestroyShaderModule(vk_inst.device, frag_shader_module, nullptr);
+		vkDestroyShaderModule(vk_inst.device, vert_shader_module, nullptr);
+
+		return pipeline;
+	}
+
+	VkPipeline CreateComputePipeline(const ComputePipelineInfo& info, VkPipelineLayout pipeline_layout)
+	{
+		std::vector<uint32_t> compute_spv = CompileShader(info.cs_path, shaderc_compute_shader);
+		VkShaderModule compute_shader_module = CreateShaderModule(compute_spv);
+
+		VkPipelineShaderStageCreateInfo compute_shader_stage_info = {};
+		compute_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		compute_shader_stage_info.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+		compute_shader_stage_info.module = compute_shader_module;
+		compute_shader_stage_info.pName = "main";
+
+		VkComputePipelineCreateInfo pipeline_info = {};
+		pipeline_info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+		pipeline_info.layout = pipeline_layout;
+		pipeline_info.stage = compute_shader_stage_info;
+		pipeline_info.flags = VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
+
+		VkPipeline pipeline = VK_NULL_HANDLE;
+		VkCheckResult(vkCreateComputePipelines(vk_inst.device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &pipeline));
+
+		vkDestroyShaderModule(vk_inst.device, compute_shader_module, nullptr);
+
+		return pipeline;
 	}
 
 }

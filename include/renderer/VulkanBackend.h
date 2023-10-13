@@ -84,6 +84,31 @@ namespace Vulkan
 	VkMemoryBarrier2 ExecutionBarrier(VkPipelineStageFlags2 src_stage, VkPipelineStageFlags2 dst_stage);
 	void CmdExecutionBarrier(VkCommandBuffer command_buffer, const VkMemoryBarrier2& memory_barrier);
 
+	VkPipelineLayout CreatePipelineLayout(const std::vector<VkDescriptorSetLayout>& descriptor_set_layouts, const std::vector<VkPushConstantRange>& push_constant_ranges);
+
+	struct GraphicsPipelineInfo
+	{
+		std::vector<VkVertexInputBindingDescription> input_bindings;
+		std::vector<VkVertexInputAttributeDescription> input_attributes;
+
+		std::vector<VkFormat> color_attachment_formats;
+		VkFormat depth_stencil_attachment_format = VK_FORMAT_UNDEFINED;
+
+		const char* vs_path;
+		const char* fs_path;
+
+		bool depth_enabled = false;
+	};
+
+	VkPipeline CreateGraphicsPipeline(const GraphicsPipelineInfo& info, VkPipelineLayout pipeline_layout);
+
+	struct ComputePipelineInfo
+	{
+		const char* cs_path;
+	};
+
+	VkPipeline CreateComputePipeline(const ComputePipelineInfo& info, VkPipelineLayout pipeline_layout);
+
 }
 
 struct VulkanInstance

@@ -107,20 +107,11 @@
     <ClInclude Include="include\renderer\DescriptorBuffer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="assets\shaders\Shared.glsl.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="include\renderer\DescriptorAllocation.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\renderer\RenderPass.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="assets\shaders\FragmentShader.frag" />
-    <None Include="assets\shaders\VertexShader.vert" />
-    <None Include="assets\shaders\BRDF.glsl" />
-    <None Include="assets\shaders\PostProcessCS.glsl" />
   </ItemGroup>
 </Project>

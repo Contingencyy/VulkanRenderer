@@ -12,7 +12,7 @@ public:
 	DescriptorBuffer(VkDescriptorType type, uint32_t descriptor_size, uint32_t num_descriptors = DEFAULT_DESCRIPTOR_BUFFER_SIZE);
 	~DescriptorBuffer();
 
-	DescriptorAllocation&& Allocate(uint32_t num_descriptors = 1);
+	DescriptorAllocation Allocate(uint32_t num_descriptors = 1);
 	void Free(const DescriptorAllocation& allocation);
 
 	VkDescriptorBufferBindingInfoEXT GetBindingInfo() const;

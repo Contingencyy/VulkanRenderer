@@ -39,15 +39,16 @@ DescriptorBuffer::~DescriptorBuffer()
 	vkDestroyDescriptorSetLayout(vk_inst.device, m_layout, nullptr);
 }
 
-DescriptorAllocation&& DescriptorBuffer::Allocate(uint32_t num_descriptors)
+DescriptorAllocation DescriptorBuffer::Allocate(uint32_t num_descriptors)
 {
 	VK_ASSERT(m_num_descriptors - m_current_descriptor_offset >= num_descriptors &&
 		"Descriptor buffer has too few descriptors left to satisfy the allocation");
 
 	void* alloc_ptr = GetDescriptorPointer(m_current_descriptor_offset);
-	m_current_descriptor_offset += num_descriptors;
 
-	return DescriptorAllocation(m_descriptor_type, num_descriptors, m_descriptor_size, alloc_ptr);
+	DescriptorAllocation allocation(m_descriptor_type, m_current_descriptor_offset, num_descriptors, m_descriptor_size, alloc_ptr);
+	m_current_descriptor_offset += num_descriptors;
+	return allocation;
 }
 
 void DescriptorBuffer::Free(const DescriptorAllocation& allocation)
