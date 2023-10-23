@@ -12,6 +12,13 @@ struct Vertex
 	glm::vec3 pos;
 	glm::vec2 tex_coord;
 	glm::vec3 normal;
+	glm::vec4 tangent;
+};
+
+enum TextureFormat
+{
+	TextureFormat_RGBA8_UNORM,
+	TextureFormat_RGBA8_SRGB
 };
 
 struct TextureResource

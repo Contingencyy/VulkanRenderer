@@ -8,7 +8,107 @@
 #define CGLTF_IMPLEMENTATION
 #include "cgltf/cgltf.h"
 
+#include "mikkt/mikktspace.h"
+
 #include <unordered_map>
+
+class TangentCalculator
+{
+public:
+	TangentCalculator()
+	{
+		m_mikkt_interface.m_getNumFaces = GetNumFaces;
+		m_mikkt_interface.m_getNumVerticesOfFace = GetNumVerticesOfFace;
+
+		m_mikkt_interface.m_getNormal = GetNormal;
+		m_mikkt_interface.m_getPosition = GetPosition;
+		m_mikkt_interface.m_getTexCoord = GetTexCoord;
+		m_mikkt_interface.m_setTSpaceBasic = SetTSpaceBasic;
+
+		m_mikkt_context.m_pInterface = &m_mikkt_interface;
+	}
+
+	void Calculate(Renderer::CreateMeshArgs* mesh)
+	{
+		m_mikkt_context.m_pUserData = mesh;
+		genTangSpaceDefault(&m_mikkt_context);
+	}
+
+private:
+	static int GetNumFaces(const SMikkTSpaceContext* context)
+	{
+		Renderer::CreateMeshArgs* mesh = static_cast<Renderer::CreateMeshArgs*>(context->m_pUserData);
+		return mesh->indices.size() / 3;
+	}
+
+	static int GetVertexIndex(const SMikkTSpaceContext* context, int iFace, int iVert)
+	{
+		Renderer::CreateMeshArgs* mesh = static_cast<Renderer::CreateMeshArgs*>(context->m_pUserData);
+
+		uint32_t face_size = GetNumVerticesOfFace(context, iFace);
+		uint32_t indices_index = (iFace * face_size) + iVert;
+
+		return mesh->indices[indices_index];
+	}
+
+	static int GetNumVerticesOfFace(const SMikkTSpaceContext* context, int iFace)
+	{
+		return 3;
+	}
+
+	static void GetPosition(const SMikkTSpaceContext* context, float outpos[], int iFace, int iVert)
+	{
+		Renderer::CreateMeshArgs* mesh = static_cast<Renderer::CreateMeshArgs*>(context->m_pUserData);
+
+		uint32_t index = GetVertexIndex(context, iFace, iVert);
+		const Vertex& vertex = mesh->vertices[index];
+
+		outpos[0] = vertex.pos.x;
+		outpos[1] = vertex.pos.y;
+		outpos[2] = vertex.pos.z;
+	}
+
+	static void GetNormal(const SMikkTSpaceContext* context, float outnormal[], int iFace, int iVert)
+	{
+		Renderer::CreateMeshArgs* mesh = static_cast<Renderer::CreateMeshArgs*>(context->m_pUserData);
+
+		uint32_t index = GetVertexIndex(context, iFace, iVert);
+		const Vertex& vertex = mesh->vertices[index];
+
+		outnormal[0] = vertex.normal.x;
+		outnormal[1] = vertex.normal.y;
+		outnormal[2] = vertex.normal.z;
+	}
+
+	static void GetTexCoord(const SMikkTSpaceContext* context, float outuv[], int iFace, int iVert)
+	{
+		Renderer::CreateMeshArgs* mesh = static_cast<Renderer::CreateMeshArgs*>(context->m_pUserData);
+
+		uint32_t index = GetVertexIndex(context, iFace, iVert);
+		const Vertex& vertex = mesh->vertices[index];
+
+		outuv[0] = vertex.tex_coord.x;
+		outuv[1] = vertex.tex_coord.y;
+	}
+
+	static void SetTSpaceBasic(const SMikkTSpaceContext* context, const float tangentu[], float fSign, int iFace, int iVert)
+	{
+		Renderer::CreateMeshArgs* mesh = static_cast<Renderer::CreateMeshArgs*>(context->m_pUserData);
+
+		uint32_t index = GetVertexIndex(context, iFace, iVert);
+		Vertex& vertex = mesh->vertices[index];
+
+		vertex.tangent.x = tangentu[0];
+		vertex.tangent.y = tangentu[1];
+		vertex.tangent.z = tangentu[2];
+		vertex.tangent.w = fSign;
+	}
+
+private:
+	SMikkTSpaceInterface m_mikkt_interface = {};
+	SMikkTSpaceContext m_mikkt_context = {};
+
+};
 
 namespace Assets
 {
@@ -17,6 +117,8 @@ namespace Assets
 	{
 		std::unordered_map<const char*, TextureHandle_t> textures;
 		std::unordered_map<const char*, Model> models;
+
+		TangentCalculator tangent_calc;
 	} data;
 
 	struct ReadImageResult
@@ -46,6 +148,22 @@ namespace Assets
 
 		cgltf_combine_paths(*result, filepath, uri);
 		cgltf_decode_uri(*result + strlen(*result) - strlen(uri));
+	}
+
+	static TextureHandle_t LoadGLTFTexture(cgltf_image& gltf_image, const char* filepath, TextureFormat format)
+	{
+		if (VK_RESOURCE_HANDLE_VALID(GetTexture(gltf_image.uri)))
+		{
+			return GetTexture(gltf_image.uri);
+		}
+
+		char* combined_filepath = nullptr;
+
+		CreateFilepathFromUri(filepath, gltf_image.uri, &combined_filepath);
+		LoadTexture(combined_filepath, gltf_image.uri, format);
+		delete combined_filepath;
+
+		return GetTexture(gltf_image.uri);
 	}
 
 	template<typename T>
@@ -116,37 +234,21 @@ namespace Assets
 		{
 		};*/
 
-		cgltf_data* data = nullptr;
-		cgltf_result parsed = cgltf_parse_file(&options, filepath, &data);
+		cgltf_data* gltf_data = nullptr;
+		cgltf_result parsed = cgltf_parse_file(&options, filepath, &gltf_data);
 
 		if (parsed != cgltf_result_success)
 		{
 			VK_EXCEPT("Assets", "Failed to load GLTF file: {}", filepath);
 		}
 
-		cgltf_load_buffers(&options, data, filepath);
-
-		// Load all texture images upfront
-		std::vector<TextureHandle_t> texture_handles(data->images_count);
-
-		for (size_t i = 0; i < data->images_count; ++i)
-		{
-			char* combined_filepath = nullptr;
-			
-			// TODO: These should be named after their type and something else to uniquely identify them
-			// like URI + BaseColor/Normal/MetallicRoughness
-			CreateFilepathFromUri(filepath, data->images[i].uri, &combined_filepath);
-			LoadTexture(combined_filepath, data->images[i].uri);
-			texture_handles[i] = GetTexture(data->images[i].uri);
-
-			delete combined_filepath;
-		}
+		cgltf_load_buffers(&options, gltf_data, filepath);
 
 		// Determine how many meshes we have in total
 		size_t num_meshes = 0;
-		for (size_t i = 0; i < data->meshes_count; ++i)
+		for (size_t i = 0; i < gltf_data->meshes_count; ++i)
 		{
-			cgltf_mesh* mesh = &data->meshes[i];
+			cgltf_mesh* mesh = &gltf_data->meshes[i];
 			num_meshes += mesh->primitives_count;
 		}
 
@@ -154,39 +256,40 @@ namespace Assets
 		std::vector<MeshHandle_t> mesh_handles(num_meshes);
 		size_t mesh_handle_index_current = 0;
 
-		for (size_t i = 0; i < data->meshes_count; ++i)
+		for (size_t i = 0; i < gltf_data->meshes_count; ++i)
 		{
-			cgltf_mesh& mesh = data->meshes[i];
+			cgltf_mesh& gltf_mesh = gltf_data->meshes[i];
 
-			for (size_t j = 0; j < mesh.primitives_count; ++j)
+			for (size_t j = 0; j < gltf_mesh.primitives_count; ++j)
 			{
-				cgltf_primitive& primitive = mesh.primitives[j];
+				cgltf_primitive& gltf_prim = gltf_mesh.primitives[j];
 
 				// Prepare mesh creation arguments for renderer upload
 				Renderer::CreateMeshArgs mesh_args = {};
-				mesh_args.indices.resize(primitive.indices->count);
+				mesh_args.indices.resize(gltf_prim.indices->count);
 
 				// Load indices for current primitive
-				if (primitive.indices->component_type == cgltf_component_type_r_32u)
+				if (gltf_prim.indices->component_type == cgltf_component_type_r_32u)
 				{
-					memcpy(mesh_args.indices.data(), CGLTFGetDataPointer<uint32_t>(primitive.indices), sizeof(uint32_t) * primitive.indices->count);
+					memcpy(mesh_args.indices.data(), CGLTFGetDataPointer<uint32_t>(gltf_prim.indices), sizeof(uint32_t) * gltf_prim.indices->count);
 				}
-				else if (primitive.indices->component_type == cgltf_component_type_r_16u)
+				else if (gltf_prim.indices->component_type == cgltf_component_type_r_16u)
 				{
-					uint16_t* indices_ptr = CGLTFGetDataPointer<uint16_t>(primitive.indices);
+					uint16_t* indices_ptr = CGLTFGetDataPointer<uint16_t>(gltf_prim.indices);
 
-					for (size_t k = 0; k < primitive.indices->count; ++k)
+					for (size_t k = 0; k < gltf_prim.indices->count; ++k)
 					{
 						mesh_args.indices[k] = indices_ptr[k];
 					}
 				}
 
 				// Load vertices for current primitive
-				mesh_args.vertices.resize(primitive.attributes[0].data->count);
+				mesh_args.vertices.resize(gltf_prim.attributes[0].data->count);
+				bool calc_tangents = true;
 
-				for (size_t k = 0; k < primitive.attributes_count; ++k)
+				for (size_t k = 0; k < gltf_prim.attributes_count; ++k)
 				{
-					cgltf_attribute& attribute = primitive.attributes[k];
+					cgltf_attribute& attribute = gltf_prim.attributes[k];
 
 					switch (attribute.type)
 					{
@@ -220,55 +323,75 @@ namespace Assets
 						}
 						break;
 					}
+					case cgltf_attribute_type_tangent:
+					{
+						glm::vec4* tangent_ptr = CGLTFGetDataPointer<glm::vec4>(attribute.data);
+
+						for (size_t l = 0; l < attribute.data->count; ++l)
+						{
+							mesh_args.vertices[l].tangent = tangent_ptr[l];
+						}
+						calc_tangents = false;
+						break;
+					}
 					}
 				}
+
+				// No tangents found, so we need to calculate them ourselves
+				// Bitangents will be made in the shaders to reduce memory bandwidth
+				if (calc_tangents)
+					data.tangent_calc.Calculate(&mesh_args);
 
 				mesh_handles[mesh_handle_index_current++] = Renderer::CreateMesh(mesh_args);
 			}
 		}
 
 		// Create all materials
-		std::vector<MaterialHandle_t> material_handles(data->materials_count);
+		std::vector<MaterialHandle_t> material_handles(gltf_data->materials_count);
 
-		for (size_t i = 0; i < data->materials_count; ++i)
+		for (size_t i = 0; i < gltf_data->materials_count; ++i)
 		{
-			cgltf_material& gltf_material = data->materials[i];
+			cgltf_material& gltf_material = gltf_data->materials[i];
 
 			Renderer::CreateMaterialArgs material_args = {};
 			
 			memcpy(&material_args.base_color_factor, gltf_material.pbr_metallic_roughness.base_color_factor, sizeof(glm::vec4));
+			// GLTF 2.0 Spec states that:
+			// - Base color textures are encoded in SRGB
+			// - Normal textures are encoded in linear
+			// - Metallic roughness textures are encoded in linear
 			if (gltf_material.pbr_metallic_roughness.base_color_texture.texture)
 			{
-				size_t texture_handle_index = CGLTFGetIndex<cgltf_image>(data->images,
+				size_t texture_handle_index = CGLTFGetIndex<cgltf_image>(gltf_data->images,
 					gltf_material.pbr_metallic_roughness.base_color_texture.texture->image);
-				material_args.base_color_texture_handle = texture_handles[texture_handle_index];
+				material_args.base_color_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TextureFormat_RGBA8_SRGB);
 			}
 
 			if (gltf_material.normal_texture.texture)
 			{
-				size_t normal_texture_index = CGLTFGetIndex<cgltf_image>(data->images,
+				size_t texture_handle_index = CGLTFGetIndex<cgltf_image>(gltf_data->images,
 					gltf_material.normal_texture.texture->image);
-				material_args.normal_texture_handle = texture_handles[normal_texture_index];
+				material_args.normal_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TextureFormat_RGBA8_UNORM);
 			}
 
 			material_args.metallic_factor = gltf_material.pbr_metallic_roughness.metallic_factor;
 			material_args.roughness_factor = gltf_material.pbr_metallic_roughness.roughness_factor;
 			if (gltf_material.pbr_metallic_roughness.metallic_roughness_texture.texture)
 			{
-				size_t metallic_roughness_texture_index = CGLTFGetIndex<cgltf_image>(data->images,
+				size_t texture_handle_index = CGLTFGetIndex<cgltf_image>(gltf_data->images,
 					gltf_material.pbr_metallic_roughness.metallic_roughness_texture.texture->image);
-				material_args.metallic_roughness_texture_handle = texture_handles[metallic_roughness_texture_index];
+				material_args.metallic_roughness_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TextureFormat_RGBA8_UNORM);
 			}
 
 			material_handles[i] = Renderer::CreateMaterial(material_args);
 		}
 
 		// Create all nodes
-		model.nodes.resize(data->nodes_count);
+		model.nodes.resize(gltf_data->nodes_count);
 
-		for (size_t i = 0; i < data->nodes_count; ++i)
+		for (size_t i = 0; i < gltf_data->nodes_count; ++i)
 		{
-			cgltf_node& gltf_node = data->nodes[i];
+			cgltf_node& gltf_node = gltf_data->nodes[i];
 			Model::Node& model_node = model.nodes[i];
 			model_node.transform = CGLTFNodeGetTransform(gltf_node);
 			model_node.name = gltf_node.name;
@@ -276,7 +399,7 @@ namespace Assets
 			model_node.children.resize(gltf_node.children_count);
 			for (size_t j = 0; j < gltf_node.children_count; ++j)
 			{
-				model_node.children[j] = CGLTFGetIndex(data->nodes, gltf_node.children[j]);
+				model_node.children[j] = CGLTFGetIndex(gltf_data->nodes, gltf_node.children[j]);
 			}
 
 			if (gltf_node.mesh)
@@ -288,11 +411,11 @@ namespace Assets
 				{
 					cgltf_primitive& primitive = gltf_node.mesh->primitives[j];
 
-					size_t mesh_handle_index = CGLTFGetIndex<cgltf_mesh>(data->meshes, gltf_node.mesh) +
+					size_t mesh_handle_index = CGLTFGetIndex<cgltf_mesh>(gltf_data->meshes, gltf_node.mesh) +
 						CGLTFGetIndex<cgltf_primitive>(gltf_node.mesh->primitives, &primitive);
 					model_node.mesh_handles[j] = mesh_handles[mesh_handle_index];
 
-					size_t material_handle_index = CGLTFGetIndex<cgltf_material>(data->materials, primitive.material);
+					size_t material_handle_index = CGLTFGetIndex<cgltf_material>(gltf_data->materials, primitive.material);
 					model_node.material_handles[j] = material_handles[material_handle_index];
 				}
 			}
@@ -303,7 +426,7 @@ namespace Assets
 			}
 		}
 
-		cgltf_free(data);
+		cgltf_free(gltf_data);
 		return model;
 	}
 
@@ -317,13 +440,14 @@ namespace Assets
 		// TODO: Release all assets, both on the CPU and GPU
 	}
 
-	void LoadTexture(const char* filepath, const char* name)
+	void LoadTexture(const char* filepath, const char* name, TextureFormat format)
 	{
 		ReadImageResult image = ReadImage(filepath);
 
 		Renderer::CreateTextureArgs args = {};
 		args.width = image.width;
 		args.height = image.height;
+		args.format = format;
 		args.pixels.resize(image.width * image.height * 4);
 		memcpy(args.pixels.data(), image.pixels, args.pixels.size());
 		TextureHandle_t texture_handle = Renderer::CreateTexture(args);

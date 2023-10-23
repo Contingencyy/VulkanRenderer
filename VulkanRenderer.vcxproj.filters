@@ -63,6 +63,9 @@
     <ClCompile Include="source\renderer\RenderPass.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="extern\mikkt\mikktspace.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\Logger.h">

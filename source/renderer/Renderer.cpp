@@ -30,6 +30,8 @@ namespace Renderer
 
 	static constexpr uint32_t MAX_DRAW_LIST_ENTRIES = 10000;
 
+	static const std::vector<VkFormat> TEXTURE_FORMAT_TO_VK_FORMAT = { VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_SRGB };
+
 	struct DrawList
 	{
 		struct Entry
@@ -151,7 +153,7 @@ namespace Renderer
 
 	static std::vector<VkVertexInputAttributeDescription> GetVertexAttributeDescription()
 	{
-		std::vector<VkVertexInputAttributeDescription> attribute_desc(7);
+		std::vector<VkVertexInputAttributeDescription> attribute_desc(8);
 		attribute_desc[0].binding = 0;
 		attribute_desc[0].location = 0;
 		attribute_desc[0].format = VK_FORMAT_R32G32B32_SFLOAT;
@@ -167,25 +169,30 @@ namespace Renderer
 		attribute_desc[2].format = VK_FORMAT_R32G32B32_SFLOAT;
 		attribute_desc[2].offset = offsetof(Vertex, normal);
 
-		attribute_desc[3].binding = 1;
+		attribute_desc[3].binding = 0;
 		attribute_desc[3].location = 3;
 		attribute_desc[3].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-		attribute_desc[3].offset = 0;
+		attribute_desc[3].offset = offsetof(Vertex, tangent);
 
 		attribute_desc[4].binding = 1;
 		attribute_desc[4].location = 4;
 		attribute_desc[4].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-		attribute_desc[4].offset = 16;
+		attribute_desc[4].offset = 0;
 
 		attribute_desc[5].binding = 1;
 		attribute_desc[5].location = 5;
 		attribute_desc[5].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-		attribute_desc[5].offset = 32;
+		attribute_desc[5].offset = 16;
 
 		attribute_desc[6].binding = 1;
 		attribute_desc[6].location = 6;
 		attribute_desc[6].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-		attribute_desc[6].offset = 48;
+		attribute_desc[6].offset = 32;
+
+		attribute_desc[7].binding = 1;
+		attribute_desc[7].location = 7;
+		attribute_desc[7].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+		attribute_desc[7].offset = 48;
 
 		return attribute_desc;
 	}
@@ -812,7 +819,7 @@ namespace Renderer
 		// Create texture image
 		ResourceSlotmap<TextureResource>::ReservedResource reserved = data->texture_slotmap.Reserve();
 		uint32_t num_mips = (uint32_t)std::floor(std::log2(std::max(args.width, args.height))) + 1;
-		Vulkan::CreateImage(args.width, args.height, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+		Vulkan::CreateImage(args.width, args.height, TEXTURE_FORMAT_TO_VK_FORMAT[args.format], VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
 			VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, reserved.resource->image, num_mips);
 
 		// Copy staging buffer data into final texture image memory (device local)
@@ -820,7 +827,7 @@ namespace Renderer
 		Vulkan::CopyBufferToImage(staging_buffer, reserved.resource->image, args.width, args.height);
 		
 		// Generate mips using blit
-		Vulkan::GenerateMips(args.width, args.height, num_mips, VK_FORMAT_R8G8B8A8_SRGB, reserved.resource->image);
+		Vulkan::GenerateMips(args.width, args.height, num_mips, TEXTURE_FORMAT_TO_VK_FORMAT[args.format], reserved.resource->image);
 
 		// Clean up staging buffer
 		Vulkan::DestroyBuffer(staging_buffer);

@@ -9,7 +9,7 @@ namespace Assets
 	void Init();
 	void Exit();
 
-	void LoadTexture(const char* filepath, const char* name);
+	void LoadTexture(const char* filepath, const char* name, TextureFormat format);
 	TextureHandle_t GetTexture(const char* name);
 
 	struct Model

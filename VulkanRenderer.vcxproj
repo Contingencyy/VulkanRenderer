@@ -144,6 +144,7 @@
     <ClCompile Include="extern\imgui\imgui_impl_vulkan.cpp" />
     <ClCompile Include="extern\imgui\imgui_tables.cpp" />
     <ClCompile Include="extern\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="extern\mikkt\mikktspace.c" />
     <ClCompile Include="source\Application.cpp" />
     <ClCompile Include="source\Assets.cpp" />
     <ClCompile Include="source\Input.cpp" />

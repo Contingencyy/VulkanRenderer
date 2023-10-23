@@ -29,6 +29,8 @@ layout(std140, push_constant) uniform constants
 layout(location = 0) in vec4 frag_pos;
 layout(location = 1) in vec2 frag_tex_coord;
 layout(location = 2) in vec3 frag_normal;
+layout(location = 3) in vec3 frag_tangent;
+layout(location = 4) in vec3 frag_bitangent;
 
 layout(location = 0) out vec4 out_color;
 
@@ -36,7 +38,13 @@ void main()
 {
 	MaterialData material = g_materials[RESERVED_DESCRIPTOR_STORAGE_BUFFER_MATERIAL].mat[push_constants.mat_index];
 	vec4 base_color = texture(sampler2D(g_textures[material.base_color_texture_index], g_samplers[material.sampler_index]), frag_tex_coord) * material.base_color_factor;
+	vec3 normal = texture(sampler2D(g_textures[material.normal_texture_index], g_samplers[material.sampler_index]), frag_tex_coord).rgb;
 	vec2 metallic_roughness = texture(sampler2D(g_textures[material.metallic_roughness_texture_index], g_samplers[material.sampler_index]), frag_tex_coord).bg * vec2(material.metallic_factor, material.roughness_factor);
+
+	// Create the rotation matrix to bring the sampled normal from tangent space to world space
+	mat3 TBN = mat3(frag_tangent, frag_bitangent, frag_normal);
+	normal = normal * 2.0f - 1.0f;
+	normal = normalize(TBN * normal);
 
 	// TEMP: Single point light
 	vec3 light_pos = vec3(0.0f, 50.0f, 0.0f);
@@ -50,10 +58,10 @@ void main()
 
 	vec3 attenuation = clamp(1.0f / (falloff.x + (falloff.y * dist_to_light) + (falloff.z * (dist_to_light * dist_to_light))), 0.0f, 1.0f);
 	vec3 radiance = attenuation * light_color;
-	float NoL = clamp(dot(frag_normal, frag_to_light), 0.0f, 1.0f);
+	float NoL = clamp(dot(normal, frag_to_light), 0.0f, 1.0f);
 
 	vec3 brdf_specular, brdf_diffuse;
-	EvaluateBRDF(view_dir, frag_to_light, frag_normal, base_color.xyz, metallic_roughness.x, metallic_roughness.y, brdf_specular, brdf_diffuse);
+	EvaluateBRDF(view_dir, frag_to_light, normal, base_color.xyz, metallic_roughness.x, metallic_roughness.y, brdf_specular, brdf_diffuse);
 
 	vec3 irradiance = radiance * NoL;
 	out_color.xyz = brdf_specular * irradiance + brdf_diffuse * irradiance;

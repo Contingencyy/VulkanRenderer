@@ -123,8 +123,8 @@ namespace Application
 			Input::GetMousePositionRel(mouse_x, mouse_y);
 
 			float yaw_sign = camera_transform[1][1] < 0.0f ? -1.0f : 1.0f;
-			rotation.y -= delta_time * yaw_sign * mouse_x;
-			rotation.x -= delta_time * mouse_y;
+			rotation.y -= 0.001f * yaw_sign * mouse_x;
+			rotation.x -= 0.001f * mouse_y;
 			rotation.x = std::min(rotation.x, glm::radians(90.0f));
 			rotation.x = std::max(rotation.x, glm::radians(-90.0f));
 		}
@@ -150,7 +150,6 @@ namespace Application
 		Renderer::Init(data.window);
 
 		Assets::Init();
-		Assets::LoadTexture("assets/textures/statue.jpg", "statue");
 		Assets::LoadGLTF("assets/models/gltf/ABeautifulGame/ABeautifulGame.gltf", "car");
 
 		data.is_running = true;
