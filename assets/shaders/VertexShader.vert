@@ -37,6 +37,8 @@ void main()
 
 	frag_normal = normalize(transform * vec4(normal, 0.0f)).xyz;
 	frag_tangent = normalize(transform * vec4(tangent.xyz, 0.0f)).xyz;
+	// NOTE: Larger meshes sometimes average tangents for smoothness, so we need to use this trick
+	// to re-orthogonalize the tangent (Gram-Schmidt process)
 	frag_tangent = normalize(frag_tangent - dot(frag_tangent, frag_normal) * frag_normal);
 	frag_bitangent = normalize(cross(frag_normal, frag_tangent)) * (-tangent.w);
 
