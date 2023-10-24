@@ -13,6 +13,8 @@ namespace Input
 
 	struct Data
 	{
+		GLFWwindow* window;
+
 		std::unordered_map<int, Key> key_mappings =
 		{
 			{ GLFW_KEY_W, Key::Key_W },
@@ -81,8 +83,10 @@ namespace Input
 		data.mouse_pos_curr.y = ypos;
 	}
 
-	void Init()
+	void Init(GLFWwindow* window)
 	{
+		data.window = window;
+
 		for (size_t i = 0; i < Key::NumKeys; ++i)
 		{
 			data.key_states.emplace((Key)i, false);
@@ -128,6 +132,12 @@ namespace Input
 	{
 		x = data.mouse_pos_curr.x - data.mouse_pos_prev.x;
 		y = data.mouse_pos_curr.y - data.mouse_pos_prev.y;
+	}
+
+	bool IsCursorDisabled()
+	{
+		int cursor_mode = glfwGetInputMode(data.window, GLFW_CURSOR);
+		return cursor_mode == GLFW_CURSOR_DISABLED;
 	}
 
 }

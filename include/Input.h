@@ -22,7 +22,7 @@ namespace Input
 	void GLFWMouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
 	void GLFWCursorPosCallback(GLFWwindow* window, double xpos, double ypos);
 
-	void Init();
+	void Init(GLFWwindow* window);
 	void Exit();
 	void Update();
 
@@ -33,5 +33,7 @@ namespace Input
 	
 	void GetMousePositionAbs(double& x, double& y);
 	void GetMousePositionRel(double& x, double& y);
+
+	bool IsCursorDisabled();
 
 }

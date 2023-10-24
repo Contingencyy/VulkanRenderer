@@ -32,6 +32,6 @@ namespace Assets
 	};
 
 	void LoadGLTF(const char* filepath, const char* name);
-	Model GetModel(const char* name);
+	Model* GetModel(const char* name);
 
 }

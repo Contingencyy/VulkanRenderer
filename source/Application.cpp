@@ -3,6 +3,7 @@
 #include "Logger.h"
 #include "Assets.h"
 #include "Input.h"
+#include "Scene.h"
 
 #include "GLFW/glfw3.h"
 
@@ -22,11 +23,9 @@ namespace Application
 		bool should_close = false;
 		bool window_focused = true;
 
-		glm::mat4 view = glm::identity<glm::mat4>();
-		glm::mat4 proj = glm::identity<glm::mat4>();
-		float camera_speed = 10.0f;
-
 		std::chrono::duration<float> delta_time = std::chrono::duration<float>(0.0f);
+
+		Scene active_scene;
 	} static data;
 
 	const uint32_t DEFAULT_WINDOW_WIDTH = 1280;
@@ -34,6 +33,7 @@ namespace Application
 
 	static void FramebufferResizeCallback(GLFWwindow* window, int width, int height)
 	{
+		data.active_scene.GetActiveCamera().OnResolutionChanged(width, height);
 	}
 
 	static void CreateWindow()
@@ -73,85 +73,78 @@ namespace Application
 		}
 	}
 
-	static void SubmitModelNode(const Assets::Model& model, const Assets::Model::Node& node, const glm::mat4& node_transform)
+	//static void SubmitModelNode(const Assets::Model& model, const Assets::Model::Node& node, const glm::mat4& node_transform)
+	//{
+	//	for (size_t i = 0; i < node.mesh_handles.size(); ++i)
+	//	{
+	//		Renderer::SubmitMesh(node.mesh_handles[i], node.material_handles[i], node_transform);
+	//	}
+	//
+	//	for (size_t i = 0; i < node.children.size(); ++i)
+	//	{
+	//		const Assets::Model::Node& child_node = model.nodes[node.children[i]];
+	//		glm::mat4 child_transform = node_transform * child_node.transform;
+	//		SubmitModelNode(model, child_node, child_transform);
+	//	}
+	//}
+	//
+	//static void SubmitModel(const Assets::Model& model, const glm::mat4& transform)
+	//{
+	//	for (size_t i = 0; i < model.root_nodes.size(); ++i)
+	//	{
+	//		const Assets::Model::Node& root_node = model.nodes[model.root_nodes[i]];
+	//		glm::mat4 root_transform = transform * root_node.transform;
+	//		SubmitModelNode(model, root_node, root_transform);
+	//	}
+	//}
+
+	static void SpawnModelNodeEntity(const Assets::Model* model, const Assets::Model::Node& node, const glm::mat4& node_transform)
 	{
-		for (size_t i = 0; i < node.mesh_handles.size(); ++i)
+		for (uint32_t i = 0; i < node.mesh_handles.size(); ++i)
 		{
-			Renderer::SubmitMesh(node.mesh_handles[i], node.material_handles[i], node_transform);
+			data.active_scene.AddEntity<MeshObject>(node.mesh_handles[i], node.material_handles[i], node_transform);
 		}
 
-		for (size_t i = 0; i < node.children.size(); ++i)
+		for (uint32_t i = 0; i < node.children.size(); ++i)
 		{
-			const Assets::Model::Node& child_node = model.nodes[node.children[i]];
+			const Assets::Model::Node& child_node = model->nodes[node.children[i]];
 			glm::mat4 child_transform = node_transform * child_node.transform;
-			SubmitModelNode(model, child_node, child_transform);
+
+			SpawnModelNodeEntity(model, child_node, child_transform);
 		}
 	}
 
-	static void SubmitModel(const Assets::Model& model, const glm::mat4& transform)
+	static void SpawnModelEntity(const char* model_name, const glm::mat4& transform)
 	{
-		for (size_t i = 0; i < model.root_nodes.size(); ++i)
+		Assets::Model* model = Assets::GetModel(model_name);
+		if (!model)
 		{
-			const Assets::Model::Node& root_node = model.nodes[model.root_nodes[i]];
+			VK_EXCEPT("Assets", "Failed to fetch model with name {}", model_name);
+		}
+
+		for (uint32_t i = 0; i < model->root_nodes.size(); ++i)
+		{
+			const Assets::Model::Node& root_node = model->nodes[model->root_nodes[i]];
 			glm::mat4 root_transform = transform * root_node.transform;
-			SubmitModelNode(model, root_node, root_transform);
+		
+			SpawnModelNodeEntity(model, root_node, root_transform);
 		}
-	}
-
-	static void UpdateCamera(float delta_time)
-	{
-		// Make camera transform, and construct right/up/forward vectors from camera transform
-		glm::mat4 camera_transform = glm::inverse(data.view);
-		glm::vec3 right = glm::normalize(glm::vec3(camera_transform[0][0], camera_transform[0][1], camera_transform[0][2]));
-		glm::vec3 up = glm::normalize(glm::vec3(camera_transform[1][0], camera_transform[1][1], camera_transform[1][2]));
-		glm::vec3 forward = glm::normalize(glm::vec3(camera_transform[2][0], camera_transform[2][1], camera_transform[2][2]));
-
-		// Translation
-		static glm::vec3 translation(0.0f);
-		translation += right * delta_time * data.camera_speed * Input::GetInputAxis1D(Input::Key_D, Input::Key_A);
-		translation += up * delta_time * data.camera_speed * Input::GetInputAxis1D(Input::Key_Space, Input::Key_Shift);
-		translation += forward * delta_time * data.camera_speed * Input::GetInputAxis1D(Input::Key_S, Input::Key_W);
-
-		// Rotation
-		int cursor_mode = glfwGetInputMode(data.window, GLFW_CURSOR);
-		static glm::vec3 rotation;
-		static float yaw = 0.0f, pitch = 0.0f;
-
-		if (cursor_mode == GLFW_CURSOR_DISABLED)
-		{
-			double mouse_x, mouse_y;
-			Input::GetMousePositionRel(mouse_x, mouse_y);
-
-			float yaw_sign = camera_transform[1][1] < 0.0f ? -1.0f : 1.0f;
-			rotation.y -= 0.001f * yaw_sign * mouse_x;
-			rotation.x -= 0.001f * mouse_y;
-			rotation.x = std::min(rotation.x, glm::radians(90.0f));
-			rotation.x = std::max(rotation.x, glm::radians(-90.0f));
-		}
-
-		// Make view projection matrices
-		glm::mat4 translation_matrix = glm::translate(glm::identity<glm::mat4>(), translation);
-		glm::mat4 rotation_matrix = glm::mat4_cast(glm::quat(rotation));
-
-		data.view = translation_matrix * rotation_matrix;
-		data.view = glm::inverse(data.view);
-
-		int width, height;
-		glfwGetFramebufferSize(data.window, &width, &height);
-		data.proj = glm::perspective(glm::radians(60.0f), (float)width / height, 0.001f, 1000.0f);
-		data.proj[1][1] *= -1.0f;
 	}
 
 	void Init()
 	{
 		CreateWindow();
 
-		Input::Init();
+		Input::Init(data.window);
 		Renderer::Init(data.window);
 
 		Assets::Init();
 		Assets::LoadGLTF("assets/models/gltf/ABeautifulGame/ABeautifulGame.gltf", "car");
 		//Assets::LoadGLTF("assets/models/gltf/bmw_m6_rigged/scene.gltf", "car");
+
+		// NOTE: Temporary test setup, we should have a proper scene soon
+		glm::mat4 transform = glm::scale(glm::identity<glm::mat4>(), glm::vec3(10.0f));
+		SpawnModelEntity("car", transform);
 
 		data.is_running = true;
 	}
@@ -169,13 +162,8 @@ namespace Application
 
 	static void Update(float dt)
 	{
-		UpdateCamera(dt);
+		data.active_scene.Update(dt);
 		Input::Update();
-
-		// NOTE: Temporary test setup, we should have a proper scene soon
-		Assets::Model car = Assets::GetModel("car");
-		glm::mat4 transform = glm::scale(glm::identity<glm::mat4>(), glm::vec3(10.0f));
-		SubmitModel(car, transform);
 	}
 
 	static void RenderUI()
@@ -193,7 +181,10 @@ namespace Application
 
 	static void Render()
 	{
-		Renderer::BeginFrame(data.view, data.proj);
+		Renderer::BeginFrame(data.active_scene.GetActiveCamera().GetView(), data.active_scene.GetActiveCamera().GetProjection());
+
+		data.active_scene.Render();
+
 		Renderer::RenderFrame();
 		RenderUI();
 		Renderer::EndFrame();

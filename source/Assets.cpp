@@ -110,6 +110,8 @@ private:
 
 };
 
+#include "renderer/ResourceSlotmap.h"
+
 namespace Assets
 {
 
@@ -117,7 +119,6 @@ namespace Assets
 	{
 		std::unordered_map<const char*, TextureHandle_t> textures;
 		std::unordered_map<const char*, Model> models;
-
 		TangentCalculator tangent_calc;
 	} data;
 
@@ -473,15 +474,15 @@ namespace Assets
 		data.models.emplace(name, model);
 	}
 
-	Model GetModel(const char* name)
+	Model* GetModel(const char* name)
 	{
 		auto iter = data.models.find(name);
 		if (iter != data.models.end())
 		{
-			return iter->second;
+			return &data.models.at(name);
 		}
 
-		return Model();
+		return nullptr;
 	}
 
 }

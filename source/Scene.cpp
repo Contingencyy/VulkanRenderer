@@ -1,0 +1,35 @@
+#include "Scene.h"
+#include "Entity.h"
+
+Scene::Scene()
+{
+	m_active_camera = Camera(glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, -1.0f), 60.0f, 16.0f / 9.0f);
+}
+
+void Scene::Update(float dt)
+{
+	m_active_camera.Update(dt);
+
+	for (auto& entity : m_entities)
+	{
+		entity->Update(dt);
+	}
+}
+
+void Scene::Render()
+{
+	for (auto& entity : m_entities)
+	{
+		entity->Render();
+	}
+}
+
+Camera& Scene::GetActiveCamera()
+{
+	return m_active_camera;
+}
+
+const Camera& Scene::GetActiveCamera() const
+{
+	return m_active_camera;
+}

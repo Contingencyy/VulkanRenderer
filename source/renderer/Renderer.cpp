@@ -978,4 +978,9 @@ namespace Renderer
 		entry.transform = transform;
 	}
 
+	void SubmitPointlight(const glm::vec3& pos, const glm::vec3& color, float intensity)
+	{
+
+	}
+
 }
