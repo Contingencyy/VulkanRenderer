@@ -411,7 +411,7 @@ namespace Vulkan
 	{
 		for (const auto& available_format : available_formats)
 		{
-			if (available_format.format == VK_FORMAT_B8G8R8A8_UNORM &&
+			if (available_format.format == VK_FORMAT_B8G8R8A8_SRGB &&
 				available_format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
 			{
 				return available_format;
