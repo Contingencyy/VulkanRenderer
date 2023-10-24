@@ -12,6 +12,11 @@ layout(set = DESCRIPTOR_SET_UNIFORM_BUFFER, binding = 0) uniform Camera
 	CameraData cam;
 } g_camera[];
 
+layout(set = DESCRIPTOR_SET_UNIFORM_BUFFER, binding = 0) uniform LightSources
+{
+	PointlightData pointlight[MAX_LIGHT_SOURCES];
+} g_light_sources[];
+
 layout(std140, set = DESCRIPTOR_SET_STORAGE_BUFFER, binding = 0) readonly buffer MaterialBuffer
 {
 	MaterialData mat[MAX_UNIQUE_MATERIALS];
@@ -23,7 +28,9 @@ layout(set = DESCRIPTOR_SET_SAMPLER, binding = 0) uniform sampler g_samplers[];
 layout(std140, push_constant) uniform constants
 {
 	layout(offset = 0) uint camera_ubo_index;
-	layout(offset = 4) uint mat_index;
+	layout(offset = 4) uint light_ubo_index;
+	layout(offset = 8) uint num_light_sources;
+	layout(offset = 12) uint mat_index;
 } push_constants;
 
 layout(location = 0) in vec4 frag_pos;
@@ -33,6 +40,33 @@ layout(location = 3) in vec3 frag_tangent;
 layout(location = 4) in vec3 frag_bitangent;
 
 layout(location = 0) out vec4 out_color;
+
+const vec3 falloff = vec3(1.0f, 0.007f, 0.0002f);
+
+vec3 CalculateLightingAtFragment(vec3 view_pos, vec3 view_dir, vec3 frag_normal, vec3 base_color, vec2 metallic_roughness)
+{
+	vec3 color = vec3(0.0f);
+
+	for (uint light_idx = 0; light_idx < push_constants.num_light_sources; ++light_idx)
+	{
+		PointlightData pointlight = g_light_sources[push_constants.light_ubo_index].pointlight[light_idx];
+		vec3 light_color = pointlight.color * pointlight.intensity;
+		
+		vec3 frag_to_light = normalize(pointlight.position - frag_pos.xyz);
+		vec3 dist_to_light = vec3(length(pointlight.position - frag_pos.xyz));
+		
+		vec3 attenuation = clamp(1.0f / (falloff.x + (falloff.y * dist_to_light) + (falloff.z * (dist_to_light * dist_to_light))), 0.0f, 1.0f);
+		float NoL = clamp(dot(frag_normal, frag_to_light), 0.0f, 1.0f);
+		vec3 irradiance = light_color * NoL * attenuation;
+
+		vec3 brdf_specular, brdf_diffuse;
+		EvaluateBRDF(view_dir, frag_to_light, frag_normal, base_color, metallic_roughness.x, metallic_roughness.y, brdf_specular, brdf_diffuse);
+
+		color += brdf_specular * irradiance + brdf_diffuse * irradiance;
+	}
+
+	return color;
+}
 
 void main()
 {
@@ -46,24 +80,11 @@ void main()
 	normal = normal * 2.0f - 1.0f;
 	normal = normalize(TBN * normal);
 
-	// TEMP: Single point light
-	vec3 light_pos = vec3(0.0f, 50.0f, 0.0f);
-	vec3 light_color = vec3(5.0f, 5.0f, 5.0f);
-	vec3 falloff = vec3(1.0f, 0.007f, 0.0002f);
-
 	vec3 view_pos = g_camera[push_constants.camera_ubo_index].cam.view_pos.xyz;
 	vec3 view_dir = normalize(view_pos - frag_pos.xyz);
-	vec3 frag_to_light = normalize(light_pos - frag_pos.xyz);
-	vec3 dist_to_light = vec3(length(light_pos - frag_pos.xyz));
+	
+	vec3 color = CalculateLightingAtFragment(view_pos, view_dir, normal, base_color.xyz, metallic_roughness);
 
-	vec3 attenuation = clamp(1.0f / (falloff.x + (falloff.y * dist_to_light) + (falloff.z * (dist_to_light * dist_to_light))), 0.0f, 1.0f);
-	vec3 radiance = attenuation * light_color;
-	float NoL = clamp(dot(normal, frag_to_light), 0.0f, 1.0f);
-
-	vec3 brdf_specular, brdf_diffuse;
-	EvaluateBRDF(view_dir, frag_to_light, normal, base_color.xyz, metallic_roughness.x, metallic_roughness.y, brdf_specular, brdf_diffuse);
-
-	vec3 irradiance = radiance * NoL;
-	out_color.xyz = brdf_specular * irradiance + brdf_diffuse * irradiance;
+	out_color.xyz = color;
 	out_color.a = 1.0f;
 }

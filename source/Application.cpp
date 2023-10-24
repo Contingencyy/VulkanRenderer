@@ -120,9 +120,9 @@ namespace Application
 		Assets::LoadGLTF("assets/models/gltf/ABeautifulGame/ABeautifulGame.gltf", "car");
 		//Assets::LoadGLTF("assets/models/gltf/bmw_m6_rigged/scene.gltf", "car");
 
-		// NOTE: Temporary test setup, we should have a proper scene soon
 		glm::mat4 transform = glm::scale(glm::identity<glm::mat4>(), glm::vec3(10.0f));
 		SpawnModelEntity("car", transform);
+		data.active_scene.AddEntity<Pointlight>(vec3(0.0f, 50.0f, 0.0f), vec3(1.0f), 5.0f, "Pointlight");
 
 		data.is_running = true;
 	}

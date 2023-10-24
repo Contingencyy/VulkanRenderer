@@ -81,5 +81,16 @@ void Pointlight::Render()
 
 void Pointlight::RenderUI()
 {
+	if (ImGui::CollapsingHeader(m_label.c_str()))
+	{
+		ImGui::PushID(m_label.c_str());
+		ImGui::Indent(10.0f);
 
+		ImGui::DragFloat3("Position", &m_position[0], 0.01f, -FLT_MAX, FLT_MAX, "%.2f");
+		ImGui::ColorEdit3("Color", &m_color[0], ImGuiColorEditFlags_DisplayRGB);
+		ImGui::DragFloat("Intensity", &m_intensity, 0.01f, 0.0f, 10000.0f, "%.2f");
+
+		ImGui::Unindent(10.0f);
+		ImGui::PopID();
+	}
 }
