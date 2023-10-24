@@ -117,8 +117,8 @@ namespace Assets
 
 	struct Data
 	{
-		std::unordered_map<const char*, TextureHandle_t> textures;
-		std::unordered_map<const char*, Model> models;
+		std::unordered_map<std::string, TextureHandle_t> textures;
+		std::unordered_map<std::string, Model> models;
 		TangentCalculator tangent_calc;
 	} data;
 
@@ -129,12 +129,12 @@ namespace Assets
 		uint8_t* pixels;
 	};
 
-	static ReadImageResult ReadImage(const char* filepath)
+	static ReadImageResult ReadImage(const std::string& filepath)
 	{
 		ReadImageResult result = {};
 
 		int width, height, channels;
-		stbi_uc* pixels = stbi_load(filepath, &width, &height, &channels, STBI_rgb_alpha);
+		stbi_uc* pixels = stbi_load(filepath.c_str(), &width, &height, &channels, STBI_rgb_alpha);
 
 		result.width = (uint32_t)width;
 		result.height = (uint32_t)height;
@@ -143,15 +143,15 @@ namespace Assets
 		return result;
 	}
 
-	static void CreateFilepathFromUri(const char* filepath, const char* uri, char** result)
+	static void CreateFilepathFromUri(const std::string& filepath, const std::string& uri, char** result)
 	{
-		*result = new char[strlen(filepath) + strlen(uri)];
+		*result = new char[filepath.size() + uri.size()];
 
-		cgltf_combine_paths(*result, filepath, uri);
-		cgltf_decode_uri(*result + strlen(*result) - strlen(uri));
+		cgltf_combine_paths(*result, filepath.c_str(), uri.c_str());
+		cgltf_decode_uri(*result + strlen(*result) - uri.size());
 	}
 
-	static TextureHandle_t LoadGLTFTexture(cgltf_image& gltf_image, const char* filepath, TextureFormat format)
+	static TextureHandle_t LoadGLTFTexture(cgltf_image& gltf_image, const std::string& filepath, TextureFormat format)
 	{
 		if (VK_RESOURCE_HANDLE_VALID(GetTexture(gltf_image.uri)))
 		{
@@ -225,7 +225,7 @@ namespace Assets
 		return transform;
 	}
 
-	static Model ReadGLTF(const char* filepath)
+	static Model ReadGLTF(const std::string& filepath)
 	{
 		cgltf_options options = {};
 		/*options.memory.alloc_func = [](void* user, cgltf_size size)
@@ -236,14 +236,14 @@ namespace Assets
 		};*/
 
 		cgltf_data* gltf_data = nullptr;
-		cgltf_result parsed = cgltf_parse_file(&options, filepath, &gltf_data);
+		cgltf_result parsed = cgltf_parse_file(&options, filepath.c_str(), &gltf_data);
 
 		if (parsed != cgltf_result_success)
 		{
 			VK_EXCEPT("Assets", "Failed to load GLTF file: {}", filepath);
 		}
 
-		cgltf_load_buffers(&options, gltf_data, filepath);
+		cgltf_load_buffers(&options, gltf_data, filepath.c_str());
 
 		// Determine how many meshes we have in total
 		size_t num_meshes = 0;
@@ -254,6 +254,7 @@ namespace Assets
 		}
 
 		Model model = {};
+		model.name = filepath;
 		std::vector<MeshHandle_t> mesh_handles(num_meshes);
 		size_t mesh_handle_index_current = 0;
 
@@ -353,7 +354,6 @@ namespace Assets
 		for (size_t i = 0; i < gltf_data->materials_count; ++i)
 		{
 			cgltf_material& gltf_material = gltf_data->materials[i];
-
 			Renderer::CreateMaterialArgs material_args = {};
 			
 			memcpy(&material_args.base_color_factor, gltf_material.pbr_metallic_roughness.base_color_factor, sizeof(glm::vec4));
@@ -395,7 +395,11 @@ namespace Assets
 			cgltf_node& gltf_node = gltf_data->nodes[i];
 			Model::Node& model_node = model.nodes[i];
 			model_node.transform = CGLTFNodeGetTransform(gltf_node);
-			model_node.name = gltf_node.name;
+
+			if (gltf_node.name)
+				model_node.name = gltf_node.name;
+			else
+				model_node.name = filepath + std::to_string(i);
 
 			model_node.children.resize(gltf_node.children_count);
 			for (size_t j = 0; j < gltf_node.children_count; ++j)
@@ -441,7 +445,7 @@ namespace Assets
 		// TODO: Release all assets, both on the CPU and GPU
 	}
 
-	void LoadTexture(const char* filepath, const char* name, TextureFormat format)
+	void LoadTexture(const std::string& filepath, const std::string& name, TextureFormat format)
 	{
 		ReadImageResult image = ReadImage(filepath);
 
@@ -457,7 +461,7 @@ namespace Assets
 		stbi_image_free(image.pixels);
 	}
 
-	TextureHandle_t GetTexture(const char* name)
+	TextureHandle_t GetTexture(const std::string& name)
 	{
 		auto iter = data.textures.find(name);
 		if (iter != data.textures.end())
@@ -468,13 +472,13 @@ namespace Assets
 		return TextureHandle_t();
 	}
 
-	void LoadGLTF(const char* filepath, const char* name)
+	void LoadGLTF(const std::string& filepath, const std::string& name)
 	{
 		Model model = ReadGLTF(filepath);
 		data.models.emplace(name, model);
 	}
 
-	Model* GetModel(const char* name)
+	Model* GetModel(const std::string& name)
 	{
 		auto iter = data.models.find(name);
 		if (iter != data.models.end())

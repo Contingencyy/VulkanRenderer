@@ -33,7 +33,10 @@ namespace Application
 
 	static void FramebufferResizeCallback(GLFWwindow* window, int width, int height)
 	{
-		data.active_scene.GetActiveCamera().OnResolutionChanged(width, height);
+		if (width > 0 && height > 0)
+		{
+			data.active_scene.GetActiveCamera().OnResolutionChanged(width, height);
+		}
 	}
 
 	static void CreateWindow()
@@ -73,36 +76,11 @@ namespace Application
 		}
 	}
 
-	//static void SubmitModelNode(const Assets::Model& model, const Assets::Model::Node& node, const glm::mat4& node_transform)
-	//{
-	//	for (size_t i = 0; i < node.mesh_handles.size(); ++i)
-	//	{
-	//		Renderer::SubmitMesh(node.mesh_handles[i], node.material_handles[i], node_transform);
-	//	}
-	//
-	//	for (size_t i = 0; i < node.children.size(); ++i)
-	//	{
-	//		const Assets::Model::Node& child_node = model.nodes[node.children[i]];
-	//		glm::mat4 child_transform = node_transform * child_node.transform;
-	//		SubmitModelNode(model, child_node, child_transform);
-	//	}
-	//}
-	//
-	//static void SubmitModel(const Assets::Model& model, const glm::mat4& transform)
-	//{
-	//	for (size_t i = 0; i < model.root_nodes.size(); ++i)
-	//	{
-	//		const Assets::Model::Node& root_node = model.nodes[model.root_nodes[i]];
-	//		glm::mat4 root_transform = transform * root_node.transform;
-	//		SubmitModelNode(model, root_node, root_transform);
-	//	}
-	//}
-
 	static void SpawnModelNodeEntity(const Assets::Model* model, const Assets::Model::Node& node, const glm::mat4& node_transform)
 	{
 		for (uint32_t i = 0; i < node.mesh_handles.size(); ++i)
 		{
-			data.active_scene.AddEntity<MeshObject>(node.mesh_handles[i], node.material_handles[i], node_transform);
+			data.active_scene.AddEntity<MeshObject>(node.mesh_handles[i], node.material_handles[i], node_transform, node.name);
 		}
 
 		for (uint32_t i = 0; i < node.children.size(); ++i)
@@ -168,6 +146,7 @@ namespace Application
 
 	static void RenderUI()
 	{
+		data.active_scene.RenderUI();
 		Renderer::RenderUI();
 
 		// NOTE: Temporary menu code

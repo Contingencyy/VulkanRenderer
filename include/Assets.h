@@ -9,8 +9,8 @@ namespace Assets
 	void Init();
 	void Exit();
 
-	void LoadTexture(const char* filepath, const char* name, TextureFormat format);
-	TextureHandle_t GetTexture(const char* name);
+	void LoadTexture(const std::string& filepath, const std::string& name, TextureFormat format);
+	TextureHandle_t GetTexture(const std::string& name);
 
 	struct Model
 	{
@@ -22,16 +22,16 @@ namespace Assets
 
 			glm::mat4 transform;
 
-			const char* name;
+			std::string name;
 		};
 
 		std::vector<Node> nodes;
 		std::vector<uint32_t> root_nodes;
 
-		const char* name;
+		std::string name;
 	};
 
-	void LoadGLTF(const char* filepath, const char* name);
-	Model* GetModel(const char* name);
+	void LoadGLTF(const std::string& filepath, const std::string& name);
+	Model* GetModel(const std::string& name);
 
 }

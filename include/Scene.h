@@ -11,6 +11,7 @@ public:
 
 	void Update(float dt);
 	void Render();
+	void RenderUI();
 
 	template<typename T, typename... TArgs>
 	void AddEntity(TArgs&&... args)
