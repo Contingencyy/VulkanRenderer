@@ -2,6 +2,10 @@
 
 #include "Logger.h"
 
+#define VK_KB(x) (x << 10)
+#define VK_MB(x) (x << 20)
+#define VK_GB(x) (x << 30)
+
 #define VK_ALIGN_POW2(x, align) ((intptr_t)(x) + ((align) - 1) & (-(intptr_t)(align)))
 #define VK_ALIGN_DOWN_POW2(x, align) ((intptr_t)(x) & (-(intptr_t)(align)))
 

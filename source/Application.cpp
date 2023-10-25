@@ -117,12 +117,14 @@ namespace Application
 		Renderer::Init(data.window);
 
 		Assets::Init();
-		Assets::LoadGLTF("assets/models/gltf/ABeautifulGame/ABeautifulGame.gltf", "car");
+		Assets::LoadGLTF("assets/models/gltf/ClearCoatTest/ClearCoatTest.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/bmw_m6_rigged/scene.gltf", "car");
 
-		glm::mat4 transform = glm::scale(glm::identity<glm::mat4>(), glm::vec3(10.0f));
-		SpawnModelEntity("car", transform);
-		data.active_scene.AddEntity<Pointlight>(vec3(0.0f, 50.0f, 0.0f), vec3(1.0f), 5.0f, "Pointlight");
+		glm::mat4 transform = glm::scale(glm::identity<glm::mat4>(), glm::vec3(1.0f));
+		SpawnModelEntity("model", transform);
+
+		data.active_scene.AddEntity<Pointlight>(vec3(25.0f, 0.0f, 50.0f), vec3(1.0f), 25.0f, "Pointlight1");
+		data.active_scene.AddEntity<Pointlight>(vec3(-25.0f, 0.0f, 50.0f), vec3(1.0f), 25.0f, "Pointlight2");
 
 		data.is_running = true;
 	}

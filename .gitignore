@@ -3,6 +3,8 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/main/VisualStudio.gitignore
 
+assets/models/gltf/BMWM6/
+
 # User-specific files
 *.rsuser
 *.suo
@@ -15,9 +17,6 @@
 
 # Mono auto generated files
 mono_crash.*
-
-# Assets
-assets/
 
 # Build results
 [Dd]ebug/

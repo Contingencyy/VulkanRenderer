@@ -43,6 +43,13 @@ namespace Renderer
 		float metallic_factor;
 		float roughness_factor;
 		TextureHandle_t metallic_roughness_texture_handle;
+
+		bool has_clearcoat;
+		float clearcoat_alpha_factor;
+		float clearcoat_roughness_factor;
+		TextureHandle_t clearcoat_alpha_texture_handle;
+		TextureHandle_t clearcoat_normal_texture_handle;
+		TextureHandle_t clearcoat_roughness_texture_handle;
 	};
 
 	MaterialHandle_t CreateMaterial(const CreateMaterialArgs& args);

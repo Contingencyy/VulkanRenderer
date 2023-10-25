@@ -580,6 +580,7 @@ namespace Renderer
 		for (size_t i = 0; i < VulkanInstance::VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
 			Vulkan::DestroyBuffer(data->camera_uniform_buffers[i]);
+			Vulkan::DestroyBuffer(data->light_uniform_buffers[i]);
 			Vulkan::DestroyBuffer(data->instance_buffers[i]);
 		}
 		Vulkan::DestroyBuffer(data->material_buffer);
@@ -947,6 +948,58 @@ namespace Renderer
 
 			reserved.resource->metallic_roughness_texture_handle = data->default_white_texture_handle;
 			reserved.resource->data.metallic_roughness_texture_index = metallic_roughness_texture->descriptor.GetIndex();
+		}
+
+		if (args.has_clearcoat)
+		{
+			reserved.resource->data.has_clearcoat = args.has_clearcoat;
+			reserved.resource->data.clearcoat_alpha_factor = args.clearcoat_alpha_factor;
+			reserved.resource->data.clearcoat_roughness_factor = args.clearcoat_roughness_factor;
+
+			if (VK_RESOURCE_HANDLE_VALID(args.clearcoat_alpha_texture_handle))
+			{
+				TextureResource* clearcoat_alpha_texture = data->texture_slotmap.Find(args.clearcoat_alpha_texture_handle);
+
+				reserved.resource->clearcoat_alpha_texture_handle = args.clearcoat_alpha_texture_handle;
+				reserved.resource->data.clearcoat_alpha_texture_index = clearcoat_alpha_texture->descriptor.GetIndex();
+			}
+			else
+			{
+				TextureResource* clearcoat_alpha_texture = data->texture_slotmap.Find(data->default_white_texture_handle);
+
+				reserved.resource->clearcoat_alpha_texture_handle = data->default_white_texture_handle;
+				reserved.resource->data.clearcoat_alpha_texture_index = clearcoat_alpha_texture->descriptor.GetIndex();
+			}
+
+			if (VK_RESOURCE_HANDLE_VALID(args.clearcoat_normal_texture_handle))
+			{
+				TextureResource* clearcoat_normal_texture = data->texture_slotmap.Find(args.clearcoat_normal_texture_handle);
+
+				reserved.resource->clearcoat_normal_texture_handle = args.clearcoat_normal_texture_handle;
+				reserved.resource->data.clearcoat_normal_texture_index = clearcoat_normal_texture->descriptor.GetIndex();
+			}
+			else
+			{
+				TextureResource* clearcoat_normal_texture = data->texture_slotmap.Find(data->default_normal_texture_handle);
+
+				reserved.resource->clearcoat_normal_texture_handle = data->default_normal_texture_handle;
+				reserved.resource->data.clearcoat_normal_texture_index = clearcoat_normal_texture->descriptor.GetIndex();
+			}
+
+			if (VK_RESOURCE_HANDLE_VALID(args.clearcoat_roughness_texture_handle))
+			{
+				TextureResource* clearcoat_roughness_texture = data->texture_slotmap.Find(args.clearcoat_roughness_texture_handle);
+
+				reserved.resource->clearcoat_roughness_texture_handle = args.clearcoat_roughness_texture_handle;
+				reserved.resource->data.clearcoat_roughness_texture_index = clearcoat_roughness_texture->descriptor.GetIndex();
+			}
+			else
+			{
+				TextureResource* clearcoat_roughness_texture = data->texture_slotmap.Find(data->default_white_texture_handle);
+
+				reserved.resource->clearcoat_roughness_texture_handle = data->default_white_texture_handle;
+				reserved.resource->data.clearcoat_roughness_texture_index = clearcoat_roughness_texture->descriptor.GetIndex();
+			}
 		}
 
 		// Samplers

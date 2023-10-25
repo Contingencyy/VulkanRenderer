@@ -50,6 +50,10 @@ struct MaterialResource
 	TextureHandle_t base_color_texture_handle;
 	TextureHandle_t normal_texture_handle;
 	TextureHandle_t metallic_roughness_texture_handle;
+	
+	TextureHandle_t clearcoat_alpha_texture_handle;
+	TextureHandle_t clearcoat_normal_texture_handle;
+	TextureHandle_t clearcoat_roughness_texture_handle;
 
 	MaterialData data;
 };
