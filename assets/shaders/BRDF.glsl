@@ -39,10 +39,22 @@ float Fd_Burley(float NoV, float NoL, float LoH, float roughness)
 	return light_scatter * view_scatter * (1.0f / PI);
 }
 
-void EvaluateBRDF(vec3 H, float NoV, float NoL, float NoH, float LoH, vec3 normal, vec3 base_color, float metallic, float roughness, out vec3 brdf_specular, out vec3 brdf_diffuse)
+vec3 BRDFSpecular(vec3 f0, float roughness, float NoH, float LoH, float NoV, float NoL)
+{
+	float D = D_GGX(NoH, roughness);
+	vec3 F = F_Schlick(LoH, f0);
+	float V = V_SmithGGXCorrelated(NoV, NoL, roughness);
+
+	return (D * V) * F;
+}
+
+void EvaluateBRDF(vec3 view_dir, vec3 light_dir, vec3 H, float NoL, float LoH, vec3 normal, vec3 base_color, float metallic, float roughness, out vec3 brdf_specular, out vec3 brdf_diffuse)
 {
 	vec3 f0 = vec3(0.04f);
 	f0 = mix(f0, base_color, metallic);
+
+	float NoV = abs(dot(normal, view_dir)) + 1e-5f;
+	float NoH = clamp(dot(normal, H), 0.0f, 1.0f);
 
 	// Remapping of roughness to be visually more linear
 	roughness = roughness * roughness;
@@ -51,7 +63,7 @@ void EvaluateBRDF(vec3 H, float NoV, float NoL, float NoH, float LoH, vec3 norma
 	vec3 F = F_Schlick(LoH, f0);
 	float V = V_SmithGGXCorrelated(NoV, NoL, roughness);
 
-	brdf_specular = (D * V) * F;
+	brdf_specular = BRDFSpecular(f0, roughness, NoH, LoH, NoV, NoL);
 	brdf_diffuse = (vec3(1.0f) - F) * base_color * Fd_Burley(NoV, NoL, LoH, roughness);
 }
 
@@ -60,16 +72,18 @@ float V_Kelemen(float LoH, float roughness)
 	return roughness / (LoH * LoH);
 }
 
-void EvaluateBRDFClearCoat(float alpha, float roughness, float NoH, float LoH, inout vec3 brdf_specular)
+void EvaluateBRDFClearCoat(vec3 view_dir, vec3 light_dir, vec3 H, float LoH, vec3 clearcoat_normal, float clearcoat_roughness, out vec3 Fc, out vec3 brdf_clearcoat)
 {
-	// Remapping of roughness to be visually more linear
-	roughness = clamp(roughness, 0.089f, 1.0f);
-	roughness = roughness * roughness;
-	
-	float D = D_GGX(NoH, roughness);
-	float V = V_Kelemen(LoH, roughness);
-	vec3 F = F_Schlick(LoH, vec3(0.04f)) * alpha;
+	float NoV = abs(dot(clearcoat_normal, view_dir)) + 1e-5f;
+	float NoL = clamp(dot(clearcoat_normal, light_dir), 0.0f, 1.0f);
+	float NoH = clamp(dot(clearcoat_normal, H), 0.0f, 1.0f);
 
-	vec3 clearcoat_specular = (D * V) * F;
-	brdf_specular = (brdf_specular * (1.0f - F)) * (1.0f - F) + clearcoat_specular;
+	// Remapping of roughness to be visually more linear
+	clearcoat_roughness = clamp(clearcoat_roughness, 0.089f, 1.0f);
+	clearcoat_roughness = clearcoat_roughness * clearcoat_roughness;
+	
+	// TODO: FIX
+	vec3 f0 = vec3(0.04f);
+	Fc = F_Schlick(LoH, f0);
+	brdf_clearcoat = BRDFSpecular(f0, clearcoat_roughness, NoH, LoH, NoV, NoL);
 }

@@ -4,7 +4,7 @@
 #extension GL_KHR_vulkan_glsl : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 
-#include "Shared.glsl.h"
+#include "Common.glsl"
 #include "BRDF.glsl"
 
 layout(set = DESCRIPTOR_SET_UNIFORM_BUFFER, binding = 0) uniform Camera
@@ -21,9 +21,6 @@ layout(std140, set = DESCRIPTOR_SET_STORAGE_BUFFER, binding = 0) readonly buffer
 {
 	MaterialData mat[MAX_UNIQUE_MATERIALS];
 } g_materials[];
-
-layout(set = DESCRIPTOR_SET_SAMPLED_IMAGE, binding = 0) uniform texture2D g_textures[];
-layout(set = DESCRIPTOR_SET_SAMPLER, binding = 0) uniform sampler g_samplers[];
 
 layout(std140, push_constant) uniform constants
 {
@@ -58,15 +55,12 @@ vec3 CalculateLightingAtFragment(vec3 view_pos, vec3 view_dir, vec3 frag_normal,
 		vec3 attenuation = clamp(1.0f / (falloff.x + (falloff.y * dist_to_light) + (falloff.z * (dist_to_light * dist_to_light))), 0.0f, 1.0f);
 		float NoL = clamp(dot(frag_normal, frag_to_light), 0.0f, 1.0f);
 		vec3 irradiance = light_color * NoL * attenuation;
-
+		
 		vec3 H = normalize(view_dir + frag_to_light);
-		float NoV = abs(dot(frag_normal, view_dir)) + 1e-5;
-		//float NoL = clamp(dot(frag_normal, frag_to_light), 0.0f, 1.0f);
-		float NoH = clamp(dot(frag_normal, H), 0.0f, 1.0f);
 		float LoH = clamp(dot(frag_to_light, H), 0.0f, 1.0f);
 
 		vec3 brdf_specular, brdf_diffuse;
-		EvaluateBRDF(H, NoV, NoL, NoH, LoH, frag_normal, base_color, metallic_roughness.x, metallic_roughness.y, brdf_specular, brdf_diffuse);
+		EvaluateBRDF(view_dir, frag_to_light, H, NoL, LoH, frag_normal, base_color, metallic_roughness.x, metallic_roughness.y, brdf_specular, brdf_diffuse);
 
 		color += brdf_specular * irradiance + brdf_diffuse * irradiance;
 	}
@@ -91,18 +85,17 @@ vec3 CalculateLightingAtFragment(vec3 view_pos, vec3 view_dir, vec3 frag_normal,
 		vec3 irradiance = light_color * NoL * attenuation;
 
 		vec3 H = normalize(view_dir + frag_to_light);
-		float NoV = abs(dot(frag_normal, view_dir)) + 1e-5;
-		//float NoL = clamp(dot(frag_normal, frag_to_light), 0.0f, 1.0f);
-		float NoH = clamp(dot(frag_normal, H), 0.0f, 1.0f);
 		float LoH = clamp(dot(frag_to_light, H), 0.0f, 1.0f);
 
 		vec3 brdf_specular, brdf_diffuse;
-		EvaluateBRDF(H, NoV, NoL, NoH, LoH, frag_normal, base_color, metallic_roughness.x, metallic_roughness.y, brdf_specular, brdf_diffuse);
+		EvaluateBRDF(view_dir, frag_to_light, H, NoL, LoH, frag_normal, base_color, metallic_roughness.x, metallic_roughness.y, brdf_specular, brdf_diffuse);
+		
+		vec3 Fc, brdf_clearcoat;
+		EvaluateBRDFClearCoat(view_dir, frag_to_light, H, LoH, clearcoat_normal, clearcoat_roughness, Fc, brdf_clearcoat);
+		brdf_clearcoat *= clearcoat_alpha;
 
-		float NoHc = clamp(dot(clearcoat_normal, frag_to_light), 0.0f, 1.0f);
-		EvaluateBRDFClearCoat(clearcoat_alpha, clearcoat_roughness, NoHc, LoH, brdf_specular);
-
-		color += brdf_specular * irradiance + brdf_diffuse * irradiance;
+		color += irradiance * ((brdf_diffuse + brdf_specular * (1.0f - Fc)) * (1.0f - Fc) + brdf_clearcoat);
+		//color += brdf_specular * irradiance + brdf_diffuse * irradiance;
 	}
 
 	return color;
@@ -111,9 +104,9 @@ vec3 CalculateLightingAtFragment(vec3 view_pos, vec3 view_dir, vec3 frag_normal,
 void main()
 {
 	MaterialData material = g_materials[RESERVED_DESCRIPTOR_STORAGE_BUFFER_MATERIAL].mat[push_constants.mat_index];
-	vec4 base_color = texture(sampler2D(g_textures[material.base_color_texture_index], g_samplers[material.sampler_index]), frag_tex_coord) * material.base_color_factor;
-	vec3 normal = texture(sampler2D(g_textures[material.normal_texture_index], g_samplers[material.sampler_index]), frag_tex_coord).rgb;
-	vec2 metallic_roughness = texture(sampler2D(g_textures[material.metallic_roughness_texture_index], g_samplers[material.sampler_index]), frag_tex_coord).bg * vec2(material.metallic_factor, material.roughness_factor);
+	vec4 base_color = SampleTexture(material.base_color_texture_index, material.sampler_index, frag_tex_coord) * material.base_color_factor;
+	vec3 normal = SampleTexture(material.normal_texture_index, material.sampler_index, frag_tex_coord).rgb;
+	vec2 metallic_roughness = SampleTexture(material.metallic_roughness_texture_index, material.sampler_index, frag_tex_coord).bg * vec2(material.metallic_factor, material.roughness_factor);
 
 	// Create the rotation matrix to bring the sampled normal from tangent space to world space
 	mat3 TBN = mat3(frag_tangent, frag_bitangent, frag_normal);
@@ -124,15 +117,16 @@ void main()
 	vec3 view_dir = normalize(view_pos - frag_pos.xyz);
 	
 	vec3 color = vec3(0.0f);
+
 	if (material.has_clearcoat == 0)
 	{
 		color = CalculateLightingAtFragment(view_pos, view_dir, normal, base_color.xyz, metallic_roughness);
 	}
 	else
 	{
-		float clearcoat_alpha = texture(sampler2D(g_textures[material.clearcoat_alpha_texture_index], g_samplers[material.sampler_index]), frag_tex_coord).r * material.clearcoat_alpha_factor;
-		vec3 clearcoat_normal = texture(sampler2D(g_textures[material.clearcoat_normal_texture_index], g_samplers[material.sampler_index]), frag_tex_coord).rgb;
-		float clearcoat_roughness = texture(sampler2D(g_textures[material.clearcoat_roughness_texture_index], g_samplers[material.sampler_index]), frag_tex_coord).g * material.clearcoat_roughness_factor;
+		float clearcoat_alpha = SampleTexture(material.clearcoat_alpha_texture_index, material.sampler_index, frag_tex_coord).r * material.clearcoat_alpha_factor;
+		vec3 clearcoat_normal = SampleTexture(material.clearcoat_normal_texture_index, material.sampler_index, frag_tex_coord).rgb;
+		float clearcoat_roughness = SampleTexture(material.clearcoat_roughness_texture_index, material.sampler_index, frag_tex_coord).g * material.clearcoat_roughness_factor;
 
 		clearcoat_normal = clearcoat_normal * 2.0f - 1.0f;
 		clearcoat_normal = normalize(TBN * clearcoat_normal);

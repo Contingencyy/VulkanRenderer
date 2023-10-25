@@ -653,11 +653,14 @@ namespace Vulkan
 		virtual shaderc_include_result* GetInclude(const char* requested_source, shaderc_include_type type,
 			const char* requesting_source, size_t include_depth) override
 		{
+			if (include_depth == 1)
+				m_include_directory = GetDirectoryFromFilepath(requesting_source);
+
 			shaderc_include_result* result = new shaderc_include_result();
 			result->source_name = requested_source;
 			result->source_name_length = strlen(requested_source);
 
-			std::string requested_source_filepath = MakeRequestedFilepathFromRequestingSource(requesting_source, requested_source);
+			std::string requested_source_filepath = MakeRequestedFilepath(requested_source);
 			std::vector<char> requested_source_text = ReadFile(requested_source_filepath.c_str());
 
 			result->content = new char[requested_source_text.size()];
@@ -675,12 +678,24 @@ namespace Vulkan
 		}
 
 	private:
-		std::string MakeRequestedFilepathFromRequestingSource(const char* requesting_source, const char* requested_source)
+		std::string MakeRequestedFilepath(const char* requested_source)
 		{
-			std::string filepath = std::string(requesting_source).substr(0, std::string(requesting_source).find_last_of("\\/") + 1);
-			std::string requested_source_filepath = filepath + requested_source;
+			std::string requested_source_filepath = m_include_directory + requested_source;
 			return requested_source_filepath;
 		}
+
+		std::string GetDirectoryFromFilepath(const std::string& filepath)
+		{
+			return std::string(filepath).substr(0, std::string(filepath).find_last_of("\\/") + 1);
+		}
+
+		std::string StripDirectoryFromFilepath(const std::string& filepath)
+		{
+			return std::string(filepath).substr(std::string(filepath).find_last_of("\\/") + 1, filepath.size());
+		}
+
+	private:
+		std::string m_include_directory = "";
 
 	};
 
