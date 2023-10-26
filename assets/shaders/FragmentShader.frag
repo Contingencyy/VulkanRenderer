@@ -40,35 +40,29 @@ layout(location = 0) out vec4 out_color;
 
 const vec3 falloff = vec3(1.0f, 0.007f, 0.0002f);
 
-vec3 CalculateLightingAtFragment(vec3 view_pos, vec3 view_dir, vec3 frag_normal, vec3 base_color, vec2 metallic_roughness)
+vec3 EvaluateRadianceAtFragment(vec3 view_dir, vec3 frag_to_light, vec3 H, float NoL, float LoH,
+	vec3 frag_base_color, vec3 frag_normal, float metalness, float roughness,
+	float clearcoat_alpha, vec3 clearcoat_normal, float clearcoat_roughness)
 {
-	vec3 color = vec3(0.0f);
+	vec3 radiance = vec3(0.0f);
 
-	for (uint light_idx = 0; light_idx < push_constants.num_light_sources; ++light_idx)
+	vec3 Fc = vec3(0.0f), brdf_clearcoat = vec3(0.0f);
+	bool clearcoat = clearcoat_alpha > 0.0f;
+	if (clearcoat)
 	{
-		PointlightData pointlight = g_light_sources[push_constants.light_ubo_index].pointlight[light_idx];
-		vec3 light_color = pointlight.color * pointlight.intensity;
-		
-		vec3 frag_to_light = normalize(pointlight.position - frag_pos.xyz);
-		vec3 dist_to_light = vec3(length(pointlight.position - frag_pos.xyz));
-		
-		vec3 attenuation = clamp(1.0f / (falloff.x + (falloff.y * dist_to_light) + (falloff.z * (dist_to_light * dist_to_light))), 0.0f, 1.0f);
-		float NoL = clamp(dot(frag_normal, frag_to_light), 0.0f, 1.0f);
-		vec3 irradiance = light_color * NoL * attenuation;
-		
-		vec3 H = normalize(view_dir + frag_to_light);
-		float LoH = clamp(dot(frag_to_light, H), 0.0f, 1.0f);
-
-		vec3 brdf_specular, brdf_diffuse;
-		EvaluateBRDF(view_dir, frag_to_light, H, NoL, LoH, frag_normal, base_color, metallic_roughness.x, metallic_roughness.y, brdf_specular, brdf_diffuse);
-
-		color += brdf_specular * irradiance + brdf_diffuse * irradiance;
+		EvaluateBRDFClearCoat(view_dir, frag_to_light, H, LoH, clearcoat_normal, clearcoat_roughness, Fc, brdf_clearcoat);
+		Fc *= clearcoat_alpha;
+		brdf_clearcoat *= clearcoat_alpha;
 	}
 
-	return color;
+	vec3 brdf_specular, brdf_diffuse;
+	EvaluateBRDF(view_dir, frag_to_light, H, NoL, LoH, frag_base_color, frag_normal, metalness, roughness, clearcoat, brdf_specular, brdf_diffuse);
+	
+	return (brdf_diffuse + brdf_specular * (1.0f - Fc)) * (1.0f - Fc) + brdf_clearcoat;
+	//return brdf_specular + brdf_diffuse;
 }
 
-vec3 CalculateLightingAtFragment(vec3 view_pos, vec3 view_dir, vec3 frag_normal, vec3 base_color, vec2 metallic_roughness, float clearcoat_alpha, float clearcoat_roughness, vec3 clearcoat_normal)
+vec3 CalculateLightingAtFragment(vec3 view_pos, vec3 view_dir, vec3 frag_base_color, vec3 frag_normal, float metalness, float roughness, float clearcoat_alpha, float clearcoat_roughness, vec3 clearcoat_normal)
 {
 	vec3 color = vec3(0.0f);
 
@@ -79,23 +73,20 @@ vec3 CalculateLightingAtFragment(vec3 view_pos, vec3 view_dir, vec3 frag_normal,
 		
 		vec3 frag_to_light = normalize(pointlight.position - frag_pos.xyz);
 		vec3 dist_to_light = vec3(length(pointlight.position - frag_pos.xyz));
-		
+
 		vec3 attenuation = clamp(1.0f / (falloff.x + (falloff.y * dist_to_light) + (falloff.z * (dist_to_light * dist_to_light))), 0.0f, 1.0f);
 		float NoL = clamp(dot(frag_normal, frag_to_light), 0.0f, 1.0f);
 		vec3 irradiance = light_color * NoL * attenuation;
-
+		
 		vec3 H = normalize(view_dir + frag_to_light);
 		float LoH = clamp(dot(frag_to_light, H), 0.0f, 1.0f);
-
-		vec3 brdf_specular, brdf_diffuse;
-		EvaluateBRDF(view_dir, frag_to_light, H, NoL, LoH, frag_normal, base_color, metallic_roughness.x, metallic_roughness.y, brdf_specular, brdf_diffuse);
+		vec3 radiance = EvaluateRadianceAtFragment(
+			view_dir, frag_to_light, H, NoL, LoH,
+			frag_base_color, frag_normal, metalness, roughness,
+			clearcoat_alpha, clearcoat_normal, clearcoat_roughness
+		);
 		
-		vec3 Fc, brdf_clearcoat;
-		EvaluateBRDFClearCoat(view_dir, frag_to_light, H, LoH, clearcoat_normal, clearcoat_roughness, Fc, brdf_clearcoat);
-		brdf_clearcoat *= clearcoat_alpha;
-
-		color += irradiance * ((brdf_diffuse + brdf_specular * (1.0f - Fc)) * (1.0f - Fc) + brdf_clearcoat);
-		//color += brdf_specular * irradiance + brdf_diffuse * irradiance;
+		color += radiance * irradiance;
 	}
 
 	return color;
@@ -116,24 +107,19 @@ void main()
 	vec3 view_pos = g_camera[push_constants.camera_ubo_index].cam.view_pos.xyz;
 	vec3 view_dir = normalize(view_pos - frag_pos.xyz);
 	
-	vec3 color = vec3(0.0f);
+	float clearcoat_alpha = SampleTexture(material.clearcoat_alpha_texture_index, material.sampler_index, frag_tex_coord).r * material.clearcoat_alpha_factor;
+	vec3 clearcoat_normal = SampleTexture(material.clearcoat_normal_texture_index, material.sampler_index, frag_tex_coord).rgb;
+	float clearcoat_roughness = SampleTexture(material.clearcoat_roughness_texture_index, material.sampler_index, frag_tex_coord).g * material.clearcoat_roughness_factor;
 
-	if (material.has_clearcoat == 0)
-	{
-		color = CalculateLightingAtFragment(view_pos, view_dir, normal, base_color.xyz, metallic_roughness);
-	}
-	else
-	{
-		float clearcoat_alpha = SampleTexture(material.clearcoat_alpha_texture_index, material.sampler_index, frag_tex_coord).r * material.clearcoat_alpha_factor;
-		vec3 clearcoat_normal = SampleTexture(material.clearcoat_normal_texture_index, material.sampler_index, frag_tex_coord).rgb;
-		float clearcoat_roughness = SampleTexture(material.clearcoat_roughness_texture_index, material.sampler_index, frag_tex_coord).g * material.clearcoat_roughness_factor;
+	clearcoat_normal = clearcoat_normal * 2.0f - 1.0f;
+	clearcoat_normal = normalize(TBN * clearcoat_normal);
 
-		clearcoat_normal = clearcoat_normal * 2.0f - 1.0f;
-		clearcoat_normal = normalize(TBN * clearcoat_normal);
-
-		color = CalculateLightingAtFragment(view_pos, view_dir, normal, base_color.xyz, metallic_roughness, clearcoat_alpha, clearcoat_roughness, clearcoat_normal);
-	}
-
+	vec3 color = CalculateLightingAtFragment(
+		view_pos, view_dir,
+		base_color.xyz, normal, metallic_roughness.x, metallic_roughness.y,
+		clearcoat_alpha, clearcoat_roughness, clearcoat_normal
+	);
+	
 	out_color.xyz = color;
 	out_color.a = 1.0f;
 }

@@ -103,8 +103,12 @@
       <AdditionalLibraryDirectories>$(SolutionDir)extern\glfw-3.3.8-win64\lib-vc2022;C:\VulkanSDK\1.3.261.1\Lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <PostBuildEvent>
-      <Command>xcopy /q /y /e "$(SolutionDir)assets\" "$(OutDir)assets\"</Command>
+      <Command>
+      </Command>
     </PostBuildEvent>
+    <PreBuildEvent>
+      <Command>xcopy /q /y /e "$(SolutionDir)assets\" "$(OutDir)assets\"</Command>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -134,8 +138,12 @@
       <AdditionalLibraryDirectories>$(SolutionDir)extern\glfw-3.3.8-win64\lib-vc2022;C:\VulkanSDK\1.3.261.1\Lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <PostBuildEvent>
-      <Command>xcopy /q /y /e "$(SolutionDir)assets\" "$(OutDir)assets\"</Command>
+      <Command>
+      </Command>
     </PostBuildEvent>
+    <PreBuildEvent>
+      <Command>xcopy /q /y /e "$(SolutionDir)assets\" "$(OutDir)assets\"</Command>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="extern\imgui\imgui.cpp" />

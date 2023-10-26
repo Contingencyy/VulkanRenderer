@@ -48,10 +48,11 @@ vec3 BRDFSpecular(vec3 f0, float roughness, float NoH, float LoH, float NoV, flo
 	return (D * V) * F;
 }
 
-void EvaluateBRDF(vec3 view_dir, vec3 light_dir, vec3 H, float NoL, float LoH, vec3 normal, vec3 base_color, float metallic, float roughness, out vec3 brdf_specular, out vec3 brdf_diffuse)
+void EvaluateBRDF(vec3 view_dir, vec3 light_dir, vec3 H, float NoL, float LoH, vec3 base_color, vec3 normal, float metalness, float roughness, bool clearcoat, out vec3 brdf_specular, out vec3 brdf_diffuse)
 {
+	// NOTE: f0 needs to be adjusted if clear coat is applied
 	vec3 f0 = vec3(0.04f);
-	f0 = mix(f0, base_color, metallic);
+	f0 = mix(f0, base_color, metalness);
 
 	float NoV = abs(dot(normal, view_dir)) + 1e-5f;
 	float NoH = clamp(dot(normal, H), 0.0f, 1.0f);
@@ -82,7 +83,7 @@ void EvaluateBRDFClearCoat(vec3 view_dir, vec3 light_dir, vec3 H, float LoH, vec
 	clearcoat_roughness = clamp(clearcoat_roughness, 0.089f, 1.0f);
 	clearcoat_roughness = clearcoat_roughness * clearcoat_roughness;
 	
-	// TODO: FIX
+	// We assume a fresnel reflectance for our clear-coat materials of 4% (IOR = 1.5)
 	vec3 f0 = vec3(0.04f);
 	Fc = F_Schlick(LoH, f0);
 	brdf_clearcoat = BRDFSpecular(f0, clearcoat_roughness, NoH, LoH, NoV, NoL);
