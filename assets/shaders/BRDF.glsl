@@ -73,6 +73,13 @@ float V_Kelemen(float LoH, float roughness)
 	return roughness / (LoH * LoH);
 }
 
+/*
+	This implementation of clear coat materials is very simple and does not model the following effects:
+	- The clearcoat layer is assumed infinitely thin, which means that there is no refraction
+	- The ior of the clearcoat and base layer do not influence each other, which is inaccurate
+	- There is no scattering between the clear coat and base layer
+	- There is no diffraction
+*/
 void EvaluateBRDFClearCoat(vec3 view_dir, vec3 light_dir, vec3 H, float LoH, vec3 clearcoat_normal, float clearcoat_roughness, out vec3 Fc, out vec3 brdf_clearcoat)
 {
 	float NoV = abs(dot(clearcoat_normal, view_dir)) + 1e-5f;

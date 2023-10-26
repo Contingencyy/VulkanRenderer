@@ -51,14 +51,12 @@ vec3 EvaluateRadianceAtFragment(vec3 view_dir, vec3 frag_to_light, vec3 H, float
 	if (clearcoat)
 	{
 		EvaluateBRDFClearCoat(view_dir, frag_to_light, H, LoH, clearcoat_normal, clearcoat_roughness, Fc, brdf_clearcoat);
-		Fc *= clearcoat_alpha;
-		brdf_clearcoat *= clearcoat_alpha;
 	}
 
 	vec3 brdf_specular, brdf_diffuse;
 	EvaluateBRDF(view_dir, frag_to_light, H, NoL, LoH, frag_base_color, frag_normal, metalness, roughness, clearcoat, brdf_specular, brdf_diffuse);
 	
-	return (brdf_diffuse + brdf_specular * (1.0f - Fc)) * (1.0f - Fc) + brdf_clearcoat;
+	return (brdf_diffuse + brdf_specular) * (1.0f - clearcoat_alpha * Fc) + clearcoat_alpha * brdf_clearcoat;
 	//return brdf_specular + brdf_diffuse;
 }
 
