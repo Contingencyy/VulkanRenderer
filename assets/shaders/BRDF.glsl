@@ -39,15 +39,6 @@ float Fd_Burley(float NoV, float NoL, float LoH, float roughness)
 	return light_scatter * view_scatter * (1.0f / PI);
 }
 
-vec3 BRDFSpecular(vec3 f0, float roughness, float NoH, float LoH, float NoV, float NoL)
-{
-	float D = D_GGX(NoH, roughness);
-	vec3 F = F_Schlick(LoH, f0);
-	float V = V_SmithGGXCorrelated(NoV, NoL, roughness);
-
-	return (D * V) * F;
-}
-
 void EvaluateBRDF(vec3 view_dir, vec3 light_dir, vec3 H, float NoL, float LoH, vec3 base_color, vec3 normal, float metalness, float roughness, bool clearcoat, out vec3 brdf_specular, out vec3 brdf_diffuse)
 {
 	// NOTE: f0 needs to be adjusted if clear coat is applied
@@ -63,8 +54,8 @@ void EvaluateBRDF(vec3 view_dir, vec3 light_dir, vec3 H, float NoL, float LoH, v
 	float D = D_GGX(NoH, roughness);
 	vec3 F = F_Schlick(LoH, f0);
 	float V = V_SmithGGXCorrelated(NoV, NoL, roughness);
-
-	brdf_specular = BRDFSpecular(f0, roughness, NoH, LoH, NoV, NoL);
+	
+	brdf_specular = (D * V) * F;
 	brdf_diffuse = (vec3(1.0f) - F) * base_color * Fd_Burley(NoV, NoL, LoH, roughness);
 }
 
@@ -92,6 +83,10 @@ void EvaluateBRDFClearCoat(vec3 view_dir, vec3 light_dir, vec3 H, float LoH, vec
 	
 	// We assume a fresnel reflectance for our clear-coat materials of 4% (IOR = 1.5)
 	vec3 f0 = vec3(0.04f);
+
+	float D = D_GGX(NoH, clearcoat_roughness);
 	Fc = F_Schlick(LoH, f0);
-	brdf_clearcoat = BRDFSpecular(f0, clearcoat_roughness, NoH, LoH, NoV, NoL);
+	float V = V_SmithGGXCorrelated(NoV, NoL, clearcoat_roughness);
+
+	brdf_clearcoat = (D * V) * Fc;
 }

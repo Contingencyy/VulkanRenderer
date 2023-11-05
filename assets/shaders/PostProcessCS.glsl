@@ -47,10 +47,10 @@ vec3 TonemapReinhardLumaWhite(vec3 color, float max_white)
 	return ChangeLuminance(color, luma_new);
 }
 
-vec3 LinearToSRGB(vec3 linear)
+vec3 LinearToSRGB(vec3 linear, float gamma)
 {
 	bvec3 cutoff = lessThan(linear, vec3(0.0031308f));
-	vec3 higher = vec3(1.055f) * pow(linear, vec3(1.0f / 2.4f)) - vec3(0.055f);
+	vec3 higher = vec3(1.055f) * pow(linear, vec3(1.0f / gamma)) - vec3(0.055f);
 	vec3 lower = linear * vec3(12.92f);
 	
 	return mix(higher, lower, cutoff);
@@ -64,7 +64,7 @@ void main()
 	vec3 tonemapped = ApplyExposure(hdr_color.rgb, 1.5f);
 	tonemapped = TonemapReinhardLumaWhite(hdr_color.rgb, 100.0f);
 	//tonemapped = ApplyGamma(tonemapped, 2.2f);
-	tonemapped = LinearToSRGB(tonemapped);
+	tonemapped = LinearToSRGB(tonemapped, 2.4f);
 
 	imageStore(g_outputs[push_constants.sdr_dst_index], texel_pos, vec4(tonemapped, hdr_color.a));
 }
