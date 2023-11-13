@@ -135,10 +135,10 @@ namespace Assets
 	static ReadImageResult ReadImage(const std::string& filepath, bool hdr)
 	{
 		ReadImageResult result = {};
+		stbi_set_flip_vertically_on_load(hdr);
 
 		if (hdr)
 		{
-			stbi_set_flip_vertically_on_load(true);
 			result.pixels = (uint8_t*)stbi_loadf(filepath.c_str(), &result.width, &result.height, &result.num_components, STBI_rgb_alpha);
 			// We force stbi to load rgba values, so we always have 4 components
 			result.num_components = 4;
