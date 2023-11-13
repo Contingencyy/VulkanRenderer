@@ -18,8 +18,23 @@ struct Vertex
 enum TextureFormat
 {
 	TextureFormat_RGBA8_UNORM,
-	TextureFormat_RGBA8_SRGB
+	TextureFormat_RGBA8_SRGB,
+	TextureFormat_RGBA32_SFLOAT
 };
+
+static const std::vector<VkFormat> TEXTURE_FORMAT_TO_VK_FORMAT = { VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_SRGB, VK_FORMAT_R32G32B32A32_SFLOAT };
+
+static bool IsHDRFormat(TextureFormat format)
+{
+	switch (format)
+	{
+	case TextureFormat_RGBA8_UNORM:
+	case TextureFormat_RGBA8_SRGB:
+		return false;
+	case TextureFormat_RGBA32_SFLOAT:
+		return true;
+	}
+}
 
 struct TextureResource
 {

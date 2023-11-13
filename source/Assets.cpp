@@ -124,21 +124,33 @@ namespace Assets
 
 	struct ReadImageResult
 	{
-		uint32_t width;
-		uint32_t height;
+		int32_t width;
+		int32_t height;
+		int32_t num_components;
+		int32_t component_size;
+
 		uint8_t* pixels;
 	};
 
-	static ReadImageResult ReadImage(const std::string& filepath)
+	static ReadImageResult ReadImage(const std::string& filepath, bool hdr)
 	{
 		ReadImageResult result = {};
 
-		int width, height, channels;
-		stbi_uc* pixels = stbi_load(filepath.c_str(), &width, &height, &channels, STBI_rgb_alpha);
-
-		result.width = (uint32_t)width;
-		result.height = (uint32_t)height;
-		result.pixels = pixels;
+		if (hdr)
+		{
+			stbi_set_flip_vertically_on_load(true);
+			result.pixels = (uint8_t*)stbi_loadf(filepath.c_str(), &result.width, &result.height, &result.num_components, STBI_rgb_alpha);
+			// We force stbi to load rgba values, so we always have 4 components
+			result.num_components = 4;
+			result.component_size = 4;
+		}
+		else
+		{
+			result.pixels = (uint8_t*)stbi_load(filepath.c_str(), &result.width, &result.height, &result.num_components, STBI_rgb_alpha);
+			// We force stbi to load rgba values, so we always have 4 components
+			result.num_components = 4;
+			result.component_size = 1;
+		}
 
 		return result;
 	}
@@ -472,17 +484,18 @@ namespace Assets
 
 	void LoadTexture(const std::string& filepath, const std::string& name, TextureFormat format)
 	{
-		ReadImageResult image = ReadImage(filepath);
+		ReadImageResult image = ReadImage(filepath, IsHDRFormat(format));
 
 		Renderer::CreateTextureArgs args = {};
-		args.width = image.width;
-		args.height = image.height;
+		args.width = (uint32_t)image.width;
+		args.height = (uint32_t)image.height;
+		args.src_stride = (uint32_t)(image.num_components * image.component_size);
 		args.format = format;
-		args.pixels.resize(image.width * image.height * 4);
-		memcpy(args.pixels.data(), image.pixels, args.pixels.size());
-		TextureHandle_t texture_handle = Renderer::CreateTexture(args);
+		args.pixels = std::vector<uint8_t>(image.pixels, image.pixels + (image.width * image.height * args.src_stride));
 
+		TextureHandle_t texture_handle = Renderer::CreateTexture(args);
 		data.textures.emplace(name, texture_handle);
+
 		stbi_image_free(image.pixels);
 	}
 

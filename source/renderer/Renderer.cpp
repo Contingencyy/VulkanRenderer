@@ -30,8 +30,6 @@ namespace Renderer
 
 	static constexpr uint32_t MAX_DRAW_LIST_ENTRIES = 10000;
 
-	static const std::vector<VkFormat> TEXTURE_FORMAT_TO_VK_FORMAT = { VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_SRGB };
-
 	struct DrawList
 	{
 		struct Entry
@@ -271,6 +269,7 @@ namespace Renderer
 		CreateTextureArgs texture_args = {};
 		texture_args.width = 1;
 		texture_args.height = 1;
+		texture_args.src_stride = 4;
 		texture_args.pixels = white_pixel;
 
 		data->default_white_texture_handle = CreateTexture(texture_args);
@@ -439,8 +438,8 @@ namespace Renderer
 			info.color_attachment_formats = data->render_passes.lighting.GetColorAttachmentFormats();
 			info.depth_enabled = true;
 			info.depth_stencil_attachment_format = data->render_passes.lighting.GetDepthStencilAttachmentFormat();
-			info.vs_path = "assets/shaders/VertexShader.vert";
-			info.fs_path = "assets/shaders/FragmentShader.frag";
+			info.vs_path = "assets/shaders/PbrLighting.vert";
+			info.fs_path = "assets/shaders/PbrLighting.frag";
 
 			data->render_passes.lighting.Build(descriptor_set_layouts, push_ranges, info);
 		}
@@ -818,9 +817,8 @@ namespace Renderer
 
 	TextureHandle_t CreateTexture(const CreateTextureArgs& args)
 	{
-		// NOTE: BPP are always 4 for now
-		uint32_t bpp = 4;
-		VkDeviceSize image_size = args.width * args.height * bpp;
+		// Determine the texture byte size
+		VkDeviceSize image_size = args.pixels.size();
 
 		// Create staging buffer
 		Vulkan::Buffer staging_buffer;
@@ -832,6 +830,7 @@ namespace Renderer
 		// Create texture image
 		ResourceSlotmap<TextureResource>::ReservedResource reserved = data->texture_slotmap.Reserve();
 		uint32_t num_mips = (uint32_t)std::floor(std::log2(std::max(args.width, args.height))) + 1;
+
 		Vulkan::CreateImage(args.width, args.height, TEXTURE_FORMAT_TO_VK_FORMAT[args.format], VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
 			VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, reserved.resource->image, num_mips);
 

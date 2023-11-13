@@ -82,7 +82,7 @@ namespace Vulkan
 		std::vector<VkQueueFamilyProperties> queue_families(queue_family_count);
 		vkGetPhysicalDeviceQueueFamilyProperties(vk_inst.physical_device, &queue_family_count, queue_families.data());
 
-		int i = 0;
+		int32_t i = 0;
 		for (const auto& queue_family : queue_families)
 		{
 			// Check queue for present capabilities
@@ -309,6 +309,7 @@ namespace Vulkan
 				vk_inst.descriptor_sizes.storage_image = descriptor_buffer_properties.storageImageDescriptorSize;
 				vk_inst.descriptor_sizes.sampled_image = descriptor_buffer_properties.sampledImageDescriptorSize;
 				vk_inst.descriptor_sizes.sampler = descriptor_buffer_properties.samplerDescriptorSize;
+
 				break;
 			}
 		}

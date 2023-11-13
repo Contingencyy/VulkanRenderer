@@ -117,10 +117,12 @@ namespace Application
 		Renderer::Init(data.window);
 
 		Assets::Init();
-		Assets::LoadGLTF("assets/models/gltf/ClearCoatTest/ClearCoatTest.gltf", "model");
+		Assets::LoadTexture("assets/textures/hdr/Env_Lago_Disola.hdr", "Env_Lago_Disola", TextureFormat_RGBA32_SFLOAT);
+		//Assets::LoadGLTF("assets/models/gltf/ClearCoatTest/ClearCoatTest.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatCarPaint/ClearCoatCarPaint.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/MetalRoughSpheres/MetalRoughSpheres.gltf", "model");
-		//Assets::LoadGLTF("assets/models/gltf/BMWM6/scene.gltf", "model");
+		Assets::LoadGLTF("assets/models/gltf/ABeautifulGame/ABeautifulGame.gltf", "model");
+		//Assets::LoadGLTF("assets/models/gltf/Bmw_M8/scene.gltf", "model");
 
 		glm::mat4 transform = glm::scale(glm::identity<glm::mat4>(), glm::vec3(1.0f));
 		SpawnModelEntity("model", transform);

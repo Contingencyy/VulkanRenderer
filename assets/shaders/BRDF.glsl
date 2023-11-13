@@ -55,8 +55,11 @@ void EvaluateBRDF(vec3 view_dir, vec3 light_dir, vec3 H, float NoL, float LoH, v
 	vec3 F = F_Schlick(LoH, f0);
 	float V = V_SmithGGXCorrelated(NoV, NoL, roughness);
 	
+	vec3 kD = 1.0f - F;
+	//kD *= 1.0f - metalness;
+
 	brdf_specular = (D * V) * F;
-	brdf_diffuse = (vec3(1.0f) - F) * base_color * Fd_Burley(NoV, NoL, LoH, roughness);
+	brdf_diffuse = kD * base_color * Fd_Burley(NoV, NoL, LoH, roughness);
 }
 
 float V_Kelemen(float LoH, float roughness)

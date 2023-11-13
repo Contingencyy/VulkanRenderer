@@ -19,6 +19,7 @@ namespace Renderer
 	{
 		uint32_t width;
 		uint32_t height;
+		uint32_t src_stride;
 		TextureFormat format;
 		std::vector<uint8_t> pixels;
 	};
