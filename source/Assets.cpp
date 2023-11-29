@@ -173,7 +173,7 @@ namespace Assets
 		char* combined_filepath = nullptr;
 
 		CreateFilepathFromUri(filepath, gltf_image.uri, &combined_filepath);
-		LoadTexture(combined_filepath, gltf_image.uri, format);
+		LoadTexture(combined_filepath, gltf_image.uri, format, true, false);
 		delete combined_filepath;
 
 		return GetTexture(gltf_image.uri);
@@ -482,7 +482,7 @@ namespace Assets
 		// TODO: Release all assets, both on the CPU and GPU
 	}
 
-	void LoadTexture(const std::string& filepath, const std::string& name, TextureFormat format)
+	void LoadTexture(const std::string& filepath, const std::string& name, TextureFormat format, bool gen_mips, bool is_environment_map)
 	{
 		ReadImageResult image = ReadImage(filepath, IsHDRFormat(format));
 
@@ -492,6 +492,8 @@ namespace Assets
 		args.src_stride = (uint32_t)(image.num_components * image.component_size);
 		args.format = format;
 		args.pixels = std::vector<uint8_t>(image.pixels, image.pixels + (image.width * image.height * args.src_stride));
+		args.generate_mips = gen_mips;
+		args.is_environment_map = is_environment_map;
 
 		TextureHandle_t texture_handle = Renderer::CreateTexture(args);
 		data.textures.emplace(name, texture_handle);

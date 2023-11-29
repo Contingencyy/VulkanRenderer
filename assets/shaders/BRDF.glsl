@@ -1,5 +1,5 @@
 #pragma once
-#define PI 3.14159265f
+#include "Common.glsl"
 
 float D_GGX(float NoH, float a)
 {

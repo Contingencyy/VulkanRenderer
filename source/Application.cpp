@@ -117,14 +117,14 @@ namespace Application
 		Renderer::Init(data.window);
 
 		Assets::Init();
-		Assets::LoadTexture("assets/textures/hdr/Env_Lago_Disola.hdr", "Env_Lago_Disola", TextureFormat_RGBA32_SFLOAT);
+		Assets::LoadTexture("assets/textures/hdr/Env_Plaza.hdr", "Env_Plaza", TextureFormat_RGBA32_SFLOAT, true, true);
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatTest/ClearCoatTest.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatCarPaint/ClearCoatCarPaint.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/MetalRoughSpheres/MetalRoughSpheres.gltf", "model");
 		Assets::LoadGLTF("assets/models/gltf/ABeautifulGame/ABeautifulGame.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/Bmw_M8/scene.gltf", "model");
 
-		glm::mat4 transform = glm::scale(glm::identity<glm::mat4>(), glm::vec3(1.0f));
+		glm::mat4 transform = glm::scale(glm::identity<glm::mat4>(), glm::vec3(10.0f));
 		SpawnModelEntity("model", transform);
 
 		data.active_scene.AddEntity<Pointlight>(vec3(25.0f, 0.0f, 50.0f), vec3(1.0f), 25.0f, "Pointlight1");

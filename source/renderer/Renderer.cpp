@@ -28,7 +28,34 @@
 namespace Renderer
 {
 
+#define BEGIN_PASS(pass, cmd_buffer, begin_info) pass.Begin(cmd_buffer, begin_info)
+#define END_PASS(pass, cmd_buffer) pass.End(cmd_buffer)
+
 	static constexpr uint32_t MAX_DRAW_LIST_ENTRIES = 10000;
+	static constexpr uint32_t IBL_HDR_CUBEMAP_RESOLUTION = 512;
+	//static constexpr uint32_t IBL_IRRADIANCE_CUBEMAP_RESOLUTION = 64;
+
+	static constexpr std::array<glm::vec3, 8> UNIT_CUBE_VERTICES =
+	{
+		glm::vec3(0.5, -0.5, -0.5),
+		glm::vec3(0.5, -0.5, 0.5),
+		glm::vec3(-0.5, -0.5, 0.5),
+		glm::vec3(-0.5, -0.5, -0.5),
+		glm::vec3(0.5, 0.5, -0.5),
+		glm::vec3(0.5, 0.5, 0.5),
+		glm::vec3(-0.5, 0.5, 0.5),
+		glm::vec3(-0.5, 0.5, -0.5)
+	};
+
+	static constexpr std::array<uint16_t, 36> UNIT_CUBE_INDICES =
+	{
+		0, 1, 3, 3, 1, 2,
+		1, 5, 2, 2, 5, 6,
+		5, 4, 6, 6, 4, 7,
+		4, 0, 7, 7, 0, 3,
+		3, 2, 7, 7, 2, 6,
+		4, 5, 0, 0, 5, 1
+	};
 
 	struct DrawList
 	{
@@ -79,11 +106,20 @@ namespace Renderer
 		DescriptorBuffer descriptor_buffer_sampled_image{ VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, (uint32_t)vk_inst.descriptor_sizes.sampled_image };
 		DescriptorBuffer descriptor_buffer_sampler{ VK_DESCRIPTOR_TYPE_SAMPLER, (uint32_t)vk_inst.descriptor_sizes.sampler };
 
+		std::array<VkDescriptorBufferBindingInfoEXT, 5> descriptor_buffer_binding_infos;
+		uint32_t descriptor_buffer_indices[5] = { 0, 1, 2, 3, 4 };
+		VkDeviceSize descriptor_buffer_offsets[5] = { 0, 0, 0, 0, 0 };
+
 		// Render passes
 		struct RenderPasses
 		{
-			RenderPass lighting{ RenderPassType_Graphics };
-			RenderPass post_process{ RenderPassType_Compute };
+			// Frame render passes
+			RenderPass lighting{ RENDER_PASS_TYPE_GRAPHICS };
+			RenderPass post_process{ RENDER_PASS_TYPE_COMPUTE };
+			
+			// Resource processing render passes
+			RenderPass gen_cubemap{ RENDER_PASS_TYPE_GRAPHICS };
+			RenderPass gen_irradiance_cube{ RENDER_PASS_TYPE_GRAPHICS };
 		} render_passes;
 
 		TextureHandle_t hdr_color_target_handle;
@@ -116,6 +152,8 @@ namespace Renderer
 		TextureHandle_t default_white_texture_handle;
 		TextureHandle_t default_normal_texture_handle;
 		VkSampler default_sampler = VK_NULL_HANDLE;
+		Vulkan::Buffer unit_cube_vertex_buffer;
+		Vulkan::Buffer unit_cube_index_buffer;
 		// TODO: Free reserved descriptors on Exit()
 		DescriptorAllocation reserved_sampler_descriptors;
 
@@ -134,7 +172,7 @@ namespace Renderer
 		struct ImGui
 		{
 			VkDescriptorPool descriptor_pool;
-			RenderPass render_pass{ RenderPassType_Graphics };
+			RenderPass render_pass{ RENDER_PASS_TYPE_GRAPHICS };
 		} imgui;
 	} static *data;
 	
@@ -239,20 +277,21 @@ namespace Renderer
 		sampler_info.magFilter = VK_FILTER_LINEAR;
 		// Undersampling
 		sampler_info.minFilter = VK_FILTER_LINEAR;
+		sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
 		sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 		sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 		sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 		sampler_info.anisotropyEnable = VK_TRUE;
 		sampler_info.maxAnisotropy = vk_inst.device_props.max_anisotropy;
-		sampler_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+		sampler_info.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
 		sampler_info.unnormalizedCoordinates = VK_FALSE;
 		sampler_info.compareEnable = VK_FALSE;
-		sampler_info.compareOp = VK_COMPARE_OP_ALWAYS;
-		sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+		sampler_info.compareOp = VK_COMPARE_OP_NEVER;
 		sampler_info.mipLodBias = 0.0f;
 		sampler_info.minLod = 0.0f;
 		//sampler_info.maxLod = (float)num_mips;
 		sampler_info.maxLod = std::numeric_limits<float>::max();
+		sampler_info.flags = 0;
 
 		VkCheckResult(vkCreateSampler(vk_inst.device, &sampler_info, nullptr, &data->default_sampler));
 
@@ -279,6 +318,32 @@ namespace Renderer
 		texture_args.pixels = normal_pixel;
 
 		data->default_normal_texture_handle = CreateTexture(texture_args);
+	}
+
+	static void CreateUnitCubeBuffers()
+	{
+		// Calculate the vertex and index buffer size
+		VkDeviceSize vb_size = UNIT_CUBE_VERTICES.size() * sizeof(glm::vec3);
+		VkDeviceSize ib_size = UNIT_CUBE_INDICES.size() * sizeof(uint16_t);
+
+		// Create the staging buffer
+		Vulkan::Buffer staging_buffer;
+		Vulkan::CreateStagingBuffer(vb_size + ib_size, staging_buffer);
+
+		// Write data to the staging buffer
+		Vulkan::WriteBuffer(staging_buffer.ptr, (void*)&UNIT_CUBE_VERTICES[0], vb_size);
+		Vulkan::WriteBuffer((uint8_t*)staging_buffer.ptr + vb_size, (void*)&UNIT_CUBE_INDICES[0], ib_size);
+
+		// Create cube vertex and index buffer
+		Vulkan::CreateVertexBuffer(vb_size, data->unit_cube_vertex_buffer);
+		Vulkan::CreateIndexBuffer(ib_size, data->unit_cube_index_buffer);
+
+		// Copy staged vertex and index data to the device local buffers
+		Vulkan::CopyBuffer(staging_buffer, data->unit_cube_vertex_buffer, vb_size, 0, 0);
+		Vulkan::CopyBuffer(staging_buffer, data->unit_cube_index_buffer, ib_size, vb_size, 0);
+
+		// Clean up, destroy the staging buffer
+		Vulkan::DestroyBuffer(staging_buffer);
 	}
 
 	static void CreateUniformBuffers()
@@ -341,8 +406,11 @@ namespace Renderer
 				VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 				data->hdr_color_target->image
 			);
-			Vulkan::CreateImageView(VK_IMAGE_ASPECT_COLOR_BIT, data->hdr_color_target->image);
+			Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, data->hdr_color_target->image);
 			data->reserved_storage_image_descriptors.WriteDescriptor(data->hdr_color_target->image, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL, RESERVED_DESCRIPTOR_STORAGE_IMAGE_HDR);
+
+			data->render_passes.lighting.SetAttachment(data->hdr_color_target->image, 0);
+			data->render_passes.post_process.SetAttachment(data->hdr_color_target->image, 0);
 		}
 
 		// Create depth render target
@@ -362,7 +430,9 @@ namespace Renderer
 				VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 				data->depth_target->image
 			);
-			Vulkan::CreateImageView(VK_IMAGE_ASPECT_DEPTH_BIT, data->depth_target->image);
+			Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_DEPTH_BIT, data->depth_target->image);
+
+			data->render_passes.lighting.SetAttachment(data->depth_target->image, 1);
 		}
 
 		// Create SDR render target
@@ -382,8 +452,11 @@ namespace Renderer
 				VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 				data->sdr_color_target->image
 			);
-			Vulkan::CreateImageView(VK_IMAGE_ASPECT_COLOR_BIT, data->sdr_color_target->image);
+			Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, data->sdr_color_target->image);
 			data->reserved_storage_image_descriptors.WriteDescriptor(data->sdr_color_target->image, VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL, RESERVED_DESCRIPTOR_STORAGE_IMAGE_SDR);
+
+			data->render_passes.post_process.SetAttachment(data->sdr_color_target->image, 1);
+			data->imgui.render_pass.SetAttachment(data->sdr_color_target->image, 0);
 		}
 	}
 
@@ -397,7 +470,6 @@ namespace Renderer
 	static void CreateRenderPasses()
 	{
 		data->reserved_storage_image_descriptors = data->descriptor_buffer_storage_image.Allocate(RESERVED_DESCRIPTOR_STORAGE_IMAGE_COUNT);
-		CreateRenderTargets();
 
 		std::vector<VkDescriptorSetLayout> descriptor_set_layouts =
 		{
@@ -410,22 +482,22 @@ namespace Renderer
 
 		// Lighting raster pass
 		{
-			std::vector<RenderPass::Attachment> attachments(2);
-			attachments[0].info.attachment_type = RenderPass::AttachmentType_Color;
-			attachments[0].info.expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-			attachments[0].info.load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
-			attachments[0].info.store_op = VK_ATTACHMENT_STORE_OP_STORE;
-			attachments[0].info.clear_value.color = { 0.0f, 0.0f, 0.0f, 1.0f };
-			attachments[0].resource = data->hdr_color_target;
+			std::vector<RenderPass::AttachmentInfo> attachment_infos(2);
+			attachment_infos[0].attachment_type = RenderPass::ATTACHMENT_TYPE_COLOR;
+			attachment_infos[0].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+			attachment_infos[0].load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
+			attachment_infos[0].store_op = VK_ATTACHMENT_STORE_OP_STORE;
+			attachment_infos[0].clear_value.color = { 0.0f, 0.0f, 0.0f, 1.0f };
 
-			attachments[1].info.attachment_type = RenderPass::AttachmentType_DepthStencil;
-			attachments[1].info.expected_layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-			attachments[1].info.load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
-			attachments[1].info.store_op = VK_ATTACHMENT_STORE_OP_STORE;
-			attachments[1].info.clear_value.depthStencil = { 1.0f, 0 };
-			attachments[1].resource = data->depth_target;
+			attachment_infos[1].attachment_type = RenderPass::ATTACHMENT_TYPE_DEPTH_STENCIL;
+			attachment_infos[1].format = VK_FORMAT_D32_SFLOAT;
+			attachment_infos[1].expected_layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+			attachment_infos[1].load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
+			attachment_infos[1].store_op = VK_ATTACHMENT_STORE_OP_STORE;
+			attachment_infos[1].clear_value.depthStencil = { 1.0f, 0 };
 
-			data->render_passes.lighting.SetAttachments(attachments);
+			data->render_passes.lighting.SetAttachmentInfos(attachment_infos);
 
 			std::vector<VkPushConstantRange> push_ranges(1);
 			push_ranges[0].size = 4 * sizeof(uint32_t);
@@ -446,19 +518,19 @@ namespace Renderer
 
 		// Post-processing compute pass
 		{
-			std::vector<RenderPass::Attachment> attachments(2);
-			attachments[0].info.attachment_type = RenderPass::AttachmentType_ReadOnly;
-			attachments[0].info.expected_layout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
-			attachments[0].resource = data->hdr_color_target;
+			std::vector<RenderPass::AttachmentInfo> attachment_infos(2);
+			attachment_infos[0].attachment_type = RenderPass::ATTACHMENT_TYPE_READ_ONLY;
+			attachment_infos[0].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
 
-			attachments[1].info.attachment_type = RenderPass::AttachmentType_Color;
-			attachments[1].info.expected_layout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL;
-			attachments[1].info.load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
-			attachments[1].info.store_op = VK_ATTACHMENT_STORE_OP_STORE;
-			attachments[1].resource = data->sdr_color_target;
-			attachments[1].info.clear_value.color = { 0.0f, 0.0f, 0.0f, 1.0f };
+			attachment_infos[1].attachment_type = RenderPass::ATTACHMENT_TYPE_COLOR;
+			attachment_infos[1].format = vk_inst.swapchain.format;
+			attachment_infos[1].expected_layout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL;
+			attachment_infos[1].load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
+			attachment_infos[1].store_op = VK_ATTACHMENT_STORE_OP_STORE;
+			attachment_infos[1].clear_value.color = { 0.0f, 0.0f, 0.0f, 1.0f };
 
-			data->render_passes.post_process.SetAttachments(attachments);
+			data->render_passes.post_process.SetAttachmentInfos(attachment_infos);
 
 			std::vector<VkPushConstantRange> push_ranges(1);
 			push_ranges[0].size = 2 * sizeof(uint32_t);
@@ -473,14 +545,88 @@ namespace Renderer
 
 		// Dear ImGui render pass
 		{
-			std::vector<RenderPass::Attachment> attachments(1);
-			attachments[0].info.attachment_type = RenderPass::AttachmentType_Color;
-			attachments[0].info.expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-			attachments[0].info.load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
-			attachments[0].info.store_op = VK_ATTACHMENT_STORE_OP_STORE;
-			attachments[0].resource = data->sdr_color_target;
+			std::vector<RenderPass::AttachmentInfo> attachment_infos(1);
+			attachment_infos[0].attachment_type = RenderPass::ATTACHMENT_TYPE_COLOR;
+			attachment_infos[0].format = vk_inst.swapchain.format;
+			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+			attachment_infos[0].load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
+			attachment_infos[0].store_op = VK_ATTACHMENT_STORE_OP_STORE;
 
-			data->imgui.render_pass.SetAttachments(attachments);
+			data->imgui.render_pass.SetAttachmentInfos(attachment_infos);
+		}
+
+		// Generate Cubemap from Equirectangular Map pass
+		{
+			std::vector<RenderPass::AttachmentInfo> attachment_infos(1);
+			attachment_infos[0].attachment_type = RenderPass::ATTACHMENT_TYPE_COLOR;
+			attachment_infos[0].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+			attachment_infos[0].load_op = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+			attachment_infos[0].store_op = VK_ATTACHMENT_STORE_OP_STORE;
+
+			data->render_passes.gen_cubemap.SetAttachmentInfos(attachment_infos);
+
+			std::vector<VkPushConstantRange> push_ranges(2);
+			push_ranges[0].size = sizeof(glm::mat4);
+			push_ranges[0].offset = 0;
+			push_ranges[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+			push_ranges[1].size = 2 * sizeof(uint32_t);
+			push_ranges[1].offset = push_ranges[0].size;
+			push_ranges[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+			Vulkan::GraphicsPipelineInfo info = {};
+			info.input_bindings.resize(1);
+			info.input_bindings[0].binding = 0;
+			info.input_bindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+			info.input_bindings[0].stride = sizeof(glm::vec3);
+			info.input_attributes.resize(1);
+			info.input_attributes[0].binding = 0;
+			info.input_attributes[0].location = 0;
+			info.input_attributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+			info.input_attributes[0].offset = 0;
+			info.color_attachment_formats = data->render_passes.gen_irradiance_cube.GetColorAttachmentFormats();
+			info.depth_enabled = false;
+			info.vs_path = "assets/shaders/EquirectangularToCube.vert";
+			info.fs_path = "assets/shaders/EquirectangularToCube.frag";
+
+			data->render_passes.gen_cubemap.Build(descriptor_set_layouts, push_ranges, info);
+		}
+
+		// Generate Irradiance Cube pass
+		{
+			std::vector<RenderPass::AttachmentInfo> attachment_infos(1);
+			attachment_infos[0].attachment_type = RenderPass::ATTACHMENT_TYPE_COLOR;
+			attachment_infos[0].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+			attachment_infos[0].load_op = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+			attachment_infos[0].store_op = VK_ATTACHMENT_STORE_OP_STORE;
+			
+			data->render_passes.gen_irradiance_cube.SetAttachmentInfos(attachment_infos);
+			
+			std::vector<VkPushConstantRange> push_ranges(2);
+			push_ranges[0].size = sizeof(glm::mat4);
+			push_ranges[0].offset = 0;
+			push_ranges[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+			push_ranges[1].size = 2 * sizeof(uint32_t) + 2 * sizeof(float);
+			push_ranges[1].offset = push_ranges[0].size;
+			push_ranges[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+			Vulkan::GraphicsPipelineInfo info = {};
+			info.input_bindings.resize(1);
+			info.input_bindings[0].binding = 0;
+			info.input_bindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+			info.input_bindings[0].stride = sizeof(glm::vec3);
+			info.input_attributes.resize(1);
+			info.input_attributes[0].binding = 0;
+			info.input_attributes[0].location = 0;
+			info.input_attributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+			info.input_attributes[0].offset = 0;
+			info.color_attachment_formats = data->render_passes.gen_irradiance_cube.GetColorAttachmentFormats();
+			info.depth_enabled = false;
+			info.vs_path = "assets/shaders/EquirectangularToCube.vert";
+			info.fs_path = "assets/shaders/IrradianceCube.frag";
+
+			data->render_passes.gen_irradiance_cube.Build(descriptor_set_layouts, push_ranges, info);
 		}
 	}
 
@@ -538,6 +684,262 @@ namespace Renderer
 		vkDestroyDescriptorPool(vk_inst.device, data->imgui.descriptor_pool, nullptr);
 	}
 
+	static Vulkan::Image GenerateCubeMapFromEquirectangular(const Vulkan::Image& src_image, uint32_t src_texture_index, uint32_t src_sampler_index)
+	{
+		// Create hdr environment cubemap
+		Vulkan::Image hdr_cubemap_image;
+		uint32_t num_cube_mips = (uint32_t)std::floor(std::log2(std::max(IBL_HDR_CUBEMAP_RESOLUTION, IBL_HDR_CUBEMAP_RESOLUTION))) + 1;
+		Vulkan::CreateImageCube(IBL_HDR_CUBEMAP_RESOLUTION, IBL_HDR_CUBEMAP_RESOLUTION, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_TILING_OPTIMAL,
+			VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, hdr_cubemap_image, num_cube_mips);
+		Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_CUBE, VK_IMAGE_ASPECT_COLOR_BIT, hdr_cubemap_image);
+
+		// Create temporary render target
+		// TODO: This render target could be created once when the pass is created
+		Vulkan::Image hdr_cubemap_render_target;
+		Vulkan::CreateImage(IBL_HDR_CUBEMAP_RESOLUTION, IBL_HDR_CUBEMAP_RESOLUTION, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_TILING_OPTIMAL,
+			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, hdr_cubemap_render_target);
+		Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, hdr_cubemap_render_target);
+
+		// Render all 6 faces of the cube map using 6 different camera view matrices
+		VkViewport viewport = {};
+		viewport.x = 0.0f, viewport.y = 0.0f;
+		viewport.minDepth = 0.0f, viewport.maxDepth = 1.0f;
+
+		VkRect2D scissor_rect = { 0, 0, IBL_HDR_CUBEMAP_RESOLUTION, IBL_HDR_CUBEMAP_RESOLUTION };
+
+		const std::array<glm::mat4, 6> view_matrices =
+		{
+			// POSITIVE_X
+			glm::rotate(glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f)), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
+			// NEGATIVE_X
+			glm::rotate(glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(0.0f, 1.0f, 0.0f)), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
+			// POSITIVE_Y
+			glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
+			// NEGATIVE_Y
+			glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
+			// POSITIVE_Z
+			glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
+			// NEGATIVE_Z
+			glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
+		};
+
+		struct PushConsts
+		{
+			glm::mat4 view_projection;
+			uint32_t src_texture_index;
+			uint32_t src_sampler_index;
+		} push_consts;
+
+		push_consts.src_texture_index = src_texture_index;
+		push_consts.src_sampler_index = src_sampler_index;
+
+		VkCommandBuffer command_buffer = Vulkan::BeginImmediateCommand();
+		data->render_passes.gen_cubemap.SetAttachment(hdr_cubemap_render_target, 0);
+		Vulkan::CmdTransitionImageLayout(command_buffer,
+			hdr_cubemap_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			hdr_cubemap_image.num_mips, 0, 0, hdr_cubemap_image.num_layers
+		);
+
+		for (uint32_t mip = 0; mip < num_cube_mips; ++mip)
+		{
+			for (uint32_t face = 0; face < 6; ++face)
+			{
+				// Render current face to the offscreen render target
+				RenderPass::BeginInfo begin_info = {};
+				begin_info.render_width = static_cast<float>(IBL_HDR_CUBEMAP_RESOLUTION) * std::pow(0.5f, mip);
+				begin_info.render_height = static_cast<float>(IBL_HDR_CUBEMAP_RESOLUTION) * std::pow(0.5f, mip);
+
+				BEGIN_PASS(data->render_passes.gen_cubemap, command_buffer, begin_info);
+				{
+					viewport.width = begin_info.render_width;
+					viewport.height = begin_info.render_height;
+
+					vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+					vkCmdSetScissor(command_buffer, 0, 1, &scissor_rect);
+
+					push_consts.view_projection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 512.0f) * view_matrices[face];
+					data->render_passes.gen_cubemap.PushConstants(command_buffer, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &push_consts);
+					data->render_passes.gen_cubemap.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 64, 2 * sizeof(uint32_t), &push_consts.src_texture_index);
+
+					vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)data->descriptor_buffer_binding_infos.size(), data->descriptor_buffer_binding_infos.data());
+					data->render_passes.gen_cubemap.SetDescriptorBufferOffsets(command_buffer, 0, 5, &data->descriptor_buffer_indices[0], &data->descriptor_buffer_offsets[0]);
+
+					VkDeviceSize vb_offset = 0;
+					vkCmdBindVertexBuffers(command_buffer, 0, 1, &data->unit_cube_vertex_buffer.buffer, &vb_offset);
+					vkCmdBindIndexBuffer(command_buffer, data->unit_cube_index_buffer.buffer, 0, VK_INDEX_TYPE_UINT16);
+					vkCmdDrawIndexed(command_buffer, data->unit_cube_index_buffer.size / sizeof(uint16_t), 1, 0, 0, 0);
+				}
+				END_PASS(data->render_passes.gen_cubemap, command_buffer);
+
+				// Copy offscreen render target to the current face
+				Vulkan::CmdTransitionImageLayout(command_buffer,
+					hdr_cubemap_render_target, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
+				);
+
+				VkImageCopy copy_region = {};
+				copy_region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+				copy_region.srcSubresource.mipLevel = 0;
+				copy_region.srcSubresource.baseArrayLayer = 0;
+				copy_region.srcSubresource.layerCount = 1;
+				copy_region.srcOffset = { 0, 0, 0 };
+
+				copy_region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+				copy_region.dstSubresource.mipLevel = mip;
+				copy_region.dstSubresource.baseArrayLayer = face;
+				copy_region.dstSubresource.layerCount = 1;
+				copy_region.dstOffset = { 0, 0, 0 };
+
+				copy_region.extent.width = static_cast<uint32_t>(viewport.width);
+				copy_region.extent.height = static_cast<uint32_t>(viewport.height);
+				copy_region.extent.depth = 1;
+
+				vkCmdCopyImage(command_buffer,
+					hdr_cubemap_render_target.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+					hdr_cubemap_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+					1, &copy_region
+				);
+			}
+		}
+
+		Vulkan::CmdTransitionImageLayout(command_buffer,
+			hdr_cubemap_image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+			hdr_cubemap_image.num_mips, 0, 0, hdr_cubemap_image.num_layers
+		);
+		Vulkan::EndImmediateCommand(command_buffer);
+		Vulkan::DestroyImage(hdr_cubemap_render_target);
+
+		return hdr_cubemap_image;
+	}
+
+	//static Vulkan::Image GenerateIrradianceCube(uint32_t src_texture_index, uint32_t src_sampler_index)
+	//{
+	//	// Create irradiance cube map with 6 faces
+	//	Vulkan::Image irradiance_cube_image;
+	//	uint32_t num_cube_mips = (uint32_t)std::floor(std::log2(std::max(IBL_IRRADIANCE_CUBEMAP_RESOLUTION, IBL_IRRADIANCE_CUBEMAP_RESOLUTION))) + 1;
+
+	//	Vulkan::CreateImageCube(IBL_IRRADIANCE_CUBEMAP_RESOLUTION, IBL_IRRADIANCE_CUBEMAP_RESOLUTION, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_TILING_OPTIMAL,
+	//		VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, irradiance_cube_image, num_cube_mips);
+	//	Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_CUBE, VK_IMAGE_ASPECT_COLOR_BIT, irradiance_cube_image, num_cube_mips, 6);
+
+	//	// Create temporary render target for irradiance cube faces
+	//	Vulkan::Image irradiance_render_image;
+	//	Vulkan::CreateImage(IBL_ENV_CUBEMAP_RESOLUTION, IBL_ENV_CUBEMAP_RESOLUTION, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_TILING_OPTIMAL,
+	//		VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, irradiance_render_image);
+	//	Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, irradiance_render_image);
+
+	//	// Generate the irradiance cube map with the HDR texture has input and the irradiance cube map as output
+	//	// We need to render 6 times, one time for each side of the cube map, so we need 6 different view matrices for each rotation
+	//	VkViewport viewport = {};
+	//	viewport.x = 0.0f, viewport.y = 0.0f;
+	//	viewport.minDepth = 0.0f, viewport.maxDepth = 1.0f;
+
+	//	VkRect2D scissor_rect = { 0, 0, IBL_ENV_CUBEMAP_RESOLUTION, IBL_ENV_CUBEMAP_RESOLUTION };
+
+	//	const std::array<glm::mat4, 6> view_matrices =
+	//	{
+	//		// POSITIVE_X
+	//		glm::rotate(glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f)), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
+	//		// NEGATIVE_X
+	//		glm::rotate(glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(0.0f, 1.0f, 0.0f)), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
+	//		// POSITIVE_Y
+	//		glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
+	//		// NEGATIVE_Y
+	//		glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
+	//		// POSITIVE_Z
+	//		glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
+	//		// NEGATIVE_Z
+	//		glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
+	//	};
+
+	//	struct PushConsts
+	//	{
+	//		glm::mat4 view_projection;
+	//		uint32_t hdr_tex_idx;
+	//		uint32_t hdr_samp_idx;
+	//		float delta_phi = (2.0f * glm::pi<float>()) / 180.0f;
+	//		float delta_theta = (0.5f * glm::pi<float>()) / 64.0f;
+	//	} push_consts;
+
+	//	push_consts.hdr_tex_idx = src_texture_index;
+	//	push_consts.hdr_samp_idx = src_sampler_index;
+
+	//	VkCommandBuffer command_buffer = Vulkan::BeginImmediateCommand();
+	//	data->render_passes.gen_irradiance_cube.SetAttachment(irradiance_render_image, 0);
+	//	Vulkan::CmdTransitionImageLayout(command_buffer,
+	//		irradiance_cube_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, num_cube_mips, 0, 0, 6 
+	//	);
+
+	//	for (uint32_t mip = 0; mip < num_cube_mips; ++mip)
+	//	{
+	//		for (uint32_t face = 0; face < 6; ++face)
+	//		{
+	//			// Render current face to the offscreen render target
+	//			RenderPass::BeginInfo begin_info = {};
+	//			begin_info.render_width = static_cast<float>(IBL_ENV_CUBEMAP_RESOLUTION) * std::pow(0.5f, mip);
+	//			begin_info.render_height = static_cast<float>(IBL_ENV_CUBEMAP_RESOLUTION) * std::pow(0.5f, mip);
+
+	//			BEGIN_PASS(data->render_passes.gen_irradiance_cube, command_buffer, begin_info);
+	//			{
+	//				viewport.width = begin_info.render_width;
+	//				viewport.height = begin_info.render_height;
+
+	//				vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+	//				vkCmdSetScissor(command_buffer, 0, 1, &scissor_rect);
+
+	//				push_consts.view_projection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 512.0f) * view_matrices[face];
+	//				data->render_passes.gen_irradiance_cube.PushConstants(command_buffer, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &push_consts);
+	//				data->render_passes.gen_irradiance_cube.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 64, 2 * sizeof(uint32_t) + 2 * sizeof(float), &push_consts.hdr_tex_idx);
+
+	//				vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)data->descriptor_buffer_binding_infos.size(), data->descriptor_buffer_binding_infos.data());
+	//				data->render_passes.gen_irradiance_cube.SetDescriptorBufferOffsets(command_buffer, 0, 5, &data->descriptor_buffer_indices[0], &data->descriptor_buffer_offsets[0]);
+
+	//				VkDeviceSize vb_offset = 0;
+	//				vkCmdBindVertexBuffers(command_buffer, 0, 1, &data->unit_cube_vertex_buffer.buffer, &vb_offset);
+	//				vkCmdBindIndexBuffer(command_buffer, data->unit_cube_index_buffer.buffer, 0, VK_INDEX_TYPE_UINT16);
+	//				vkCmdDrawIndexed(command_buffer, data->unit_cube_index_buffer.size / sizeof(uint16_t), 1, 0, 0, 0);
+	//			}
+	//			END_PASS(data->render_passes.gen_irradiance_cube, command_buffer);
+
+	//			// Copy offscreen render target to the current face
+	//			Vulkan::CmdTransitionImageLayout(command_buffer,
+	//				irradiance_render_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
+	//			);
+
+	//			VkImageCopy copy_region = {};
+	//			copy_region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	//			copy_region.srcSubresource.mipLevel = 0;
+	//			copy_region.srcSubresource.baseArrayLayer = 0;
+	//			copy_region.srcSubresource.layerCount = 1;
+	//			copy_region.srcOffset = { 0, 0, 0 };
+
+	//			copy_region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	//			copy_region.dstSubresource.mipLevel = mip;
+	//			copy_region.dstSubresource.baseArrayLayer = face;
+	//			copy_region.dstSubresource.layerCount = 1;
+	//			copy_region.dstOffset = { 0, 0, 0 };
+
+	//			copy_region.extent.width = static_cast<uint32_t>(viewport.width);
+	//			copy_region.extent.height = static_cast<uint32_t>(viewport.height);
+	//			copy_region.extent.depth = 1;
+
+	//			vkCmdCopyImage(command_buffer,
+	//				irradiance_render_image.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+	//				irradiance_cube_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+	//				1, &copy_region
+	//			);
+	//		}
+	//	}
+
+	//	Vulkan::CmdTransitionImageLayout(command_buffer,
+	//		irradiance_cube_image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+	//	);
+
+	//	Vulkan::EndImmediateCommand(command_buffer);
+	//	Vulkan::DestroyImage(irradiance_render_image);
+
+	//	return irradiance_cube_image;
+	//}
+
 	void Init(::GLFWwindow* window)
 	{
 		Vulkan::Init(window);
@@ -545,7 +947,17 @@ namespace Renderer
 		data = new Data();
 		data->window = window;
 
+		data->descriptor_buffer_binding_infos = std::array<VkDescriptorBufferBindingInfoEXT, 5>
+		{
+			data->descriptor_buffer_uniform.GetBindingInfo(),
+			data->descriptor_buffer_storage.GetBindingInfo(),
+			data->descriptor_buffer_storage_image.GetBindingInfo(),
+			data->descriptor_buffer_sampled_image.GetBindingInfo(),
+			data->descriptor_buffer_sampler.GetBindingInfo()
+		};
+
 		CreateRenderPasses();
+		CreateRenderTargets();
 		InitDearImGui();
 
 		CreateCommandBuffers();
@@ -559,6 +971,7 @@ namespace Renderer
 
 		CreateDefaultSamplers();
 		CreateDefaultTextures();
+		CreateUnitCubeBuffers();
 	}
 
 	void Exit()
@@ -635,96 +1048,90 @@ namespace Renderer
 		// ----------------------------------------------------------------------------------------------------------------
 		// Lighting pass
 
-		data->render_passes.lighting.Begin(command_buffer);
+		RenderPass::BeginInfo begin_info = {};
+		begin_info.render_width = vk_inst.swapchain.extent.width;
+		begin_info.render_height = vk_inst.swapchain.extent.height;
 
-		// Viewport and scissor
-		VkViewport viewport = {};
-		viewport.x = 0.0f;
-		viewport.y = 0.0f;
-		viewport.width = (float)vk_inst.swapchain.extent.width;
-		viewport.height = (float)vk_inst.swapchain.extent.height;
-		viewport.minDepth = 0.0f;
-		viewport.maxDepth = 1.0f;
-		vkCmdSetViewport(command_buffer, 0, 1, &viewport);
-
-		VkRect2D scissor = {};
-		scissor.offset = { 0, 0 };
-		scissor.extent = vk_inst.swapchain.extent;
-		vkCmdSetScissor(command_buffer, 0, 1, &scissor);
-
-		// Push constants
-		uint32_t ubo_indices[] = { RESERVED_DESCRIPTOR_UNIFORM_BUFFER_CAMERA * VulkanInstance::MAX_FRAMES_IN_FLIGHT + vk_inst.current_frame,
-			RESERVED_DESCRIPTOR_UNIFORM_BUFFER_LIGHT_SOURCES * VulkanInstance::MAX_FRAMES_IN_FLIGHT + vk_inst.current_frame, data->num_light_sources };
-		data->render_passes.lighting.PushConstants(command_buffer, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 3 * sizeof(uint32_t), ubo_indices);
-
-		// Bind descriptor buffers
-		std::array<VkDescriptorBufferBindingInfoEXT, 5> descriptor_buffer_binding_infos =
+		BEGIN_PASS(data->render_passes.lighting, command_buffer, begin_info);
 		{
-			data->descriptor_buffer_uniform.GetBindingInfo(),
-			data->descriptor_buffer_storage.GetBindingInfo(),
-			data->descriptor_buffer_storage_image.GetBindingInfo(),
-			data->descriptor_buffer_sampled_image.GetBindingInfo(),
-			data->descriptor_buffer_sampler.GetBindingInfo()
-		};
-		vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)descriptor_buffer_binding_infos.size(), descriptor_buffer_binding_infos.data());
+			// Viewport and scissor
+			VkViewport viewport = {};
+			viewport.x = 0.0f;
+			viewport.y = 0.0f;
+			viewport.width = static_cast<float>(begin_info.render_width);
+			viewport.height = static_cast<float>(begin_info.render_height);
+			viewport.minDepth = 0.0f;
+			viewport.maxDepth = 1.0f;
+			vkCmdSetViewport(command_buffer, 0, 1, &viewport);
 
-		uint32_t buffer_indices[5] = { 0, 1, 2, 3, 4 };
-		VkDeviceSize buffer_offsets[5] = { 0, 0, 0, 0, 0 };
-		data->render_passes.lighting.SetDescriptorBufferOffsets(command_buffer, 0, 5, &buffer_indices[0], &buffer_offsets[0]);
+			VkRect2D scissor = {};
+			scissor.offset = { 0, 0 };
+			scissor.extent = vk_inst.swapchain.extent;
+			vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
-		// Instance buffer
-		const Vulkan::Buffer& instance_buffer = data->instance_buffers[vk_inst.current_frame];
+			// Push constants
+			uint32_t ubo_indices[] = { RESERVED_DESCRIPTOR_UNIFORM_BUFFER_CAMERA * VulkanInstance::MAX_FRAMES_IN_FLIGHT + vk_inst.current_frame,
+				RESERVED_DESCRIPTOR_UNIFORM_BUFFER_LIGHT_SOURCES * VulkanInstance::MAX_FRAMES_IN_FLIGHT + vk_inst.current_frame, data->num_light_sources };
+			data->render_passes.lighting.PushConstants(command_buffer, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 3 * sizeof(uint32_t), ubo_indices);
 
-		for (size_t i = 0; i < data->draw_list.current_entry; ++i)
-		{
-			const DrawList::Entry& entry = data->draw_list.entries[i];
+			// Bind descriptor buffers
+			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)data->descriptor_buffer_binding_infos.size(), data->descriptor_buffer_binding_infos.data());
+			data->render_passes.lighting.SetDescriptorBufferOffsets(command_buffer, 0, 5, &data->descriptor_buffer_indices[0], &data->descriptor_buffer_offsets[0]);
 
-			// TODO: Default mesh
-			MeshResource* mesh = nullptr;
-			if (VK_RESOURCE_HANDLE_VALID(entry.mesh_handle))
+			// Instance buffer
+			const Vulkan::Buffer& instance_buffer = data->instance_buffers[vk_inst.current_frame];
+
+			for (size_t i = 0; i < data->draw_list.current_entry; ++i)
 			{
-				mesh = data->mesh_slotmap.Find(entry.mesh_handle);
+				const DrawList::Entry& entry = data->draw_list.entries[i];
+
+				// TODO: Default mesh
+				MeshResource* mesh = nullptr;
+				if (VK_RESOURCE_HANDLE_VALID(entry.mesh_handle))
+				{
+					mesh = data->mesh_slotmap.Find(entry.mesh_handle);
+				}
+				VK_ASSERT(mesh && "Tried to render a mesh with an invalid mesh handle");
+
+				// Check material handles for validity
+				VK_ASSERT(VK_RESOURCE_HANDLE_VALID(entry.material_handle));
+				MaterialResource* material = data->material_slotmap.Find(entry.material_handle);
+				VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->base_color_texture_handle));
+				VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->normal_texture_handle));
+				VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->metallic_roughness_texture_handle));
+
+				data->render_passes.lighting.PushConstants(command_buffer, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 12, sizeof(uint32_t), &entry.material_handle.index);
+
+				// Vertex and index buffers
+				VkBuffer vertex_buffers[] = { mesh->vertex_buffer.buffer, instance_buffer.buffer };
+				VkDeviceSize offsets[] = { 0, i * sizeof(glm::mat4) };
+				vkCmdBindVertexBuffers(command_buffer, 0, 2, vertex_buffers, offsets);
+				vkCmdBindIndexBuffer(command_buffer, mesh->index_buffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+
+				// Draw call
+				vkCmdDrawIndexed(command_buffer, mesh->index_buffer.size / sizeof(uint32_t), 1, 0, 0, 0);
+
+				data->stats.total_vertex_count += mesh->vertex_buffer.size / sizeof(Vertex);
+				data->stats.total_triangle_count += (mesh->index_buffer.size / sizeof(uint32_t)) / 3;
 			}
-			VK_ASSERT(mesh && "Tried to render a mesh with an invalid mesh handle");
-
-			// Check material handles for validity
-			VK_ASSERT(VK_RESOURCE_HANDLE_VALID(entry.material_handle));
-			MaterialResource* material = data->material_slotmap.Find(entry.material_handle);
-			VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->base_color_texture_handle));
-			VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->normal_texture_handle));
-			VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->metallic_roughness_texture_handle));
-
-			data->render_passes.lighting.PushConstants(command_buffer, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 12, sizeof(uint32_t), &entry.material_handle.index);
-
-			// Vertex and index buffers
-			VkBuffer vertex_buffers[] = { mesh->vertex_buffer.buffer, instance_buffer.buffer };
-			VkDeviceSize offsets[] = { 0, i * sizeof(glm::mat4) };
-			vkCmdBindVertexBuffers(command_buffer, 0, 2, vertex_buffers, offsets);
-			vkCmdBindIndexBuffer(command_buffer, mesh->index_buffer.buffer, 0, VK_INDEX_TYPE_UINT32);
-
-			// Draw call
-			vkCmdDrawIndexed(command_buffer, mesh->index_buffer.size / sizeof(uint32_t), 1, 0, 0, 0);
-
-			data->stats.total_vertex_count += mesh->vertex_buffer.size / sizeof(Vertex);
-			data->stats.total_triangle_count += (mesh->index_buffer.size / sizeof(uint32_t)) / 3;
 		}
-		data->render_passes.lighting.End(command_buffer);
+		END_PASS(data->render_passes.lighting, command_buffer);
 
 		// ----------------------------------------------------------------------------------------------------------------
 		// Post-process pass
 
-		data->render_passes.post_process.Begin(command_buffer);
+		BEGIN_PASS(data->render_passes.post_process, command_buffer, begin_info);
+		{
+			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)data->descriptor_buffer_binding_infos.size(), data->descriptor_buffer_binding_infos.data());
+			data->render_passes.post_process.SetDescriptorBufferOffsets(command_buffer, 0, 5, &data->descriptor_buffer_indices[0], &data->descriptor_buffer_offsets[0]);
 
-		vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)descriptor_buffer_binding_infos.size(), descriptor_buffer_binding_infos.data());
-		data->render_passes.post_process.SetDescriptorBufferOffsets(command_buffer, 0, 5, &buffer_indices[0], &buffer_offsets[0]);
-
-		uint32_t src_dst_indices[2] = { RESERVED_DESCRIPTOR_STORAGE_IMAGE_HDR, RESERVED_DESCRIPTOR_STORAGE_IMAGE_SDR };
-		data->render_passes.post_process.PushConstants(command_buffer, VK_SHADER_STAGE_COMPUTE_BIT, 0, 2 * sizeof(uint32_t), &src_dst_indices);
-		uint32_t dispatch_x = VK_ALIGN_POW2(vk_inst.swapchain.extent.width, 8) / 8;
-		uint32_t dispatch_y = VK_ALIGN_POW2(vk_inst.swapchain.extent.height, 8) / 8;
-		vkCmdDispatch(command_buffer, dispatch_x, dispatch_y, 1);
-
-		data->render_passes.post_process.End(command_buffer);
+			uint32_t src_dst_indices[2] = { RESERVED_DESCRIPTOR_STORAGE_IMAGE_HDR, RESERVED_DESCRIPTOR_STORAGE_IMAGE_SDR };
+			data->render_passes.post_process.PushConstants(command_buffer, VK_SHADER_STAGE_COMPUTE_BIT, 0, 2 * sizeof(uint32_t), &src_dst_indices);
+			uint32_t dispatch_x = VK_ALIGN_POW2(begin_info.render_width, 8) / 8;
+			uint32_t dispatch_y = VK_ALIGN_POW2(begin_info.render_height, 8) / 8;
+			vkCmdDispatch(command_buffer, dispatch_x, dispatch_y, 1);
+		}
+		END_PASS(data->render_passes.post_process, command_buffer);
 	}
 
 	void RenderUI()
@@ -742,12 +1149,16 @@ namespace Renderer
 		VkCommandBuffer command_buffer = data->command_buffers[vk_inst.current_frame];
 
 		// Render ImGui
-		data->imgui.render_pass.Begin(command_buffer);
+		RenderPass::BeginInfo begin_info = {};
+		begin_info.render_width = vk_inst.swapchain.extent.width;
+		begin_info.render_height = vk_inst.swapchain.extent.height;
 
-		ImGui::Render();
-		ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer, nullptr);
-
-		data->imgui.render_pass.End(command_buffer);
+		BEGIN_PASS(data->imgui.render_pass, command_buffer, begin_info);
+		{
+			ImGui::Render();
+			ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer, nullptr);
+		}
+		END_PASS(data->imgui.render_pass, command_buffer);
 
 		// Copy final result to swapchain image
 		VkImageCopy copy_region = {};
@@ -756,6 +1167,7 @@ namespace Renderer
 		copy_region.srcSubresource.baseArrayLayer = 0;
 		copy_region.srcSubresource.layerCount = 1;
 		copy_region.srcOffset = { 0, 0, 0 };
+
 		copy_region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		copy_region.dstSubresource.mipLevel = 0;
 		copy_region.dstSubresource.baseArrayLayer = 0;
@@ -763,7 +1175,6 @@ namespace Renderer
 		copy_region.dstOffset = { 0, 0, 0 };
 		copy_region.extent = { vk_inst.swapchain.extent.width, vk_inst.swapchain.extent.height, 1 };
 
-		// Note: Temporary hack
 		Vulkan::Image swapchain_image = Vulkan::SwapChainGetCurrentImage();
 		
 		std::vector<VkImageMemoryBarrier2> swapchain_copy_begin_transitions =
@@ -828,28 +1239,50 @@ namespace Renderer
 		Vulkan::WriteBuffer(staging_buffer.ptr, (void*)args.pixels.data(), image_size);
 
 		// Create texture image
-		ResourceSlotmap<TextureResource>::ReservedResource reserved = data->texture_slotmap.Reserve();
-		uint32_t num_mips = (uint32_t)std::floor(std::log2(std::max(args.width, args.height))) + 1;
+		Vulkan::Image texture_image;
+		uint32_t num_mips = 1;
+		if (args.generate_mips)
+		{
+			num_mips = (uint32_t)std::floor(std::log2(std::max(args.width, args.height))) + 1;
+		}
 
 		Vulkan::CreateImage(args.width, args.height, TEXTURE_FORMAT_TO_VK_FORMAT[args.format], VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-			VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, reserved.resource->image, num_mips);
+			VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, texture_image, num_mips);
+		Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, texture_image);
 
 		// Copy staging buffer data into final texture image memory (device local)
-		Vulkan::TransitionImageLayoutImmediate(reserved.resource->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, num_mips);
-		Vulkan::CopyBufferToImage(staging_buffer, reserved.resource->image, args.width, args.height);
+		Vulkan::TransitionImageLayoutImmediate(texture_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, num_mips);
+		Vulkan::CopyBufferToImage(staging_buffer, texture_image, args.width, args.height);
 		
-		// Generate mips using blit
-		Vulkan::GenerateMips(args.width, args.height, num_mips, TEXTURE_FORMAT_TO_VK_FORMAT[args.format], reserved.resource->image);
+		// Generate mips
+		if (num_mips > 1)
+		{
+			Vulkan::GenerateMips(args.width, args.height, num_mips, TEXTURE_FORMAT_TO_VK_FORMAT[args.format], texture_image);
+		}
 
 		// Clean up staging buffer
 		Vulkan::DestroyBuffer(staging_buffer);
 
-		// Create image view
-		Vulkan::CreateImageView(VK_IMAGE_ASPECT_COLOR_BIT, reserved.resource->image, num_mips);
+		ResourceSlotmap<TextureResource>::ReservedResource reserved = data->texture_slotmap.Reserve();
+		reserved.resource->image = texture_image;
 
 		// Allocate and update image descriptor
 		reserved.resource->descriptor = data->descriptor_buffer_sampled_image.Allocate();
 		reserved.resource->descriptor.WriteDescriptor(reserved.resource->image, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
+
+		// Generate irradiance cube map for IBL
+		if (args.is_environment_map)
+		{
+			// TODO: Assumed always using the default sampler at index 0 for now
+			Vulkan::Image hdr_cubemap_image = GenerateCubeMapFromEquirectangular(reserved.resource->image, reserved.resource->descriptor.GetIndex(), 0);
+			//Vulkan::Image irradiance_map = GenerateIrradianceCube(reserved.resource->descriptor.GetIndex(), 0);
+
+			// Delete the original HDR texture, we don't need it anymore, and swap in the irradiance map
+			Vulkan::DestroyImage(texture_image);
+
+			reserved.resource->image = hdr_cubemap_image;
+			reserved.resource->descriptor.WriteDescriptor(reserved.resource->image, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
+		}
 
 		return reserved.handle;
 	}

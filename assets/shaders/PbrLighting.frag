@@ -1,10 +1,8 @@
 #version 450
-#pragma once
 
 #extension GL_KHR_vulkan_glsl : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 
-#include "Common.glsl"
 #include "BRDF.glsl"
 
 layout(set = DESCRIPTOR_SET_UNIFORM_BUFFER, binding = 0) uniform Camera

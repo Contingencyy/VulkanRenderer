@@ -9,7 +9,7 @@ namespace Assets
 	void Init();
 	void Exit();
 
-	void LoadTexture(const std::string& filepath, const std::string& name, TextureFormat format);
+	void LoadTexture(const std::string& filepath, const std::string& name, TextureFormat format, bool gen_mips, bool is_environment_map);
 	TextureHandle_t GetTexture(const std::string& name);
 
 	struct Model

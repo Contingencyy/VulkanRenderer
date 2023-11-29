@@ -946,7 +946,7 @@ namespace Vulkan
 	}
 
 	void CreateImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,
-		VkImageUsageFlags usage, VkMemoryPropertyFlags memory_flags, Image& image, uint32_t num_mips)
+		VkImageUsageFlags usage, VkMemoryPropertyFlags memory_flags, Image& image, uint32_t num_mips, uint32_t array_layers, VkImageCreateFlags create_flags)
 	{
 		VkImageCreateInfo image_info = {};
 		image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -955,18 +955,22 @@ namespace Vulkan
 		image_info.extent.height = height;
 		image_info.extent.depth = 1;
 		image_info.mipLevels = num_mips;
-		image_info.arrayLayers = 1;
+		image_info.arrayLayers = array_layers;
 		image_info.format = format;
 		image_info.tiling = tiling;
 		image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		image_info.usage = usage;
 		image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 		image_info.samples = VK_SAMPLE_COUNT_1_BIT;
-		image_info.flags = 0;
+		image_info.flags = create_flags;
 
 		image = {};
-		VkCheckResult(vkCreateImage(vk_inst.device, &image_info, nullptr, &image.image));
+		image.width = width;
+		image.height = height;
 		image.format = format;
+		image.num_mips = num_mips;
+		image.num_layers = array_layers;
+		VkCheckResult(vkCreateImage(vk_inst.device, &image_info, nullptr, &image.image));
 
 		VkMemoryRequirements mem_requirements = {};
 		vkGetImageMemoryRequirements(vk_inst.device, image.image, &mem_requirements);
@@ -980,19 +984,25 @@ namespace Vulkan
 		VkCheckResult(vkBindImageMemory(vk_inst.device, image.image, image.memory, 0));
 	}
 
-	void CreateImageView(VkImageAspectFlags aspect_flags, Image& image, uint32_t num_mips)
+	void CreateImageCube(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags memory_flags, Image& image, uint32_t num_mips)
+	{
+		CreateImage(width, height, format, tiling, usage, memory_flags, image, num_mips, 6, VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT);
+	}
+
+	void CreateImageView(VkImageViewType view_type, VkImageAspectFlags aspect_flags, Image& image)
 	{
 		VkImageViewCreateInfo view_info = {};
 		view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 		view_info.image = image.image;
-		view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+		view_info.viewType = view_type;
 		view_info.format = image.format;
 		view_info.subresourceRange.aspectMask = aspect_flags;
 		view_info.subresourceRange.baseMipLevel = 0;
-		view_info.subresourceRange.levelCount = num_mips;
+		view_info.subresourceRange.levelCount = image.num_layers;
 		view_info.subresourceRange.baseArrayLayer = 0;
-		view_info.subresourceRange.layerCount = 1;
+		view_info.subresourceRange.layerCount = image.num_layers;
 
+		image.view_type = view_type;
 		VkCheckResult(vkCreateImageView(vk_inst.device, &view_info, nullptr, &image.view));
 	}
 
@@ -1224,7 +1234,8 @@ namespace Vulkan
 		EndImmediateCommand(command_buffer);
 	}
 
-	VkImageMemoryBarrier2 ImageMemoryBarrier(Image& image, VkImageLayout new_layout, uint32_t num_mips)
+	VkImageMemoryBarrier2 ImageMemoryBarrier(Image& image, VkImageLayout new_layout,
+		uint32_t num_mips, uint32_t base_mip_level, uint32_t base_array_layer, uint32_t layer_count)
 	{
 		VkImageMemoryBarrier2 image_memory_barrier = {};
 		image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
@@ -1251,10 +1262,10 @@ namespace Vulkan
 			image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		}
 
-		image_memory_barrier.subresourceRange.baseMipLevel = 0;
+		image_memory_barrier.subresourceRange.baseMipLevel = base_mip_level;
 		image_memory_barrier.subresourceRange.levelCount = num_mips;
-		image_memory_barrier.subresourceRange.baseArrayLayer = 0;
-		image_memory_barrier.subresourceRange.layerCount = 1;
+		image_memory_barrier.subresourceRange.baseArrayLayer = base_array_layer;
+		image_memory_barrier.subresourceRange.layerCount = layer_count;
 
 		// TODO: This smells bad, we are updating the images layout even though we haven't actually issued a pipeline barrier to be executed
 		// Probably having a resource tracker a la DX12 will do the trick here (hashmap with the VkImage pointer being the key)
@@ -1262,9 +1273,10 @@ namespace Vulkan
 		return image_memory_barrier;
 	}
 
-	void CmdTransitionImageLayout(VkCommandBuffer command_buffer, Image& image, VkImageLayout new_layout, uint32_t num_mips)
+	void CmdTransitionImageLayout(VkCommandBuffer command_buffer, Image& image, VkImageLayout new_layout,
+		uint32_t num_mips, uint32_t base_mip_level, uint32_t base_array_layer, uint32_t layer_count)
 	{
-		VkImageMemoryBarrier2 barrier = ImageMemoryBarrier(image, new_layout, num_mips);
+		VkImageMemoryBarrier2 barrier = ImageMemoryBarrier(image, new_layout, num_mips, base_mip_level, base_array_layer, layer_count);
 
 		VkDependencyInfo dependency_info = {};
 		dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;

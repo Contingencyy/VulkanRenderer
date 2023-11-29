@@ -22,6 +22,9 @@ namespace Renderer
 		uint32_t src_stride;
 		TextureFormat format;
 		std::vector<uint8_t> pixels;
+
+		bool generate_mips;
+		bool is_environment_map;
 	};
 
 	TextureHandle_t CreateTexture(const CreateTextureArgs& args);
