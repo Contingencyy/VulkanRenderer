@@ -166,7 +166,11 @@ namespace Application
 
 	static void Render()
 	{
-		Renderer::BeginFrame(data.active_scene.GetActiveCamera().GetView(), data.active_scene.GetActiveCamera().GetProjection());
+		Renderer::BeginFrameInfo frame_info = {};
+		frame_info.view = data.active_scene.GetActiveCamera().GetView();
+		frame_info.proj = data.active_scene.GetActiveCamera().GetProjection();
+		frame_info.skybox_texture_handle = Assets::GetTexture("Env_Plaza");
+		Renderer::BeginFrame(frame_info);
 
 		data.active_scene.Render();
 

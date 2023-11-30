@@ -32,7 +32,7 @@ public:
 	struct Attachment
 	{
 		AttachmentInfo info;
-		Vulkan::Image image;
+		Vulkan::Image* image;
 	};
 
 	struct BeginInfo
@@ -51,7 +51,7 @@ public:
 	void End(VkCommandBuffer command_buffer);
 
 	void SetAttachmentInfos(const std::vector<AttachmentInfo>& attachment_infos);
-	void SetAttachment(const Vulkan::Image& image, uint32_t index);
+	void SetAttachment(Vulkan::Image* image, uint32_t index);
 	std::vector<VkFormat> GetColorAttachmentFormats();
 	VkFormat GetDepthStencilAttachmentFormat();
 

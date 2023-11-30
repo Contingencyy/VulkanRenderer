@@ -25,9 +25,9 @@ void RenderPass::Begin(VkCommandBuffer command_buffer, const BeginInfo& begin_in
 		{
 			Attachment& attachment = m_attachments[i];
 			
-			if (attachment.image.layout != attachment.info.expected_layout)
+			if (attachment.image->layout != attachment.info.expected_layout)
 			{
-				barriers.push_back(Vulkan::ImageMemoryBarrier(attachment.image, attachment.info.expected_layout));
+				barriers.push_back(Vulkan::ImageMemoryBarrier(*attachment.image, attachment.info.expected_layout));
 			}
 		}
 
@@ -45,8 +45,8 @@ void RenderPass::Begin(VkCommandBuffer command_buffer, const BeginInfo& begin_in
 			}
 
 			attachment_info->sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-			attachment_info->imageView = attachment.image.view;
-			attachment_info->imageLayout = attachment.image.layout;
+			attachment_info->imageView = attachment.image->view;
+			attachment_info->imageLayout = attachment.image->layout;
 			attachment_info->loadOp = attachment.info.load_op;
 			attachment_info->storeOp = attachment.info.store_op;
 			attachment_info->clearValue = attachment.info.clear_value;
@@ -118,9 +118,9 @@ void RenderPass::Begin(VkCommandBuffer command_buffer, const BeginInfo& begin_in
 		{
 			Attachment& attachment = m_attachments[i];
 
-			if (attachment.image.layout != attachment.info.expected_layout)
+			if (attachment.image->layout != attachment.info.expected_layout)
 			{
-				barriers.push_back(Vulkan::ImageMemoryBarrier(attachment.image, attachment.info.expected_layout));
+				barriers.push_back(Vulkan::ImageMemoryBarrier(*attachment.image, attachment.info.expected_layout));
 			}
 		}
 
@@ -167,11 +167,11 @@ void RenderPass::SetAttachmentInfos(const std::vector<AttachmentInfo>& attachmen
 	}
 }
 
-void RenderPass::SetAttachment(const Vulkan::Image& image, uint32_t index)
+void RenderPass::SetAttachment(Vulkan::Image* image, uint32_t index)
 {
 	if (index >= m_attachments.size())
 		VK_EXCEPT("RenderPass::SetAttachment", "Tried to set an attachment with an index larger than the total amount of attachments specified in the render pass")
-	if (image.format != m_attachments[index].info.format)
+	if (image->format != m_attachments[index].info.format)
 		VK_EXCEPT("RenderPass::SetAttachment", "The format of the attachment does not match the format specified in the attachment info");
 
 	m_attachments[index].image = image;

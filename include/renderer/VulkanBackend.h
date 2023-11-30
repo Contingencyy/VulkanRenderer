@@ -108,7 +108,11 @@ namespace Vulkan
 		const char* vs_path;
 		const char* fs_path;
 
-		bool depth_enabled = false;
+		bool depth_test = false;
+		bool depth_write = false;
+		VkCompareOp depth_func = VK_COMPARE_OP_LESS;
+
+		VkCullModeFlags cull_mode = VK_CULL_MODE_BACK_BIT;
 	};
 
 	VkPipeline CreateGraphicsPipeline(const GraphicsPipelineInfo& info, VkPipelineLayout pipeline_layout);

@@ -10,7 +10,16 @@ namespace Renderer
 
 	void Init(GLFWwindow* window);
 	void Exit();
-	void BeginFrame(const glm::mat4& view, const glm::mat4& proj);
+
+	struct BeginFrameInfo
+	{
+		glm::mat4 view;
+		glm::mat4 proj;
+
+		TextureHandle_t skybox_texture_handle;
+	};
+
+	void BeginFrame(const BeginFrameInfo& frame_info);
 	void RenderFrame();
 	void RenderUI();
 	void EndFrame();

@@ -808,6 +808,9 @@ namespace Vulkan
 		Image result;
 		result.image = vk_inst.swapchain.images[vk_inst.swapchain.current_image];
 		result.format = vk_inst.swapchain.format;
+		result.layout = VK_IMAGE_LAYOUT_UNDEFINED;
+		if (vk_inst.current_frame > VulkanInstance::MAX_FRAMES_IN_FLIGHT)
+			result.layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
 		return result;
 	}
@@ -1289,6 +1292,9 @@ namespace Vulkan
 
 	void CmdTransitionImageLayouts(VkCommandBuffer command_buffer, const std::vector<VkImageMemoryBarrier2>& image_barriers)
 	{
+		if (image_barriers.size() == 0)
+			return;
+
 		VkDependencyInfo dependency_info = {};
 		dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
 		dependency_info.imageMemoryBarrierCount = (uint32_t)image_barriers.size();
@@ -1432,7 +1438,7 @@ namespace Vulkan
 		rasterizer.rasterizerDiscardEnable = VK_FALSE;
 		rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
 		rasterizer.lineWidth = 1.0f;
-		rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+		rasterizer.cullMode = info.cull_mode;
 		rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 		rasterizer.depthBiasEnable = VK_FALSE;
 		rasterizer.depthBiasConstantFactor = 0.0f;
@@ -1450,9 +1456,9 @@ namespace Vulkan
 
 		VkPipelineDepthStencilStateCreateInfo depth_stencil = {};
 		depth_stencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-		depth_stencil.depthTestEnable = info.depth_enabled;
-		depth_stencil.depthWriteEnable = VK_TRUE;
-		depth_stencil.depthCompareOp = VK_COMPARE_OP_LESS;
+		depth_stencil.depthTestEnable = info.depth_test;
+		depth_stencil.depthWriteEnable = info.depth_write;
+		depth_stencil.depthCompareOp = info.depth_func;
 		depth_stencil.depthBoundsTestEnable = VK_FALSE;
 		depth_stencil.minDepthBounds = 0.0f;
 		depth_stencil.maxDepthBounds = 1.0f;

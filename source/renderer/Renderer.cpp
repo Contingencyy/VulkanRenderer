@@ -28,11 +28,11 @@
 namespace Renderer
 {
 
-#define BEGIN_PASS(pass, cmd_buffer, begin_info) pass.Begin(cmd_buffer, begin_info)
-#define END_PASS(pass, cmd_buffer) pass.End(cmd_buffer)
+#define BEGIN_PASS(cmd_buffer, pass, begin_info) pass.Begin(cmd_buffer, begin_info)
+#define END_PASS(cmd_buffer, pass) pass.End(cmd_buffer)
 
 	static constexpr uint32_t MAX_DRAW_LIST_ENTRIES = 10000;
-	static constexpr uint32_t IBL_HDR_CUBEMAP_RESOLUTION = 512;
+	static constexpr uint32_t IBL_HDR_CUBEMAP_RESOLUTION = 1024;
 	//static constexpr uint32_t IBL_IRRADIANCE_CUBEMAP_RESOLUTION = 64;
 
 	static constexpr std::array<glm::vec3, 8> UNIT_CUBE_VERTICES =
@@ -114,6 +114,7 @@ namespace Renderer
 		struct RenderPasses
 		{
 			// Frame render passes
+			RenderPass skybox{ RENDER_PASS_TYPE_GRAPHICS };
 			RenderPass lighting{ RENDER_PASS_TYPE_GRAPHICS };
 			RenderPass post_process{ RENDER_PASS_TYPE_COMPUTE };
 			
@@ -154,6 +155,8 @@ namespace Renderer
 		VkSampler default_sampler = VK_NULL_HANDLE;
 		Vulkan::Buffer unit_cube_vertex_buffer;
 		Vulkan::Buffer unit_cube_index_buffer;
+
+		TextureHandle_t skybox_texture_handle;
 		// TODO: Free reserved descriptors on Exit()
 		DescriptorAllocation reserved_sampler_descriptors;
 
@@ -409,8 +412,9 @@ namespace Renderer
 			Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, data->hdr_color_target->image);
 			data->reserved_storage_image_descriptors.WriteDescriptor(data->hdr_color_target->image, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL, RESERVED_DESCRIPTOR_STORAGE_IMAGE_HDR);
 
-			data->render_passes.lighting.SetAttachment(data->hdr_color_target->image, 0);
-			data->render_passes.post_process.SetAttachment(data->hdr_color_target->image, 0);
+			data->render_passes.skybox.SetAttachment(&data->hdr_color_target->image, 0);
+			data->render_passes.lighting.SetAttachment(&data->hdr_color_target->image, 0);
+			data->render_passes.post_process.SetAttachment(&data->hdr_color_target->image, 0);
 		}
 
 		// Create depth render target
@@ -432,7 +436,8 @@ namespace Renderer
 			);
 			Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_DEPTH_BIT, data->depth_target->image);
 
-			data->render_passes.lighting.SetAttachment(data->depth_target->image, 1);
+			data->render_passes.skybox.SetAttachment(&data->depth_target->image, 1);
+			data->render_passes.lighting.SetAttachment(&data->depth_target->image, 1);
 		}
 
 		// Create SDR render target
@@ -455,8 +460,8 @@ namespace Renderer
 			Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, data->sdr_color_target->image);
 			data->reserved_storage_image_descriptors.WriteDescriptor(data->sdr_color_target->image, VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL, RESERVED_DESCRIPTOR_STORAGE_IMAGE_SDR);
 
-			data->render_passes.post_process.SetAttachment(data->sdr_color_target->image, 1);
-			data->imgui.render_pass.SetAttachment(data->sdr_color_target->image, 0);
+			data->render_passes.post_process.SetAttachment(&data->sdr_color_target->image, 1);
+			data->imgui.render_pass.SetAttachment(&data->sdr_color_target->image, 0);
 		}
 	}
 
@@ -480,7 +485,7 @@ namespace Renderer
 			data->descriptor_buffer_sampler.GetDescriptorSetLayout()
 		};
 
-		// Lighting raster pass
+		// Skybox raster pass
 		{
 			std::vector<RenderPass::AttachmentInfo> attachment_infos(2);
 			attachment_infos[0].attachment_type = RenderPass::ATTACHMENT_TYPE_COLOR;
@@ -497,6 +502,54 @@ namespace Renderer
 			attachment_infos[1].store_op = VK_ATTACHMENT_STORE_OP_STORE;
 			attachment_infos[1].clear_value.depthStencil = { 1.0f, 0 };
 
+			data->render_passes.skybox.SetAttachmentInfos(attachment_infos);
+
+			std::vector<VkPushConstantRange> push_ranges(2);
+			push_ranges[0].size = sizeof(uint32_t);
+			push_ranges[0].offset = 0;
+			push_ranges[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+			push_ranges[1].size = 2 * sizeof(uint32_t);
+			push_ranges[1].offset = push_ranges[0].size;
+			push_ranges[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+			Vulkan::GraphicsPipelineInfo info = {};
+			info.input_bindings.resize(1);
+			info.input_bindings[0].binding = 0;
+			info.input_bindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+			info.input_bindings[0].stride = sizeof(glm::vec3);
+			info.input_attributes.resize(1);
+			info.input_attributes[0].binding = 0;
+			info.input_attributes[0].location = 0;
+			info.input_attributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+			info.input_attributes[0].offset = 0;
+			info.color_attachment_formats = data->render_passes.skybox.GetColorAttachmentFormats();
+			info.depth_stencil_attachment_format = data->render_passes.skybox.GetDepthStencilAttachmentFormat();
+			info.depth_test = true;
+			info.depth_write = false;
+			info.depth_func = VK_COMPARE_OP_LESS_OR_EQUAL;
+			info.cull_mode = VK_CULL_MODE_FRONT_BIT;
+			info.vs_path = "assets/shaders/Skybox.vert";
+			info.fs_path = "assets/shaders/Skybox.frag";
+
+			data->render_passes.skybox.Build(descriptor_set_layouts, push_ranges, info);
+		}
+
+		// Lighting raster pass
+		{
+			std::vector<RenderPass::AttachmentInfo> attachment_infos(2);
+			attachment_infos[0].attachment_type = RenderPass::ATTACHMENT_TYPE_COLOR;
+			attachment_infos[0].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+			attachment_infos[0].load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
+			attachment_infos[0].store_op = VK_ATTACHMENT_STORE_OP_STORE;
+
+			attachment_infos[1].attachment_type = RenderPass::ATTACHMENT_TYPE_DEPTH_STENCIL;
+			attachment_infos[1].format = VK_FORMAT_D32_SFLOAT;
+			attachment_infos[1].expected_layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+			attachment_infos[1].load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
+			attachment_infos[1].store_op = VK_ATTACHMENT_STORE_OP_STORE;
+
 			data->render_passes.lighting.SetAttachmentInfos(attachment_infos);
 
 			std::vector<VkPushConstantRange> push_ranges(1);
@@ -508,7 +561,9 @@ namespace Renderer
 			info.input_bindings = GetVertexBindingDescription();
 			info.input_attributes = GetVertexAttributeDescription();
 			info.color_attachment_formats = data->render_passes.lighting.GetColorAttachmentFormats();
-			info.depth_enabled = true;
+			info.depth_test = true;
+			info.depth_write = true;
+			info.depth_func = VK_COMPARE_OP_LESS;
 			info.depth_stencil_attachment_format = data->render_passes.lighting.GetDepthStencilAttachmentFormat();
 			info.vs_path = "assets/shaders/PbrLighting.vert";
 			info.fs_path = "assets/shaders/PbrLighting.frag";
@@ -584,8 +639,7 @@ namespace Renderer
 			info.input_attributes[0].location = 0;
 			info.input_attributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
 			info.input_attributes[0].offset = 0;
-			info.color_attachment_formats = data->render_passes.gen_irradiance_cube.GetColorAttachmentFormats();
-			info.depth_enabled = false;
+			info.color_attachment_formats = data->render_passes.gen_cubemap.GetColorAttachmentFormats();
 			info.vs_path = "assets/shaders/EquirectangularToCube.vert";
 			info.fs_path = "assets/shaders/EquirectangularToCube.frag";
 
@@ -622,7 +676,6 @@ namespace Renderer
 			info.input_attributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
 			info.input_attributes[0].offset = 0;
 			info.color_attachment_formats = data->render_passes.gen_irradiance_cube.GetColorAttachmentFormats();
-			info.depth_enabled = false;
 			info.vs_path = "assets/shaders/EquirectangularToCube.vert";
 			info.fs_path = "assets/shaders/IrradianceCube.frag";
 
@@ -734,7 +787,7 @@ namespace Renderer
 		push_consts.src_sampler_index = src_sampler_index;
 
 		VkCommandBuffer command_buffer = Vulkan::BeginImmediateCommand();
-		data->render_passes.gen_cubemap.SetAttachment(hdr_cubemap_render_target, 0);
+		data->render_passes.gen_cubemap.SetAttachment(&hdr_cubemap_render_target, 0);
 		Vulkan::CmdTransitionImageLayout(command_buffer,
 			hdr_cubemap_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 			hdr_cubemap_image.num_mips, 0, 0, hdr_cubemap_image.num_layers
@@ -749,7 +802,7 @@ namespace Renderer
 				begin_info.render_width = static_cast<float>(IBL_HDR_CUBEMAP_RESOLUTION) * std::pow(0.5f, mip);
 				begin_info.render_height = static_cast<float>(IBL_HDR_CUBEMAP_RESOLUTION) * std::pow(0.5f, mip);
 
-				BEGIN_PASS(data->render_passes.gen_cubemap, command_buffer, begin_info);
+				BEGIN_PASS(command_buffer, data->render_passes.gen_cubemap, begin_info);
 				{
 					viewport.width = begin_info.render_width;
 					viewport.height = begin_info.render_height;
@@ -769,7 +822,7 @@ namespace Renderer
 					vkCmdBindIndexBuffer(command_buffer, data->unit_cube_index_buffer.buffer, 0, VK_INDEX_TYPE_UINT16);
 					vkCmdDrawIndexed(command_buffer, data->unit_cube_index_buffer.size / sizeof(uint16_t), 1, 0, 0, 0);
 				}
-				END_PASS(data->render_passes.gen_cubemap, command_buffer);
+				END_PASS(command_buffer, data->render_passes.gen_cubemap);
 
 				// Copy offscreen render target to the current face
 				Vulkan::CmdTransitionImageLayout(command_buffer,
@@ -1004,7 +1057,7 @@ namespace Renderer
 		Vulkan::Exit();
 	}
 
-	void BeginFrame(const glm::mat4& view, const glm::mat4& proj)
+	void BeginFrame(const BeginFrameInfo& frame_info)
 	{
 		// Wait for completion of all rendering for the current swapchain image
 		VkCheckResult(vkWaitForFences(vk_inst.device, 1, &data->in_flight_fences[vk_inst.current_frame], VK_TRUE, UINT64_MAX));
@@ -1030,11 +1083,12 @@ namespace Renderer
 		ImGui::NewFrame();
 
 		CameraData ubo = {};
-		ubo.view = view;
-		ubo.proj = proj;
-		ubo.view_pos = glm::inverse(view)[3];
+		ubo.view = frame_info.view;
+		ubo.proj = frame_info.proj;
+		ubo.view_pos = glm::inverse(frame_info.view)[3];
 
 		memcpy(data->camera_uniform_buffers[vk_inst.current_frame].ptr, &ubo, sizeof(ubo));
+		data->skybox_texture_handle = frame_info.skybox_texture_handle;
 	}
 
 	void RenderFrame()
@@ -1045,28 +1099,67 @@ namespace Renderer
 		command_buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 		VkCheckResult(vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info));
 
-		// ----------------------------------------------------------------------------------------------------------------
-		// Lighting pass
-
+		// Render pass begin info
 		RenderPass::BeginInfo begin_info = {};
 		begin_info.render_width = vk_inst.swapchain.extent.width;
 		begin_info.render_height = vk_inst.swapchain.extent.height;
 
-		BEGIN_PASS(data->render_passes.lighting, command_buffer, begin_info);
+		// Viewport and scissor rect
+		VkViewport viewport = {};
+		viewport.x = 0.0f;
+		viewport.y = 0.0f;
+		viewport.width = static_cast<float>(begin_info.render_width);
+		viewport.height = static_cast<float>(begin_info.render_height);
+		viewport.minDepth = 0.0f;
+		viewport.maxDepth = 1.0f;
+
+		VkRect2D scissor = {};
+		scissor.offset = { 0, 0 };
+		scissor.extent = vk_inst.swapchain.extent;
+
+		// ----------------------------------------------------------------------------------------------------------------
+		// Skybox pass
+
+		BEGIN_PASS(command_buffer, data->render_passes.skybox, begin_info);
+		{
+			vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+			vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+
+			struct PushConsts
+			{
+				uint32_t camera_ubo_index;
+				uint32_t env_texture_index;
+				uint32_t env_sampler_index;
+			} push_consts;
+
+			TextureResource* skybox_texture = data->texture_slotmap.Find(data->skybox_texture_handle);
+			VK_ASSERT(skybox_texture);
+
+			push_consts.camera_ubo_index = RESERVED_DESCRIPTOR_UNIFORM_BUFFER_CAMERA * VulkanInstance::MAX_FRAMES_IN_FLIGHT + vk_inst.current_frame;
+			push_consts.env_texture_index = skybox_texture->descriptor.GetIndex();
+			push_consts.env_sampler_index = 0;
+
+			data->render_passes.skybox.PushConstants(command_buffer, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(uint32_t), &push_consts);
+			data->render_passes.skybox.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(uint32_t), 2 * sizeof(uint32_t), &push_consts.env_texture_index);
+
+			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)data->descriptor_buffer_binding_infos.size(), data->descriptor_buffer_binding_infos.data());
+			data->render_passes.skybox.SetDescriptorBufferOffsets(command_buffer, 0, 5, &data->descriptor_buffer_indices[0], &data->descriptor_buffer_offsets[0]);
+			
+			VkDeviceSize vb_offset = 0;
+			vkCmdBindVertexBuffers(command_buffer, 0, 1, &data->unit_cube_vertex_buffer.buffer, &vb_offset);
+			vkCmdBindIndexBuffer(command_buffer, data->unit_cube_index_buffer.buffer, 0, VK_INDEX_TYPE_UINT16);
+			vkCmdDrawIndexed(command_buffer, data->unit_cube_index_buffer.size / sizeof(uint16_t), 1, 0, 0, 0);
+		}
+		END_PASS(command_buffer, data->render_passes.skybox);
+
+		// ----------------------------------------------------------------------------------------------------------------
+		// Lighting pass
+
+
+		BEGIN_PASS(command_buffer, data->render_passes.lighting, begin_info);
 		{
 			// Viewport and scissor
-			VkViewport viewport = {};
-			viewport.x = 0.0f;
-			viewport.y = 0.0f;
-			viewport.width = static_cast<float>(begin_info.render_width);
-			viewport.height = static_cast<float>(begin_info.render_height);
-			viewport.minDepth = 0.0f;
-			viewport.maxDepth = 1.0f;
 			vkCmdSetViewport(command_buffer, 0, 1, &viewport);
-
-			VkRect2D scissor = {};
-			scissor.offset = { 0, 0 };
-			scissor.extent = vk_inst.swapchain.extent;
 			vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
 			// Push constants
@@ -1115,12 +1208,12 @@ namespace Renderer
 				data->stats.total_triangle_count += (mesh->index_buffer.size / sizeof(uint32_t)) / 3;
 			}
 		}
-		END_PASS(data->render_passes.lighting, command_buffer);
+		END_PASS(command_buffer, data->render_passes.lighting);
 
 		// ----------------------------------------------------------------------------------------------------------------
 		// Post-process pass
 
-		BEGIN_PASS(data->render_passes.post_process, command_buffer, begin_info);
+		BEGIN_PASS(command_buffer, data->render_passes.post_process, begin_info);
 		{
 			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)data->descriptor_buffer_binding_infos.size(), data->descriptor_buffer_binding_infos.data());
 			data->render_passes.post_process.SetDescriptorBufferOffsets(command_buffer, 0, 5, &data->descriptor_buffer_indices[0], &data->descriptor_buffer_offsets[0]);
@@ -1131,7 +1224,7 @@ namespace Renderer
 			uint32_t dispatch_y = VK_ALIGN_POW2(begin_info.render_height, 8) / 8;
 			vkCmdDispatch(command_buffer, dispatch_x, dispatch_y, 1);
 		}
-		END_PASS(data->render_passes.post_process, command_buffer);
+		END_PASS(command_buffer, data->render_passes.post_process);
 	}
 
 	void RenderUI()
@@ -1153,12 +1246,12 @@ namespace Renderer
 		begin_info.render_width = vk_inst.swapchain.extent.width;
 		begin_info.render_height = vk_inst.swapchain.extent.height;
 
-		BEGIN_PASS(data->imgui.render_pass, command_buffer, begin_info);
+		BEGIN_PASS(command_buffer, data->imgui.render_pass, begin_info);
 		{
 			ImGui::Render();
 			ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer, nullptr);
 		}
-		END_PASS(data->imgui.render_pass, command_buffer);
+		END_PASS(command_buffer, data->imgui.render_pass);
 
 		// Copy final result to swapchain image
 		VkImageCopy copy_region = {};
@@ -1175,6 +1268,7 @@ namespace Renderer
 		copy_region.dstOffset = { 0, 0, 0 };
 		copy_region.extent = { vk_inst.swapchain.extent.width, vk_inst.swapchain.extent.height, 1 };
 
+		// FIX: Terrible hack
 		Vulkan::Image swapchain_image = Vulkan::SwapChainGetCurrentImage();
 		
 		std::vector<VkImageMemoryBarrier2> swapchain_copy_begin_transitions =
