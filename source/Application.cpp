@@ -117,7 +117,7 @@ namespace Application
 		Renderer::Init(data.window);
 
 		Assets::Init();
-		Assets::LoadTexture("assets/textures/hdr/Env_Plaza.hdr", "Env_Plaza", TextureFormat_RGBA32_SFLOAT, true, true);
+		Assets::LoadTexture("assets/textures/hdr/Env_Rocky_Hills.hdr", "Env_Plaza", TextureFormat_RGBA32_SFLOAT, true, true);
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatTest/ClearCoatTest.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatCarPaint/ClearCoatCarPaint.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/MetalRoughSpheres/MetalRoughSpheres.gltf", "model");

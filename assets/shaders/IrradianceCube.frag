@@ -25,16 +25,6 @@ layout(location = 0) in vec3 local_position;
 
 layout(location = 0) out vec4 out_color;
 
-const vec2 inv_atan = vec2(0.1591, 0.3183);
-vec2 SampleSpherical(vec3 dir)
-{
-	vec2 uv = vec2(atan(dir.z, dir.x), asin(dir.y));
-	uv *= inv_atan;
-	uv += 0.5;
-
-	return uv;
-}
-
 void main()
 {
 	// Using the local position as a direction for the cube map sample
@@ -55,9 +45,8 @@ void main()
 		{
 			vec3 temp = cos(phi) * right + sin(phi) * up;
 			vec3 sample_dir = cos(theta) * N + sin(theta) * temp;
-			vec2 uv = vec2(atan(sample_dir.x, sample_dir.z) / TWO_PI + 0.5, sample_dir.y * 0.5 + 0.5);
 			// Weighting the final result by sin(theta) to compensate for the hemisphere having smaller sample areas towards the top
-			irradiance += SampleTexture(push_constants.hdr_tex_idx, push_constants.hdr_samp_idx, uv).rgb * cos(theta) * sin(theta);
+			irradiance += SampleTextureCube(push_constants.hdr_tex_idx, push_constants.hdr_samp_idx, sample_dir).rgb * cos(theta) * sin(theta);
 			
 			num_samples++;
 		}
