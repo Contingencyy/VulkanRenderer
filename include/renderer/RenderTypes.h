@@ -39,10 +39,12 @@ static bool IsHDRFormat(TextureFormat format)
 struct TextureResource
 {
 	Vulkan::Image image;
+	Vulkan::ImageView view;
 	DescriptorAllocation descriptor;
 
 	~TextureResource()
 	{
+		Vulkan::DestroyImageView(view);
 		Vulkan::DestroyImage(image);
 		// TODO: Free descriptors
 	}

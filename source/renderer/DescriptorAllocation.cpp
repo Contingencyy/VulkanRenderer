@@ -50,10 +50,10 @@ void DescriptorAllocation::WriteDescriptor(const Vulkan::Buffer& buffer, VkDevic
 	}
 }
 
-void DescriptorAllocation::WriteDescriptor(const Vulkan::Image& image, VkImageLayout layout, uint32_t offset)
+void DescriptorAllocation::WriteDescriptor(const Vulkan::ImageView& view, VkImageLayout layout, uint32_t offset)
 {
 	VkDescriptorImageInfo image_info = {};
-	image_info.imageView = image.view;
+	image_info.imageView = view.view;
 	image_info.imageLayout = layout;
 	image_info.sampler = VK_NULL_HANDLE;
 

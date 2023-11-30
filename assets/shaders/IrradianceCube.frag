@@ -7,7 +7,7 @@
 
 	This shader generates the irradiance map for a given HDR environment map
 	Irradiance maps are used for diffuse IBL, we need to capture the irradiance coming
-	from all possible directions over the hemisphere for any given direction of the cube map
+	from all possible directions over the hemisphere for any given direction of the cube map (convolution)
 
 */
 
@@ -37,10 +37,6 @@ vec2 SampleSpherical(vec3 dir)
 
 void main()
 {
-//	vec2 uv = SampleSpherical(normalize(local_position));
-//	vec3 color = SampleTexture(push_constants.hdr_tex_idx, push_constants.hdr_samp_idx, uv).rgb;
-//	out_color = vec4(color, 1.0);
-
 	// Using the local position as a direction for the cube map sample
 	vec3 N = normalize(local_position);
 	vec3 up = vec3(0.0, 1.0, 0.0);
@@ -51,13 +47,16 @@ void main()
 	uint num_samples = 0;
 
 	// Take a set amount of samples for irradiance cube map
+	// Azimuth, two pi
 	for (float phi = 0.0; phi < TWO_PI; phi += push_constants.delta_phi)
 	{
+		// Zenith, half pi
 		for (float theta = 0.0; theta < HALF_PI; theta += push_constants.delta_theta)
 		{
 			vec3 temp = cos(phi) * right + sin(phi) * up;
 			vec3 sample_dir = cos(theta) * N + sin(theta) * temp;
 			vec2 uv = vec2(atan(sample_dir.x, sample_dir.z) / TWO_PI + 0.5, sample_dir.y * 0.5 + 0.5);
+			// Weighting the final result by sin(theta) to compensate for the hemisphere having smaller sample areas towards the top
 			irradiance += SampleTexture(push_constants.hdr_tex_idx, push_constants.hdr_samp_idx, uv).rgb * cos(theta) * sin(theta);
 			
 			num_samples++;

@@ -803,18 +803,6 @@ namespace Vulkan
 		return false;
 	}
 
-	Image SwapChainGetCurrentImage()
-	{
-		Image result;
-		result.image = vk_inst.swapchain.images[vk_inst.swapchain.current_image];
-		result.format = vk_inst.swapchain.format;
-		result.layout = VK_IMAGE_LAYOUT_UNDEFINED;
-		if (vk_inst.current_frame > VulkanInstance::MAX_FRAMES_IN_FLIGHT)
-			result.layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-		return result;
-	}
-
 	bool SwapChainPresent(const std::vector<VkSemaphore>& signal_semaphores)
 	{
 		VkPresentInfoKHR present_info = {};
@@ -968,11 +956,7 @@ namespace Vulkan
 		image_info.flags = create_flags;
 
 		image = {};
-		image.width = width;
-		image.height = height;
 		image.format = format;
-		image.num_mips = num_mips;
-		image.num_layers = array_layers;
 		VkCheckResult(vkCreateImage(vk_inst.device, &image_info, nullptr, &image.image));
 
 		VkMemoryRequirements mem_requirements = {};
@@ -992,21 +976,27 @@ namespace Vulkan
 		CreateImage(width, height, format, tiling, usage, memory_flags, image, num_mips, 6, VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT);
 	}
 
-	void CreateImageView(VkImageViewType view_type, VkImageAspectFlags aspect_flags, Image& image)
+	void CreateImageView(VkImageViewType view_type, VkImageAspectFlags aspect_flags, Image* image, ImageView& view,
+		uint32_t base_mip, uint32_t num_mips, uint32_t base_layer, uint32_t num_layers)
 	{
 		VkImageViewCreateInfo view_info = {};
 		view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-		view_info.image = image.image;
+		view_info.image = image->image;
 		view_info.viewType = view_type;
-		view_info.format = image.format;
+		view_info.format = image->format;
 		view_info.subresourceRange.aspectMask = aspect_flags;
-		view_info.subresourceRange.baseMipLevel = 0;
-		view_info.subresourceRange.levelCount = image.num_layers;
-		view_info.subresourceRange.baseArrayLayer = 0;
-		view_info.subresourceRange.layerCount = image.num_layers;
+		view_info.subresourceRange.baseMipLevel = base_mip;
+		view_info.subresourceRange.levelCount = num_mips;
+		view_info.subresourceRange.baseArrayLayer = base_layer;
+		view_info.subresourceRange.layerCount = num_layers;
 
-		image.view_type = view_type;
-		VkCheckResult(vkCreateImageView(vk_inst.device, &view_info, nullptr, &image.view));
+		view.image = image;
+		view.view_type = view_type;
+		view.base_mip = base_mip;
+		view.num_mips = num_mips;
+		view.base_layer = base_layer;
+		view.num_layers = num_layers;
+		VkCheckResult(vkCreateImageView(vk_inst.device, &view_info, nullptr, &view.view));
 	}
 
 	void GenerateMips(uint32_t width, uint32_t height, uint32_t num_mips, VkFormat format, Image& image)
@@ -1104,9 +1094,13 @@ namespace Vulkan
 
 	void DestroyImage(const Image& image)
 	{
-		vkDestroyImageView(vk_inst.device, image.view, nullptr);
 		vkDestroyImage(vk_inst.device, image.image, nullptr);
 		vkFreeMemory(vk_inst.device, image.memory, nullptr);
+	}
+
+	void DestroyImageView(const ImageView& view)
+	{
+		vkDestroyImageView(vk_inst.device, view.view, nullptr);
 	}
 
 	void CopyBufferToImage(const Buffer& src_buffer, const Image& dst_image, uint32_t width, uint32_t height, VkDeviceSize src_offset)
@@ -1237,25 +1231,25 @@ namespace Vulkan
 		EndImmediateCommand(command_buffer);
 	}
 
-	VkImageMemoryBarrier2 ImageMemoryBarrier(Image& image, VkImageLayout new_layout,
-		uint32_t num_mips, uint32_t base_mip_level, uint32_t base_array_layer, uint32_t layer_count)
+	VkImageMemoryBarrier2 ImageMemoryBarrier(ImageView& view, VkImageLayout new_layout,
+		uint32_t base_mip_level, uint32_t num_mips, uint32_t base_array_layer, uint32_t layer_count)
 	{
 		VkImageMemoryBarrier2 image_memory_barrier = {};
 		image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-		image_memory_barrier.image = image.image;
-		image_memory_barrier.oldLayout = image.layout;
+		image_memory_barrier.image = view.image->image;
+		image_memory_barrier.oldLayout = view.layout;
 		image_memory_barrier.newLayout = new_layout;
 
 		image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 
-		GetImageLayoutAccessAndStageFlags(image.layout, image_memory_barrier.srcAccessMask, image_memory_barrier.srcStageMask);
+		GetImageLayoutAccessAndStageFlags(view.layout, image_memory_barrier.srcAccessMask, image_memory_barrier.srcStageMask);
 		GetImageLayoutAccessAndStageFlags(new_layout, image_memory_barrier.dstAccessMask, image_memory_barrier.dstStageMask);
 
 		if (new_layout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL || new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
 		{
 			image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-			if (HasStencilComponent(image.format))
+			if (HasStencilComponent(view.image->format))
 			{
 				image_memory_barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
 			}
@@ -1272,14 +1266,13 @@ namespace Vulkan
 
 		// TODO: This smells bad, we are updating the images layout even though we haven't actually issued a pipeline barrier to be executed
 		// Probably having a resource tracker a la DX12 will do the trick here (hashmap with the VkImage pointer being the key)
-		image.layout = new_layout;
+		view.layout = new_layout;
 		return image_memory_barrier;
 	}
 
-	void CmdTransitionImageLayout(VkCommandBuffer command_buffer, Image& image, VkImageLayout new_layout,
-		uint32_t num_mips, uint32_t base_mip_level, uint32_t base_array_layer, uint32_t layer_count)
+	void CmdTransitionImageLayout(VkCommandBuffer command_buffer, ImageView& view, VkImageLayout new_layout)
 	{
-		VkImageMemoryBarrier2 barrier = ImageMemoryBarrier(image, new_layout, num_mips, base_mip_level, base_array_layer, layer_count);
+		VkImageMemoryBarrier2 barrier = ImageMemoryBarrier(view, new_layout, view.base_mip, view.num_mips, view.base_layer, view.num_layers);
 
 		VkDependencyInfo dependency_info = {};
 		dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -1304,10 +1297,10 @@ namespace Vulkan
 		vkCmdPipelineBarrier2(command_buffer, &dependency_info);
 	}
 
-	void TransitionImageLayoutImmediate(Image& image, VkImageLayout new_layout, uint32_t num_mips)
+	void TransitionImageLayoutImmediate(ImageView& view, VkImageLayout new_layout, uint32_t num_mips)
 	{
 		VkCommandBuffer command_buffer = BeginImmediateCommand();
-		CmdTransitionImageLayout(command_buffer, image, new_layout, num_mips);
+		CmdTransitionImageLayout(command_buffer, view, new_layout);
 		EndImmediateCommand(command_buffer);
 	}
 	

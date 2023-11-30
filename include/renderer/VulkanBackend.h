@@ -26,24 +26,27 @@ namespace Vulkan
 	struct Image
 	{
 		VkImage image = VK_NULL_HANDLE;
-		VkImageView view = VK_NULL_HANDLE;
 		VkDeviceMemory memory = VK_NULL_HANDLE;
 		VkFormat format = VK_FORMAT_UNDEFINED;
+	};
+
+	struct ImageView
+	{
+		Image* image = nullptr;
+		VkImageView view = VK_NULL_HANDLE;
+		VkImageViewType view_type = VK_IMAGE_VIEW_TYPE_2D;
 		VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
 
-		uint32_t width = 0;
-		uint32_t height = 0;
-
+		uint32_t base_mip = 0;
 		uint32_t num_mips = 1;
+		uint32_t base_layer = 0;
 		uint32_t num_layers = 1;
-		VkImageViewType view_type = VK_IMAGE_VIEW_TYPE_2D;
 	};
 
 	void Init(::GLFWwindow* window);
 	void Exit();
 	
 	bool SwapChainAcquireNextImage();
-	Image SwapChainGetCurrentImage();
 	bool SwapChainPresent(const std::vector<VkSemaphore>& signal_semaphores);
 	void RecreateSwapChain();
 
@@ -63,10 +66,12 @@ namespace Vulkan
 		VkMemoryPropertyFlags memory_flags, Image& image, uint32_t num_mips = 1, uint32_t array_layers = 1, VkImageCreateFlags create_flags = 0);
 	void CreateImageCube(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
 		VkMemoryPropertyFlags memory_flags, Image& image, uint32_t num_mips = 1);
-	void CreateImageView(VkImageViewType view_type, VkImageAspectFlags aspect_flags, Image& image);
+	void CreateImageView(VkImageViewType view_type, VkImageAspectFlags aspect_flags, Image* image, ImageView& view,
+		uint32_t base_mip = 0, uint32_t num_mips = 1, uint32_t base_layer = 0, uint32_t num_layers = 1);
 	void GenerateMips(uint32_t width, uint32_t height, uint32_t num_mips, VkFormat format, Image& image);
 
 	void DestroyImage(const Image& image);
+	void DestroyImageView(const ImageView& view);
 
 	void CopyBufferToImage(const Buffer& src_buffer, const Image& dst_image, uint32_t width, uint32_t height, VkDeviceSize src_offset = 0);
 
@@ -81,12 +86,11 @@ namespace Vulkan
 	void CmdBufferMemoryBarriers(VkCommandBuffer command_buffer, const std::vector<VkBufferMemoryBarrier2>& buffer_barriers);
 	void BufferMemoryBarrierImmediate(Buffer& buffer, VkAccessFlags2 src_access, VkPipelineStageFlags2 src_stage, VkAccessFlags2 dst_access, VkPipelineStageFlags2 dst_stage);
 
-	VkImageMemoryBarrier2 ImageMemoryBarrier(Image& image, VkImageLayout new_layout,
-		uint32_t num_mips = 1, uint32_t base_mip_level = 0, uint32_t base_array_layer = 0, uint32_t layer_count = 1);
-	void CmdTransitionImageLayout(VkCommandBuffer command_buffer, Image& image, VkImageLayout new_layout,
-		uint32_t num_mips = 1, uint32_t base_mip_level = 0, uint32_t base_array_layer = 0, uint32_t layer_count = 1);
+	VkImageMemoryBarrier2 ImageMemoryBarrier(ImageView& view, VkImageLayout new_layout,
+		uint32_t base_mip_level = 0, uint32_t num_mips = 1, uint32_t base_array_layer = 0, uint32_t layer_count = 1);
+	void CmdTransitionImageLayout(VkCommandBuffer command_buffer, ImageView& view, VkImageLayout new_layout);
 	void CmdTransitionImageLayouts(VkCommandBuffer command_buffer, const std::vector<VkImageMemoryBarrier2>& image_barriers);
-	void TransitionImageLayoutImmediate(Image& image, VkImageLayout new_layout, uint32_t num_mips = 1);
+	void TransitionImageLayoutImmediate(ImageView& view, VkImageLayout new_layout, uint32_t num_mips = 1);
 
 	VkMemoryBarrier2 MemoryBarrier(VkAccessFlags2 src_access, VkPipelineStageFlags2 src_stage, VkAccessFlags2 dst_access, VkPipelineStageFlags2 dst_stage);
 	void CmdMemoryBarrier(VkCommandBuffer command_buffer, const VkMemoryBarrier2& memory_barrier);

@@ -5,7 +5,7 @@
 namespace Vulkan
 {
 	struct Buffer;
-	struct Image;
+	struct ImageView;
 }
 
 class DescriptorAllocation
@@ -18,7 +18,7 @@ public:
 	uint32_t GetIndex(uint32_t offset = 0);
 
 	void WriteDescriptor(const Vulkan::Buffer& buffer, VkDeviceSize size, uint32_t offset = 0);
-	void WriteDescriptor(const Vulkan::Image& image, VkImageLayout layout, uint32_t offset = 0);
+	void WriteDescriptor(const Vulkan::ImageView& view, VkImageLayout layout, uint32_t offset = 0);
 	void WriteDescriptor(const VkSampler sampler, uint32_t offset = 0);
 
 	bool IsNull();

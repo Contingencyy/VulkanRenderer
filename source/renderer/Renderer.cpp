@@ -33,7 +33,7 @@ namespace Renderer
 
 	static constexpr uint32_t MAX_DRAW_LIST_ENTRIES = 10000;
 	static constexpr uint32_t IBL_HDR_CUBEMAP_RESOLUTION = 1024;
-	//static constexpr uint32_t IBL_IRRADIANCE_CUBEMAP_RESOLUTION = 64;
+	static constexpr uint32_t IBL_IRRADIANCE_CUBEMAP_RESOLUTION = 64;
 
 	static constexpr std::array<glm::vec3, 8> UNIT_CUBE_VERTICES =
 	{
@@ -123,12 +123,15 @@ namespace Renderer
 			RenderPass gen_irradiance_cube{ RENDER_PASS_TYPE_GRAPHICS };
 		} render_passes;
 
-		TextureHandle_t hdr_color_target_handle;
-		TextureResource* hdr_color_target = nullptr;
-		TextureHandle_t depth_target_handle;
-		TextureResource* depth_target = nullptr;
-		TextureHandle_t sdr_color_target_handle;
-		TextureResource* sdr_color_target = nullptr;
+		struct RenderTargets
+		{
+			TextureHandle_t hdr_handle;
+			TextureResource* hdr = nullptr;
+			TextureHandle_t depth_handle;
+			TextureResource* depth = nullptr;
+			TextureHandle_t sdr_handle;
+			TextureResource* sdr = nullptr;
+		} render_targets;
 
 		DescriptorAllocation reserved_storage_image_descriptors;
 
@@ -395,11 +398,11 @@ namespace Renderer
 	{
 		// Create HDR render target
 		{
-			if (!data->hdr_color_target)
+			if (!data->render_targets.hdr)
 			{
 				ResourceSlotmap<TextureResource>::ReservedResource reserved = data->texture_slotmap.Reserve();
-				data->hdr_color_target_handle = reserved.handle;
-				data->hdr_color_target = reserved.resource;
+				data->render_targets.hdr_handle = reserved.handle;
+				data->render_targets.hdr = reserved.resource;
 			}
 
 			Vulkan::CreateImage(
@@ -407,23 +410,23 @@ namespace Renderer
 				VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_TILING_OPTIMAL,
 				VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
 				VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-				data->hdr_color_target->image
+				data->render_targets.hdr->image
 			);
-			Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, data->hdr_color_target->image);
-			data->reserved_storage_image_descriptors.WriteDescriptor(data->hdr_color_target->image, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL, RESERVED_DESCRIPTOR_STORAGE_IMAGE_HDR);
+			Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, &data->render_targets.hdr->image, data->render_targets.hdr->view);
+			data->reserved_storage_image_descriptors.WriteDescriptor(data->render_targets.hdr->view, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL, RESERVED_DESCRIPTOR_STORAGE_IMAGE_HDR);
 
-			data->render_passes.skybox.SetAttachment(&data->hdr_color_target->image, 0);
-			data->render_passes.lighting.SetAttachment(&data->hdr_color_target->image, 0);
-			data->render_passes.post_process.SetAttachment(&data->hdr_color_target->image, 0);
+			data->render_passes.skybox.SetAttachment(data->render_targets.hdr->view, 0);
+			data->render_passes.lighting.SetAttachment(data->render_targets.hdr->view, 0);
+			data->render_passes.post_process.SetAttachment(data->render_targets.hdr->view, 0);
 		}
 
 		// Create depth render target
 		{
-			if (!data->depth_target)
+			if (!data->render_targets.depth)
 			{
 				ResourceSlotmap<TextureResource>::ReservedResource reserved = data->texture_slotmap.Reserve();
-				data->depth_target_handle = reserved.handle;
-				data->depth_target = reserved.resource;
+				data->render_targets.depth_handle = reserved.handle;
+				data->render_targets.depth = reserved.resource;
 			}
 
 			Vulkan::CreateImage(
@@ -432,21 +435,21 @@ namespace Renderer
 				VK_IMAGE_TILING_OPTIMAL,
 				VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
 				VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-				data->depth_target->image
+				data->render_targets.depth->image
 			);
-			Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_DEPTH_BIT, data->depth_target->image);
+			Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_DEPTH_BIT, &data->render_targets.depth->image, data->render_targets.depth->view);
 
-			data->render_passes.skybox.SetAttachment(&data->depth_target->image, 1);
-			data->render_passes.lighting.SetAttachment(&data->depth_target->image, 1);
+			data->render_passes.skybox.SetAttachment(data->render_targets.depth->view, 1);
+			data->render_passes.lighting.SetAttachment(data->render_targets.depth->view, 1);
 		}
 
 		// Create SDR render target
 		{
-			if (!data->sdr_color_target)
+			if (!data->render_targets.sdr)
 			{
 				ResourceSlotmap<TextureResource>::ReservedResource reserved = data->texture_slotmap.Reserve();
-				data->sdr_color_target_handle = reserved.handle;
-				data->sdr_color_target = reserved.resource;
+				data->render_targets.sdr_handle = reserved.handle;
+				data->render_targets.sdr = reserved.resource;
 			}
 
 			Vulkan::CreateImage(
@@ -455,21 +458,26 @@ namespace Renderer
 				VK_IMAGE_TILING_OPTIMAL,
 				VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
 				VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-				data->sdr_color_target->image
+				data->render_targets.sdr->image
 			);
-			Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, data->sdr_color_target->image);
-			data->reserved_storage_image_descriptors.WriteDescriptor(data->sdr_color_target->image, VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL, RESERVED_DESCRIPTOR_STORAGE_IMAGE_SDR);
+			Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, &data->render_targets.sdr->image, data->render_targets.sdr->view);
+			data->reserved_storage_image_descriptors.WriteDescriptor(data->render_targets.sdr->view, VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL, RESERVED_DESCRIPTOR_STORAGE_IMAGE_SDR);
 
-			data->render_passes.post_process.SetAttachment(&data->sdr_color_target->image, 1);
-			data->imgui.render_pass.SetAttachment(&data->sdr_color_target->image, 0);
+			data->render_passes.post_process.SetAttachment(data->render_targets.sdr->view, 1);
+			data->imgui.render_pass.SetAttachment(data->render_targets.sdr->view, 0);
 		}
 	}
 
 	static void DestroyRenderTargets()
 	{
-		Vulkan::DestroyImage(data->hdr_color_target->image);
-		Vulkan::DestroyImage(data->depth_target->image);
-		Vulkan::DestroyImage(data->sdr_color_target->image);
+		Vulkan::DestroyImageView(data->render_targets.hdr->view);
+		Vulkan::DestroyImage(data->render_targets.hdr->image);
+
+		Vulkan::DestroyImageView(data->render_targets.depth->view);
+		Vulkan::DestroyImage(data->render_targets.depth->image);
+
+		Vulkan::DestroyImageView(data->render_targets.sdr->view);
+		Vulkan::DestroyImage(data->render_targets.sdr->image);
 	}
 
 	static void CreateRenderPasses()
@@ -717,7 +725,7 @@ namespace Renderer
 		init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
 		init_info.Allocator = nullptr;
 		init_info.UseDynamicRendering = true;
-		init_info.ColorAttachmentFormat = data->sdr_color_target->image.format;
+		init_info.ColorAttachmentFormat = data->render_targets.sdr->image.format;
 		init_info.CheckVkResultFn = VkCheckResult;
 		ImGui_ImplVulkan_Init(&init_info, nullptr);
 
@@ -737,21 +745,17 @@ namespace Renderer
 		vkDestroyDescriptorPool(vk_inst.device, data->imgui.descriptor_pool, nullptr);
 	}
 
-	static Vulkan::Image GenerateCubeMapFromEquirectangular(const Vulkan::Image& src_image, uint32_t src_texture_index, uint32_t src_sampler_index)
+	static void GenerateCubeMapFromEquirectangular(const Vulkan::Image& src_image, uint32_t src_texture_index, uint32_t src_sampler_index, Vulkan::Image& cubemap_image, Vulkan::ImageView& cubemap_view)
 	{
+		// TODO: Render to cubemap faces directly
+		// Needs to create temporary image views for the current cubemap face and set it to the attachment for the current render pass
+		// Also needs to create an image view for the final cubemap as a cubemap
+
 		// Create hdr environment cubemap
-		Vulkan::Image hdr_cubemap_image;
 		uint32_t num_cube_mips = (uint32_t)std::floor(std::log2(std::max(IBL_HDR_CUBEMAP_RESOLUTION, IBL_HDR_CUBEMAP_RESOLUTION))) + 1;
 		Vulkan::CreateImageCube(IBL_HDR_CUBEMAP_RESOLUTION, IBL_HDR_CUBEMAP_RESOLUTION, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_TILING_OPTIMAL,
-			VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, hdr_cubemap_image, num_cube_mips);
-		Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_CUBE, VK_IMAGE_ASPECT_COLOR_BIT, hdr_cubemap_image);
-
-		// Create temporary render target
-		// TODO: This render target could be created once when the pass is created
-		Vulkan::Image hdr_cubemap_render_target;
-		Vulkan::CreateImage(IBL_HDR_CUBEMAP_RESOLUTION, IBL_HDR_CUBEMAP_RESOLUTION, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_TILING_OPTIMAL,
-			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, hdr_cubemap_render_target);
-		Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, hdr_cubemap_render_target);
+			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, cubemap_image, num_cube_mips);
+		Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_CUBE, VK_IMAGE_ASPECT_COLOR_BIT, &cubemap_image, cubemap_view, 0, num_cube_mips, 0, 6);
 
 		// Render all 6 faces of the cube map using 6 different camera view matrices
 		VkViewport viewport = {};
@@ -787,11 +791,6 @@ namespace Renderer
 		push_consts.src_sampler_index = src_sampler_index;
 
 		VkCommandBuffer command_buffer = Vulkan::BeginImmediateCommand();
-		data->render_passes.gen_cubemap.SetAttachment(&hdr_cubemap_render_target, 0);
-		Vulkan::CmdTransitionImageLayout(command_buffer,
-			hdr_cubemap_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-			hdr_cubemap_image.num_mips, 0, 0, hdr_cubemap_image.num_layers
-		);
 
 		for (uint32_t mip = 0; mip < num_cube_mips; ++mip)
 		{
@@ -801,6 +800,10 @@ namespace Renderer
 				RenderPass::BeginInfo begin_info = {};
 				begin_info.render_width = static_cast<float>(IBL_HDR_CUBEMAP_RESOLUTION) * std::pow(0.5f, mip);
 				begin_info.render_height = static_cast<float>(IBL_HDR_CUBEMAP_RESOLUTION) * std::pow(0.5f, mip);
+
+				Vulkan::ImageView attachment_view;
+				Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, &cubemap_image, attachment_view, mip, 1, face, 1);
+				data->render_passes.gen_cubemap.SetAttachment(attachment_view, 0);
 
 				BEGIN_PASS(command_buffer, data->render_passes.gen_cubemap, begin_info);
 				{
@@ -823,45 +826,14 @@ namespace Renderer
 					vkCmdDrawIndexed(command_buffer, data->unit_cube_index_buffer.size / sizeof(uint16_t), 1, 0, 0, 0);
 				}
 				END_PASS(command_buffer, data->render_passes.gen_cubemap);
-
-				// Copy offscreen render target to the current face
-				Vulkan::CmdTransitionImageLayout(command_buffer,
-					hdr_cubemap_render_target, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
-				);
-
-				VkImageCopy copy_region = {};
-				copy_region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-				copy_region.srcSubresource.mipLevel = 0;
-				copy_region.srcSubresource.baseArrayLayer = 0;
-				copy_region.srcSubresource.layerCount = 1;
-				copy_region.srcOffset = { 0, 0, 0 };
-
-				copy_region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-				copy_region.dstSubresource.mipLevel = mip;
-				copy_region.dstSubresource.baseArrayLayer = face;
-				copy_region.dstSubresource.layerCount = 1;
-				copy_region.dstOffset = { 0, 0, 0 };
-
-				copy_region.extent.width = static_cast<uint32_t>(viewport.width);
-				copy_region.extent.height = static_cast<uint32_t>(viewport.height);
-				copy_region.extent.depth = 1;
-
-				vkCmdCopyImage(command_buffer,
-					hdr_cubemap_render_target.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-					hdr_cubemap_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-					1, &copy_region
-				);
 			}
 		}
 
 		Vulkan::CmdTransitionImageLayout(command_buffer,
-			hdr_cubemap_image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-			hdr_cubemap_image.num_mips, 0, 0, hdr_cubemap_image.num_layers
+			cubemap_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
 		);
-		Vulkan::EndImmediateCommand(command_buffer);
-		Vulkan::DestroyImage(hdr_cubemap_render_target);
 
-		return hdr_cubemap_image;
+		Vulkan::EndImmediateCommand(command_buffer);
 	}
 
 	//static Vulkan::Image GenerateIrradianceCube(uint32_t src_texture_index, uint32_t src_sampler_index)
@@ -1268,20 +1240,23 @@ namespace Renderer
 		copy_region.dstOffset = { 0, 0, 0 };
 		copy_region.extent = { vk_inst.swapchain.extent.width, vk_inst.swapchain.extent.height, 1 };
 
-		// FIX: Terrible hack
-		Vulkan::Image swapchain_image = Vulkan::SwapChainGetCurrentImage();
-		
+		// TODO: Fix this hack
+		Vulkan::Image swapchain_image;
+		Vulkan::ImageView swapchain_view;
+		swapchain_view.image = &swapchain_image;
+		swapchain_view.image->image = vk_inst.swapchain.images[vk_inst.swapchain.current_image];
+
 		std::vector<VkImageMemoryBarrier2> swapchain_copy_begin_transitions =
 		{
-			Vulkan::ImageMemoryBarrier(data->sdr_color_target->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL),
-			Vulkan::ImageMemoryBarrier(swapchain_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+			Vulkan::ImageMemoryBarrier(data->render_targets.sdr->view, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL),
+			Vulkan::ImageMemoryBarrier(swapchain_view, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
 		};
 		Vulkan::CmdTransitionImageLayouts(command_buffer, swapchain_copy_begin_transitions);
 
-		vkCmdCopyImage(command_buffer, data->sdr_color_target->image.image, data->sdr_color_target->image.layout,
-			swapchain_image.image, swapchain_image.layout, 1, &copy_region);
+		vkCmdCopyImage(command_buffer, data->render_targets.sdr->image.image, data->render_targets.sdr->view.layout,
+			swapchain_view.image->image, swapchain_view.layout, 1, &copy_region);
 
-		Vulkan::CmdTransitionImageLayout(command_buffer, swapchain_image, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+		Vulkan::CmdTransitionImageLayout(command_buffer, swapchain_view, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
 		VkCheckResult(vkEndCommandBuffer(command_buffer));
 
@@ -1333,7 +1308,8 @@ namespace Renderer
 		Vulkan::WriteBuffer(staging_buffer.ptr, (void*)args.pixels.data(), image_size);
 
 		// Create texture image
-		Vulkan::Image texture_image;
+		ResourceSlotmap<TextureResource>::ReservedResource reserved = data->texture_slotmap.Reserve();
+
 		uint32_t num_mips = 1;
 		if (args.generate_mips)
 		{
@@ -1341,41 +1317,43 @@ namespace Renderer
 		}
 
 		Vulkan::CreateImage(args.width, args.height, TEXTURE_FORMAT_TO_VK_FORMAT[args.format], VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-			VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, texture_image, num_mips);
-		Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, texture_image);
+			VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, reserved.resource->image, num_mips);
+		Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, &reserved.resource->image, reserved.resource->view, 0, num_mips, 0, 1);
 
 		// Copy staging buffer data into final texture image memory (device local)
-		Vulkan::TransitionImageLayoutImmediate(texture_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, num_mips);
-		Vulkan::CopyBufferToImage(staging_buffer, texture_image, args.width, args.height);
+		Vulkan::TransitionImageLayoutImmediate(reserved.resource->view, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, num_mips);
+		Vulkan::CopyBufferToImage(staging_buffer, reserved.resource->image, args.width, args.height);
 		
 		// Generate mips
 		if (num_mips > 1)
 		{
-			Vulkan::GenerateMips(args.width, args.height, num_mips, TEXTURE_FORMAT_TO_VK_FORMAT[args.format], texture_image);
+			Vulkan::GenerateMips(args.width, args.height, num_mips, TEXTURE_FORMAT_TO_VK_FORMAT[args.format], reserved.resource->image);
 		}
 
 		// Clean up staging buffer
 		Vulkan::DestroyBuffer(staging_buffer);
 
-		ResourceSlotmap<TextureResource>::ReservedResource reserved = data->texture_slotmap.Reserve();
-		reserved.resource->image = texture_image;
 
 		// Allocate and update image descriptor
 		reserved.resource->descriptor = data->descriptor_buffer_sampled_image.Allocate();
-		reserved.resource->descriptor.WriteDescriptor(reserved.resource->image, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
+		reserved.resource->descriptor.WriteDescriptor(reserved.resource->view, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
 
 		// Generate irradiance cube map for IBL
 		if (args.is_environment_map)
 		{
 			// TODO: Assumed always using the default sampler at index 0 for now
-			Vulkan::Image hdr_cubemap_image = GenerateCubeMapFromEquirectangular(reserved.resource->image, reserved.resource->descriptor.GetIndex(), 0);
+			Vulkan::Image cubemap_image;
+			Vulkan::ImageView cubemap_view;
+			GenerateCubeMapFromEquirectangular(reserved.resource->image, reserved.resource->descriptor.GetIndex(), 0, cubemap_image, cubemap_view);
 			//Vulkan::Image irradiance_map = GenerateIrradianceCube(reserved.resource->descriptor.GetIndex(), 0);
 
 			// Delete the original HDR texture, we don't need it anymore, and swap in the irradiance map
-			Vulkan::DestroyImage(texture_image);
+			Vulkan::DestroyImageView(reserved.resource->view);
+			Vulkan::DestroyImage(reserved.resource->image);
 
-			reserved.resource->image = hdr_cubemap_image;
-			reserved.resource->descriptor.WriteDescriptor(reserved.resource->image, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
+			reserved.resource->image = cubemap_image;
+			reserved.resource->view = cubemap_view;
+			reserved.resource->descriptor.WriteDescriptor(reserved.resource->view, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
 		}
 
 		return reserved.handle;
