@@ -13,7 +13,7 @@ layout(set = DESCRIPTOR_SET_UNIFORM_BUFFER, binding = 0) uniform Camera
 layout(std140, push_constant) uniform constants
 {
 	layout(offset = 0) uint camera_ubo_index;
-} push_constants;
+} push_consts;
 
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec2 tex_coord;
@@ -40,5 +40,5 @@ void main()
 	frag_tangent = normalize(frag_tangent - dot(frag_tangent, frag_normal) * frag_normal);
 	frag_bitangent = normalize(cross(frag_normal, frag_tangent)) * (-tangent.w);
 
-	gl_Position = g_camera[push_constants.camera_ubo_index].cam.proj * g_camera[push_constants.camera_ubo_index].cam.view * frag_pos;
+	gl_Position = g_camera[push_consts.camera_ubo_index].cam.proj * g_camera[push_consts.camera_ubo_index].cam.view * frag_pos;
 }

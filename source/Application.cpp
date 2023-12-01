@@ -117,7 +117,9 @@ namespace Application
 		Renderer::Init(data.window);
 
 		Assets::Init();
-		Assets::LoadTexture("assets/textures/hdr/Env_Rocky_Hills.hdr", "Env_Plaza", TextureFormat_RGBA32_SFLOAT, true, true);
+		//Assets::LoadTexture("assets/textures/hdr/Env_Plaza.hdr", "Env", TextureFormat_RGBA32_SFLOAT, true, true);
+		Assets::LoadTexture("assets/textures/hdr/Env_Rocky_Hills.hdr", "Env", TextureFormat_RGBA32_SFLOAT, true, true);
+		//Assets::LoadTexture("assets/textures/hdr/Env_Victorian_Hall.hdr", "Env", TextureFormat_RGBA32_SFLOAT, true, true);
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatTest/ClearCoatTest.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatCarPaint/ClearCoatCarPaint.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/MetalRoughSpheres/MetalRoughSpheres.gltf", "model");
@@ -127,8 +129,8 @@ namespace Application
 		glm::mat4 transform = glm::scale(glm::identity<glm::mat4>(), glm::vec3(10.0f));
 		SpawnModelEntity("model", transform);
 
-		data.active_scene.AddEntity<Pointlight>(vec3(25.0f, 0.0f, 50.0f), vec3(1.0f), 25.0f, "Pointlight1");
-		data.active_scene.AddEntity<Pointlight>(vec3(-25.0f, 0.0f, 50.0f), vec3(1.0f), 25.0f, "Pointlight2");
+		data.active_scene.AddEntity<Pointlight>(vec3(50.0f, 50.0f, -50.0f), vec3(1.0f), 25.0f, "Pointlight1");
+		data.active_scene.AddEntity<Pointlight>(vec3(-50.0f, 50.0f, 50.0f), vec3(1.0f), 25.0f, "Pointlight2");
 
 		data.is_running = true;
 	}
@@ -169,7 +171,7 @@ namespace Application
 		Renderer::BeginFrameInfo frame_info = {};
 		frame_info.view = data.active_scene.GetActiveCamera().GetView();
 		frame_info.proj = data.active_scene.GetActiveCamera().GetProjection();
-		frame_info.skybox_texture_handle = Assets::GetTexture("Env_Plaza");
+		frame_info.skybox_texture_handle = Assets::GetTexture("Env");
 		Renderer::BeginFrame(frame_info);
 
 		data.active_scene.Render();
