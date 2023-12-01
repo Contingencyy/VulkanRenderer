@@ -13,9 +13,6 @@ layout(set = DESCRIPTOR_SET_UNIFORM_BUFFER, binding = 0) uniform Camera
 layout(std140, push_constant) uniform constants
 {
 	layout(offset = 0) uint camera_ubo_index;
-	layout(offset = 4) uint light_ubo_index;
-	layout(offset = 8) uint num_light_sources;
-	layout(offset = 12) uint mat_index;
 } push_constants;
 
 layout(location = 0) in vec3 position;

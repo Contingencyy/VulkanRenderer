@@ -560,10 +560,14 @@ namespace Renderer
 
 			data->render_passes.lighting.SetAttachmentInfos(attachment_infos);
 
-			std::vector<VkPushConstantRange> push_ranges(1);
-			push_ranges[0].size = 4 * sizeof(uint32_t);
+			std::vector<VkPushConstantRange> push_ranges(2);
+			push_ranges[0].size = sizeof(uint32_t);
 			push_ranges[0].offset = 0;
-			push_ranges[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+			push_ranges[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+			push_ranges[1].size = 5 * sizeof(uint32_t);
+			push_ranges[1].offset = push_ranges[0].size;
+			push_ranges[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
 			Vulkan::GraphicsPipelineInfo info = {};
 			info.input_bindings = GetVertexBindingDescription();
@@ -1091,9 +1095,28 @@ namespace Renderer
 			vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
 			// Push constants
-			uint32_t ubo_indices[] = { RESERVED_DESCRIPTOR_UNIFORM_BUFFER_CAMERA * VulkanInstance::MAX_FRAMES_IN_FLIGHT + vk_inst.current_frame,
-				RESERVED_DESCRIPTOR_UNIFORM_BUFFER_LIGHT_SOURCES * VulkanInstance::MAX_FRAMES_IN_FLIGHT + vk_inst.current_frame, data->num_light_sources };
-			data->render_passes.lighting.PushConstants(command_buffer, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 3 * sizeof(uint32_t), ubo_indices);
+			struct PushConsts
+			{
+				uint32_t camera_ubo_index;
+				uint32_t irradiance_cubemap_index;
+				uint32_t light_ubo_index;
+				uint32_t num_light_sources;
+				uint32_t mat_index;
+			} push_consts;
+
+			TextureResource* irradiance_cubemap = data->texture_slotmap.Find(data->texture_slotmap.Find(data->skybox_texture_handle)->irradiance_cubemap_handle);
+			if (!irradiance_cubemap)
+			{
+				VK_EXCEPT("Renderer::RenderFrame", "HDR environment map is missing an irradiance cubemap");
+			}
+
+			push_consts.camera_ubo_index = RESERVED_DESCRIPTOR_UNIFORM_BUFFER_CAMERA * VulkanInstance::MAX_FRAMES_IN_FLIGHT + vk_inst.current_frame;
+			push_consts.irradiance_cubemap_index = irradiance_cubemap->descriptor.GetIndex();
+			push_consts.light_ubo_index = RESERVED_DESCRIPTOR_UNIFORM_BUFFER_LIGHT_SOURCES * VulkanInstance::MAX_FRAMES_IN_FLIGHT + vk_inst.current_frame;
+			push_consts.num_light_sources = data->num_light_sources;
+
+			data->render_passes.lighting.PushConstants(command_buffer, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(uint32_t), &push_consts);
+			data->render_passes.lighting.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 4, 4 * sizeof(uint32_t), &push_consts);
 
 			// Bind descriptor buffers
 			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)data->descriptor_buffer_binding_infos.size(), data->descriptor_buffer_binding_infos.data());
@@ -1121,7 +1144,7 @@ namespace Renderer
 				VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->normal_texture_handle));
 				VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->metallic_roughness_texture_handle));
 
-				data->render_passes.lighting.PushConstants(command_buffer, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 12, sizeof(uint32_t), &entry.material_handle.index);
+				data->render_passes.lighting.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 20, sizeof(uint32_t), &entry.material_handle.index);
 
 				// Vertex and index buffers
 				VkBuffer vertex_buffers[] = { mesh->vertex_buffer.buffer, instance_buffer.buffer };
@@ -1286,37 +1309,45 @@ namespace Renderer
 			Vulkan::GenerateMips(args.width, args.height, num_mips, TEXTURE_FORMAT_TO_VK_FORMAT[args.format], reserved.resource->image);
 		}
 
-		// Clean up staging buffer
-		Vulkan::DestroyBuffer(staging_buffer);
-
-
 		// Allocate and update image descriptor
 		reserved.resource->descriptor = data->descriptor_buffer_sampled_image.Allocate();
 		reserved.resource->descriptor.WriteDescriptor(reserved.resource->view, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
+
+		// Clean up staging buffer
+		Vulkan::DestroyBuffer(staging_buffer);
 
 		// Generate irradiance cube map for IBL
 		if (args.is_environment_map)
 		{
 			// TODO: Assumed always using the default sampler at index 0 for now
+			// Generate a cubemap from the equirectangular hdr environment map
 			Vulkan::Image cubemap_image;
 			Vulkan::ImageView cubemap_view;
 			GenerateCubeMapFromEquirectangular(reserved.resource->descriptor.GetIndex(), 0, cubemap_image, cubemap_view);
 
-			// Delete the original HDR texture, we don't need it anymore, and swap in the irradiance map
+			// Delete the original HDR texture, we don't need it anymore, and swap in the cubemap
 			Vulkan::DestroyImageView(reserved.resource->view);
 			Vulkan::DestroyImage(reserved.resource->image);
 
+			// Update the cubemap to the reserved resource
 			reserved.resource->image = cubemap_image;
 			reserved.resource->view = cubemap_view;
 			reserved.resource->descriptor.WriteDescriptor(reserved.resource->view, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
 
+			// Generate the irradiance cubemap from the hdr cubemap
 			Vulkan::Image irradiance_cubemap_image;
 			Vulkan::ImageView irradiance_cubemap_view;
 			GenerateIrradianceCube(reserved.resource->descriptor.GetIndex(), 0, irradiance_cubemap_image, irradiance_cubemap_view);
 
-			/*reserved.resource->image = irradiance_cubemap_image;
-			reserved.resource->view = irradiance_cubemap_view;
-			reserved.resource->descriptor.WriteDescriptor(reserved.resource->view, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);*/
+			// Reserve another resource for the irradiance cubemap
+			ResourceSlotmap<TextureResource>::ReservedResource reserved_secondary = data->texture_slotmap.Reserve();
+			reserved_secondary.resource->descriptor = data->descriptor_buffer_sampled_image.Allocate();
+			reserved_secondary.resource->image = irradiance_cubemap_image;
+			reserved_secondary.resource->view = irradiance_cubemap_view;
+			reserved_secondary.resource->descriptor.WriteDescriptor(reserved_secondary.resource->view, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
+
+			// Chain the irradiance cubemap to the primary hdr cubemap resource
+			reserved.resource->irradiance_cubemap_handle = reserved_secondary.handle;
 		}
 
 		return reserved.handle;
@@ -1324,6 +1355,12 @@ namespace Renderer
 
 	void DestroyTexture(TextureHandle_t handle)
 	{
+		TextureResource* secondary_texture = data->texture_slotmap.Find(data->texture_slotmap.Find(handle)->irradiance_cubemap_handle);
+		if (secondary_texture)
+		{
+			data->texture_slotmap.Delete(data->texture_slotmap.Find(handle)->irradiance_cubemap_handle);
+		}
+
 		data->texture_slotmap.Delete(handle);
 	}
 

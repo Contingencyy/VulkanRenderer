@@ -42,6 +42,10 @@ struct TextureResource
 	Vulkan::ImageView view;
 	DescriptorAllocation descriptor;
 
+	// TODO: Find a better solution for this, for now this is used for hdr environment maps and points to the
+	// irradiance map made from this hdr environment map
+	TextureHandle_t irradiance_cubemap_handle;
+
 	~TextureResource()
 	{
 		Vulkan::DestroyImageView(view);
