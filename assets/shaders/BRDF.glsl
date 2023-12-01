@@ -13,6 +13,11 @@ vec3 F_Schlick(float u, vec3 f0)
 	return f0 + (vec3(1.0f) - f0) * pow(1.0f - u, 5.0f);
 }
 
+float F_Schlick90(float u, float f0, float f90)
+{
+	return f0 + (f90 - f0) * pow(1.0f - u, 5.0f);
+}
+
 float V_SmithGGXCorrelated(float NoV, float NoL, float a)
 {
 	float a2 = a * a;
@@ -21,14 +26,14 @@ float V_SmithGGXCorrelated(float NoV, float NoL, float a)
     return 0.5 / (GGXV + GGXL);
 }
 
-float Fd_Lambert()
+float V_Kelemen(float LoH, float roughness)
 {
-	return 1.0f / PI;
+	return roughness / (LoH * LoH);
 }
 
-float F_Schlick90(float u, float f0, float f90)
+float Fd_Lambert()
 {
-	return f0 + (f90 - f0) * pow(1.0f - u, 5.0f);
+	return 1.0f * INV_PI;
 }
 
 float Fd_Burley(float NoV, float NoL, float LoH, float roughness)
@@ -64,11 +69,6 @@ void EvaluateBRDF(vec3 view_dir, vec3 H, float NoL, float LoH, vec3 base_color, 
 	}
 
 	brdf_diffuse = kD * base_color * Fd_Burley(NoV, NoL, LoH, roughness);
-}
-
-float V_Kelemen(float LoH, float roughness)
-{
-	return roughness / (LoH * LoH);
 }
 
 /*
