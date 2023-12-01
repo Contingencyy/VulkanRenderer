@@ -163,6 +163,14 @@ namespace Renderer
 		// TODO: Free reserved descriptors on Exit()
 		DescriptorAllocation reserved_sampler_descriptors;
 
+		struct Settings
+		{
+			struct Debug
+			{
+				uint32_t debug_render_mode;
+			} debug;
+		} settings;
+
 		struct Statistics
 		{
 			uint32_t total_vertex_count = 0;
@@ -463,6 +471,7 @@ namespace Renderer
 			Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, &data->render_targets.sdr->image, data->render_targets.sdr->view);
 			data->reserved_storage_image_descriptors.WriteDescriptor(data->render_targets.sdr->view, VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL, RESERVED_DESCRIPTOR_STORAGE_IMAGE_SDR);
 
+			data->render_passes.lighting.SetAttachment(data->render_targets.sdr->view, 2);
 			data->render_passes.post_process.SetAttachment(data->render_targets.sdr->view, 1);
 			data->imgui.render_pass.SetAttachment(data->render_targets.sdr->view, 0);
 		}
@@ -545,7 +554,7 @@ namespace Renderer
 
 		// Lighting raster pass
 		{
-			std::vector<RenderPass::AttachmentInfo> attachment_infos(2);
+			std::vector<RenderPass::AttachmentInfo> attachment_infos(3);
 			attachment_infos[0].attachment_type = RenderPass::ATTACHMENT_TYPE_COLOR;
 			attachment_infos[0].format = VK_FORMAT_R16G16B16A16_SFLOAT;
 			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -557,6 +566,13 @@ namespace Renderer
 			attachment_infos[1].expected_layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
 			attachment_infos[1].load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
 			attachment_infos[1].store_op = VK_ATTACHMENT_STORE_OP_STORE;
+
+			attachment_infos[2].attachment_type = RenderPass::ATTACHMENT_TYPE_COLOR;
+			attachment_infos[2].format = vk_inst.swapchain.format;
+			attachment_infos[2].expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+			attachment_infos[2].load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
+			attachment_infos[2].store_op = VK_ATTACHMENT_STORE_OP_STORE;
+			attachment_infos[2].clear_value = { 0.0f, 0.0f, 0.0f, 1.0f };
 
 			data->render_passes.lighting.SetAttachmentInfos(attachment_infos);
 
@@ -1164,18 +1180,21 @@ namespace Renderer
 		// ----------------------------------------------------------------------------------------------------------------
 		// Post-process pass
 
-		BEGIN_PASS(command_buffer, data->render_passes.post_process, begin_info);
+		if (data->settings.debug.debug_render_mode == DEBUG_RENDER_MODE_NONE)
 		{
-			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)data->descriptor_buffer_binding_infos.size(), data->descriptor_buffer_binding_infos.data());
-			data->render_passes.post_process.SetDescriptorBufferOffsets(command_buffer, 0, 5, &data->descriptor_buffer_indices[0], &data->descriptor_buffer_offsets[0]);
+			BEGIN_PASS(command_buffer, data->render_passes.post_process, begin_info);
+			{
+				vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)data->descriptor_buffer_binding_infos.size(), data->descriptor_buffer_binding_infos.data());
+				data->render_passes.post_process.SetDescriptorBufferOffsets(command_buffer, 0, 5, &data->descriptor_buffer_indices[0], &data->descriptor_buffer_offsets[0]);
 
-			uint32_t src_dst_indices[2] = { RESERVED_DESCRIPTOR_STORAGE_IMAGE_HDR, RESERVED_DESCRIPTOR_STORAGE_IMAGE_SDR };
-			data->render_passes.post_process.PushConstants(command_buffer, VK_SHADER_STAGE_COMPUTE_BIT, 0, 2 * sizeof(uint32_t), &src_dst_indices);
-			uint32_t dispatch_x = VK_ALIGN_POW2(begin_info.render_width, 8) / 8;
-			uint32_t dispatch_y = VK_ALIGN_POW2(begin_info.render_height, 8) / 8;
-			vkCmdDispatch(command_buffer, dispatch_x, dispatch_y, 1);
+				uint32_t src_dst_indices[2] = { RESERVED_DESCRIPTOR_STORAGE_IMAGE_HDR, RESERVED_DESCRIPTOR_STORAGE_IMAGE_SDR };
+				data->render_passes.post_process.PushConstants(command_buffer, VK_SHADER_STAGE_COMPUTE_BIT, 0, 2 * sizeof(uint32_t), &src_dst_indices);
+				uint32_t dispatch_x = VK_ALIGN_POW2(begin_info.render_width, 8) / 8;
+				uint32_t dispatch_y = VK_ALIGN_POW2(begin_info.render_height, 8) / 8;
+				vkCmdDispatch(command_buffer, dispatch_x, dispatch_y, 1);
+			}
+			END_PASS(command_buffer, data->render_passes.post_process);
 		}
-		END_PASS(command_buffer, data->render_passes.post_process);
 	}
 
 	void RenderUI()
@@ -1184,6 +1203,29 @@ namespace Renderer
 
 		ImGui::Text("Total vertex count: %u", data->stats.total_vertex_count);
 		ImGui::Text("Total triangle count: %u", data->stats.total_triangle_count);
+
+		ImGui::SetNextItemOpen(true, ImGuiCond_Once);
+		if (ImGui::CollapsingHeader("Debug"))
+		{
+			if (ImGui::BeginCombo("Debug render mode", DEBUG_RENDER_MODE_LABELS[data->settings.debug.debug_render_mode]))
+			{
+				for (uint32_t i = 0; i < DEBUG_RENDER_MODE_NUM_MODES; ++i)
+				{
+					bool is_selected = i == data->settings.debug.debug_render_mode;
+					if (ImGui::Selectable(DEBUG_RENDER_MODE_LABELS[i], is_selected))
+					{
+						data->settings.debug.debug_render_mode = i;
+					}
+
+					if (is_selected)
+					{
+						ImGui::SetItemDefaultFocus();
+					}
+				}
+
+				ImGui::EndCombo();
+			}
+		}
 
 		ImGui::End();
 	}

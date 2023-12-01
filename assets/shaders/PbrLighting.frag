@@ -36,6 +36,7 @@ layout(location = 3) in vec3 frag_tangent;
 layout(location = 4) in vec3 frag_bitangent;
 
 layout(location = 0) out vec4 out_color;
+layout(location = 1) out vec4 debug_color;
 
 vec3 FresnelSchlickRoughness(float u, vec3 f0, float roughness)
 {
@@ -58,7 +59,7 @@ vec3 EvaluateRadianceAtFragment(vec3 view_dir, vec3 frag_to_light, vec3 H, float
 	}
 
 	vec3 brdf_specular, brdf_diffuse;
-	EvaluateBRDF(view_dir, frag_to_light, H, NoL, LoH, frag_base_color, frag_normal, metalness, roughness, clearcoat, brdf_specular, brdf_diffuse);
+	EvaluateBRDF(view_dir, H, NoL, LoH, frag_base_color, frag_normal, metalness, roughness, clearcoat, brdf_specular, brdf_diffuse);
 	
 	return (brdf_diffuse + brdf_specular) * (1.0f - clearcoat_alpha * Fc) + clearcoat_alpha * brdf_clearcoat;
 	//return brdf_specular + brdf_diffuse;
@@ -100,10 +101,9 @@ vec3 CalculateLightingAtFragment(vec3 view_pos, vec3 view_dir, vec3 frag_base_co
 	vec3 kS = FresnelSchlickRoughness(max(dot(frag_normal, view_dir), 0.0), f0, roughness * roughness);
 	vec3 kD = 1.0 - kS;
 	vec3 indirect_diffuse = SampleTextureCube(push_consts.irradiance_cubemap_index, 0, frag_normal).rgb;
-	indirect_diffuse *= frag_base_color;
-	vec3 ambient = (kD * indirect_diffuse);
+	indirect_diffuse *= kD * frag_base_color;
 
-	color += ambient;
+	color += indirect_diffuse;
 
 	return color;
 }
@@ -136,6 +136,5 @@ void main()
 		clearcoat_alpha, clearcoat_roughness, clearcoat_normal
 	);
 	
-	out_color.xyz = color;
-	out_color.a = 1.0f;
+	out_color = vec4(color, 1.0);
 }

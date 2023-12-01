@@ -4,8 +4,8 @@
 float D_GGX(float NoH, float a)
 {
 	float a2 = a * a;
-	float f = (NoH * a2 - NoH) * NoH + 1.0f;
-	return a2 / (PI * f * f);
+    float f = (NoH * a2 - NoH) * NoH + 1.0;
+    return a2 / (PI * f * f);
 }
 
 vec3 F_Schlick(float u, vec3 f0)
@@ -16,9 +16,9 @@ vec3 F_Schlick(float u, vec3 f0)
 float V_SmithGGXCorrelated(float NoV, float NoL, float a)
 {
 	float a2 = a * a;
-	float GGXL = NoV * sqrt((-NoL * a2 + NoL) * NoL + a2);
-	float GGXV = NoL * sqrt((-NoV * a2 + NoV) * NoV + a2);
-	return 0.5f / (GGXV + GGXL);
+    float GGXL = NoV * sqrt((-NoL * a2 + NoL) * NoL + a2);
+    float GGXV = NoL * sqrt((-NoV * a2 + NoV) * NoV + a2);
+    return 0.5 / (GGXV + GGXL);
 }
 
 float Fd_Lambert()
@@ -39,7 +39,7 @@ float Fd_Burley(float NoV, float NoL, float LoH, float roughness)
 	return light_scatter * view_scatter * (1.0f / PI);
 }
 
-void EvaluateBRDF(vec3 view_dir, vec3 light_dir, vec3 H, float NoL, float LoH, vec3 base_color, vec3 normal, float metalness, float roughness, bool clearcoat, out vec3 brdf_specular, out vec3 brdf_diffuse)
+void EvaluateBRDF(vec3 view_dir, vec3 H, float NoL, float LoH, vec3 base_color, vec3 normal, float metalness, float roughness, bool clearcoat, out vec3 brdf_specular, out vec3 brdf_diffuse)
 {
 	// NOTE: f0 needs to be adjusted if clear coat is applied
 	vec3 f0 = vec3(0.04f);
@@ -50,15 +50,19 @@ void EvaluateBRDF(vec3 view_dir, vec3 light_dir, vec3 H, float NoL, float LoH, v
 
 	// Remapping of roughness to be visually more linear
 	roughness = roughness * roughness;
+	vec3 kD = vec3(1.0f);
 
-	float D = D_GGX(NoH, roughness);
-	vec3 F = F_Schlick(LoH, f0);
-	float V = V_SmithGGXCorrelated(NoV, NoL, roughness);
+	if (NoL > 0.0)
+	{
+		float D = D_GGX(NoH, roughness);
+		vec3 F = F_Schlick(LoH, f0);
+		float V = V_SmithGGXCorrelated(NoV, NoL, roughness);
 	
-	vec3 kD = 1.0f - F;
-	kD *= 1.0f - metalness;
+		kD -= F;
+		kD *= 1.0f - metalness;
+		brdf_specular = (D * V) * F;
+	}
 
-	brdf_specular = (D * V) * F;
 	brdf_diffuse = kD * base_color * Fd_Burley(NoV, NoL, LoH, roughness);
 }
 

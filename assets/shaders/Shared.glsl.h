@@ -30,20 +30,35 @@ const uint RESERVED_DESCRIPTOR_UNIFORM_BUFFER_LIGHT_SOURCES = 1;
 const uint RESERVED_DESCRIPTOR_STORAGE_BUFFER_COUNT = 1;
 const uint RESERVED_DESCRIPTOR_STORAGE_BUFFER_MATERIAL = 0;
 
-const uint RESERVED_DESCRIPTOR_STORAGE_IMAGE_COUNT = 2;
-const uint RESERVED_DESCRIPTOR_STORAGE_IMAGE_HDR = 0;
-const uint RESERVED_DESCRIPTOR_STORAGE_IMAGE_SDR = 1;
+const uint RESERVED_DESCRIPTOR_STORAGE_IMAGE_COUNT = 3;
+const uint RESERVED_DESCRIPTOR_STORAGE_IMAGE_DEBUG = 0;
+const uint RESERVED_DESCRIPTOR_STORAGE_IMAGE_HDR = 1;
+const uint RESERVED_DESCRIPTOR_STORAGE_IMAGE_SDR = 2;
 
 const uint MAX_UNIQUE_MATERIALS = 1000;
 const uint MAX_LIGHT_SOURCES = 100;
 
-// Debug render view modes
-//const uint DEBUG_VIEW_BASE_COLOR = 0;
-//const uint DEBUG_VIEW_NORMALS = 1;
-//const uint DEBUG_VIEW_METALLIC_ROUGHNESS = 2;
-//const uint DEBUG_VIEW_CLEARCOAT_ALPHA = 3;
-//const uint DEBUG_VIEW_CLEARCOAT_NORMALS = 4;
-//const uint DEBUG_VIEW_CLEARCOAT_ROUGHNESS = 5;
+// Debug render modes
+const uint DEBUG_RENDER_MODE_NONE = 0;
+const uint DEBUG_RENDER_MODE_BASE_COLOR = 1;
+const uint DEBUG_RENDER_MODE_NORMAL = 2;
+const uint DEBUG_RENDER_MODE_METALLIC_ROUGHNESS = 3;
+const uint DEBUG_RENDER_MODE_CLEARCOAT_ALPHA = 4;
+const uint DEBUG_RENDER_MODE_CLEARCOAT_NORMAL = 5;
+const uint DEBUG_RENDER_MODE_CLEARCOAT_ROUGHNESS = 6;
+const uint DEBUG_RENDER_MODE_IBL_INDIRECT_DIFFUSE = 7;
+const uint DEBUG_RENDER_MODE_NUM_MODES = 8;
+
+#ifdef __cplusplus
+
+#include <vector>
+
+const std::vector<const char*> DEBUG_RENDER_MODE_LABELS =
+{
+	"None", "Base color", "Normal", "Metallic roughness", "Clearcoat alpha", "Clearcoat normal", "Clearcoat roughness", "IBL indirect diffuse"
+};
+
+#endif
 
 DECLARE_STRUCT(CameraData)
 {
