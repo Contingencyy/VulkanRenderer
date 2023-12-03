@@ -609,7 +609,7 @@ namespace Renderer
 			push_ranges[0].offset = 0;
 			push_ranges[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
-			push_ranges[1].size = 5 * sizeof(uint32_t);
+			push_ranges[1].size = 7 * sizeof(uint32_t);
 			push_ranges[1].offset = push_ranges[0].size;
 			push_ranges[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
@@ -1341,6 +1341,8 @@ namespace Renderer
 			{
 				uint32_t camera_ubo_index;
 				uint32_t irradiance_cubemap_index;
+				uint32_t prefiltered_cubemap_index;
+				uint32_t brdf_lut_index;
 				uint32_t light_ubo_index;
 				uint32_t num_light_sources;
 				uint32_t mat_index;
@@ -1352,13 +1354,21 @@ namespace Renderer
 				VK_EXCEPT("Renderer::RenderFrame", "HDR environment map is missing an irradiance cubemap");
 			}
 
+			TextureResource* prefiltered_cubemap = data->texture_slotmap.Find(data->texture_slotmap.Find(data->texture_slotmap.Find(data->skybox_texture_handle)->next)->next);
+			if (!prefiltered_cubemap)
+			{
+				VK_EXCEPT("Renderer::RenderFrame", "HDR environment map is missing a prefiltered cubemap");
+			}
+
 			push_consts.camera_ubo_index = RESERVED_DESCRIPTOR_UNIFORM_BUFFER_CAMERA * VulkanInstance::MAX_FRAMES_IN_FLIGHT + vk_inst.current_frame;
 			push_consts.irradiance_cubemap_index = irradiance_cubemap->descriptor.GetIndex();
+			push_consts.prefiltered_cubemap_index = prefiltered_cubemap->descriptor.GetIndex();
+			push_consts.brdf_lut_index = data->ibl.brdf_lut->descriptor.GetIndex();
 			push_consts.light_ubo_index = RESERVED_DESCRIPTOR_UNIFORM_BUFFER_LIGHT_SOURCES * VulkanInstance::MAX_FRAMES_IN_FLIGHT + vk_inst.current_frame;
 			push_consts.num_light_sources = data->num_light_sources;
 
 			data->render_passes.lighting.PushConstants(command_buffer, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(uint32_t), &push_consts);
-			data->render_passes.lighting.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 4, 4 * sizeof(uint32_t), &push_consts);
+			data->render_passes.lighting.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 4, 6 * sizeof(uint32_t), &push_consts);
 
 			// Bind descriptor buffers
 			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)data->descriptor_buffer_binding_infos.size(), data->descriptor_buffer_binding_infos.data());
@@ -1386,7 +1396,7 @@ namespace Renderer
 				VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->normal_texture_handle));
 				VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->metallic_roughness_texture_handle));
 
-				data->render_passes.lighting.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 20, sizeof(uint32_t), &entry.material_handle.index);
+				data->render_passes.lighting.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 28, sizeof(uint32_t), &entry.material_handle.index);
 
 				// Vertex and index buffers
 				VkBuffer vertex_buffers[] = { mesh->vertex_buffer.buffer, instance_buffer.buffer };
