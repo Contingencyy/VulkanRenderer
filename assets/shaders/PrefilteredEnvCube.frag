@@ -25,12 +25,12 @@ layout(location = 0) out vec4 out_color;
 
 void main()
 {
+	// In our BRDF implementation we use a squared roughness for perceptually more linear results, so we also square it here
+	float roughness = push_consts.roughness * push_consts.roughness;
+
 	vec3 normal = normalize(local_position);
 	vec3 R = normal;
 	vec3 V = R;
-
-	// In our BRDF implementation we use a squared roughness for perceptually more linear results, so we also square it here
-	float roughness = push_consts.roughness * push_consts.roughness;
 
 	float total_weight = 0.0;
 	vec3 prefiltered_color = vec3(0.0);

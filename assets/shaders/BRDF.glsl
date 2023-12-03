@@ -53,8 +53,6 @@ void EvaluateBRDF(vec3 view_dir, vec3 H, float NoL, float LoH, vec3 base_color, 
 	float NoV = abs(dot(normal, view_dir)) + 1e-5f;
 	float NoH = clamp(dot(normal, H), 0.0f, 1.0f);
 
-	// Remapping of roughness to be visually more linear
-	roughness = roughness * roughness;
 	vec3 kD = vec3(1.0f);
 
 	if (NoL > 0.0)
@@ -83,10 +81,6 @@ void EvaluateBRDFClearCoat(vec3 view_dir, vec3 light_dir, vec3 H, float LoH, vec
 	float NoV = abs(dot(clearcoat_normal, view_dir)) + 1e-5f;
 	float NoL = clamp(dot(clearcoat_normal, light_dir), 0.0f, 1.0f);
 	float NoH = clamp(dot(clearcoat_normal, H), 0.0f, 1.0f);
-
-	// Remapping of roughness to be visually more linear
-	clearcoat_roughness = clamp(clearcoat_roughness, 0.089f, 1.0f);
-	clearcoat_roughness = clearcoat_roughness * clearcoat_roughness;
 	
 	// We assume a fresnel reflectance for our clear-coat materials of 4% (IOR = 1.5)
 	vec3 f0 = vec3(0.04f);

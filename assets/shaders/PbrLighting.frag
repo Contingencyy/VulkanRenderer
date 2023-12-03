@@ -25,10 +25,11 @@ layout(std140, push_constant) uniform constants
 	layout(offset = 4) uint camera_ubo_index;
 	layout(offset = 8) uint irradiance_cubemap_index;
 	layout(offset = 12) uint prefiltered_cubemap_index;
-	layout(offset = 16) uint brdf_lut_index;
-	layout(offset = 20) uint light_ubo_index;
-	layout(offset = 24) uint num_light_sources;
-	layout(offset = 28) uint mat_index;
+	layout(offset = 16) uint num_prefiltered_mips;
+	layout(offset = 20) uint brdf_lut_index;
+	layout(offset = 24) uint light_ubo_index;
+	layout(offset = 28) uint num_light_sources;
+	layout(offset = 32) uint mat_index;
 } push_consts;
 
 layout(location = 0) in vec4 frag_pos;
@@ -71,6 +72,11 @@ vec3 CalculateLightingAtFragment(vec3 view_pos, vec3 view_dir, vec3 base_color, 
 {
 	vec3 color = vec3(0.0f);
 
+	// Remapping of roughness to be visually more linear
+	roughness = roughness * roughness;
+	clearcoat_roughness = clamp(clearcoat_roughness, 0.089f, 1.0f);
+	clearcoat_roughness = clearcoat_roughness * clearcoat_roughness;
+
 	// Direct light from light sources
 	for (uint light_idx = 0; light_idx < push_consts.num_light_sources; ++light_idx)
 	{
@@ -95,13 +101,14 @@ vec3 CalculateLightingAtFragment(vec3 view_pos, vec3 view_dir, vec3 base_color, 
 		color += radiance * irradiance;
 	}
 
-	float NoV = max(dot(normal, view_dir), 0.0);
 	vec3 f0 = vec3(0.04);
 	f0 = mix(f0, base_color, metallic);
 
+	float NoV = max(dot(normal, view_dir), 0.0);
+	vec3 kS = FresnelSchlickRoughness(NoV, f0, roughness);
+
 	// Image-based lighting, indirect diffuse
 	// NOTE: Might be incorrect, since this does not take into account the clearcoat layer
-	vec3 kS = FresnelSchlickRoughness(NoV, f0, roughness * roughness);
 	vec3 kD = 1.0 - kS;
 	kD *= 1.0 - metallic;
 
@@ -110,11 +117,10 @@ vec3 CalculateLightingAtFragment(vec3 view_pos, vec3 view_dir, vec3 base_color, 
 
 	// Image-based lighting, specular
 	vec3 R = reflect(-view_dir, normal);
-	vec3 prefiltered = SampleTextureCubeLod(push_consts.prefiltered_cubemap_index, 0, R, roughness).rgb;
+	vec3 prefiltered = SampleTextureCubeLod(push_consts.prefiltered_cubemap_index, 0, R, roughness * push_consts.num_prefiltered_mips).rgb;
 
-	vec3 F = FresnelSchlickRoughness(NoV, f0, roughness);
 	vec2 env_brdf = SampleTexture(push_consts.brdf_lut_index, 0, vec2(NoV, roughness)).rg;
-	vec3 indirect_specular = prefiltered * (F * env_brdf.x + env_brdf.y);
+	vec3 indirect_specular = prefiltered * (kS * env_brdf.x + env_brdf.y);
 
 	color += (indirect_diffuse + indirect_specular);
 
