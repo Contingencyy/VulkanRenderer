@@ -3,8 +3,7 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/main/VisualStudio.gitignore
 
-assets/models/gltf/BMWM6/
-assets/models/gltf/Bmw_M8/
+assets/models/gltf/BMW_M6/
 
 # User-specific files
 *.rsuser

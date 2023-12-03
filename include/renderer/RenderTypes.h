@@ -6,6 +6,7 @@
 using TextureHandle_t = ResourceHandle_t;
 using MeshHandle_t = ResourceHandle_t;
 using MaterialHandle_t = ResourceHandle_t;
+using SamplerHandle_t = ResourceHandle_t;
 
 struct Vertex
 {
@@ -36,15 +37,29 @@ static bool IsHDRFormat(TextureFormat format)
 	}
 }
 
+struct SamplerResource
+{
+	VkSampler sampler;
+	DescriptorAllocation descriptor;
+
+	~SamplerResource()
+	{
+		vkDestroySampler(vk_inst.device, sampler, nullptr);
+		// TODO: Free descriptors
+	}
+};
+
 struct TextureResource
 {
 	Vulkan::Image image;
 	Vulkan::ImageView view;
 	DescriptorAllocation descriptor;
 
+	SamplerHandle_t sampler;
+
 	// TODO: Find a better solution for this, for now this is used for hdr environment maps and points to the
 	// irradiance map made from this hdr environment map
-	TextureHandle_t irradiance_cubemap_handle;
+	TextureHandle_t next;
 
 	~TextureResource()
 	{
