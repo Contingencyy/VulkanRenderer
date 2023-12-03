@@ -9,7 +9,7 @@
 
 */
 
-#include "Common.glsl"
+#include "BRDF.glsl"
 
 layout(std140, push_constant) uniform constants
 {
@@ -41,10 +41,23 @@ void main()
 		vec3 H = ImportanceSampleGGX(Xi, normal, roughness);
 		vec3 L = normalize(2.0 * dot(V, H) * H - V);
 
-		float NoL = max(dot(normal, L), 0.0);
+		float NoL = clamp(dot(normal, L), 0.0, 1.0);
 		if (NoL > 0.0)
 		{
-			prefiltered_color += SampleTextureCube(push_consts.src_texture_index, push_consts.src_sampler_index, L).rgb * NoL;
+			// Improvement for bright dots in lower mips
+			// Source: https://chetanjags.wordpress.com/2015/08/26/image-based-lighting/
+			float NoH = clamp(dot(normal, H), 0.0, 1.0);
+			float HoV = clamp(dot(H, V), 0.0, 1.0);
+			float D = D_GGX(NoH, roughness);
+			float pdf = (D * NoH / (4.0 * HoV)) + 0.0001;
+			
+			float omega_s = 1.0 / (float(push_consts.num_samples) * pdf);
+			float resolution = float(GetTextureDimensions(push_consts.src_texture_index).x);
+			float omega_p = 4.0 * PI / (6.0 * resolution * resolution);
+
+			float mip = roughness == 0.0 ? 0.0 : max(0.5 * log2(omega_s / omega_p) + 1.0, 0.0);
+
+			prefiltered_color += SampleTextureCubeLod(push_consts.src_texture_index, push_consts.src_sampler_index, L, mip).rgb * NoL;
 			total_weight += NoL;
 		}
 	}

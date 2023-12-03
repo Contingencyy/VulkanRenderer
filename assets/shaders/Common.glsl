@@ -1,6 +1,8 @@
 #pragma once
 #include "Shared.glsl.h"
 
+#extension GL_EXT_samplerless_texture_functions : enable
+
 const float PI = 3.1415926535897932384626433832795;
 const float INV_PI = 1.0 / 3.1415926535897932384626433832795;
 const float TWO_PI = 3.1415926535897932384626433832795 * 2.0;
@@ -16,6 +18,11 @@ layout(set = DESCRIPTOR_SET_SAMPLER, binding = 0) uniform sampler g_samplers[];
 	Texture sampling functions
 
 */
+
+ivec2 GetTextureDimensions(uint tex_idx)
+{
+	return textureSize(g_textures[tex_idx], 0);
+}
 
 vec4 SampleTexture(uint tex_idx, uint samp_idx, vec2 tex_coord)
 {
