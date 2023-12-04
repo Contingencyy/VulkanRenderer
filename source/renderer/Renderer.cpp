@@ -1104,10 +1104,9 @@ namespace Renderer
 		data->ibl.brdf_lut = reserved_brdf_lut.resource;
 
 		// Create the BRDF LUT
-		uint32_t num_lut_mips = (uint32_t)std::floor(std::log2(std::max(IBL_BRDF_LUT_RESOLUTION, IBL_BRDF_LUT_RESOLUTION))) + 1;
 		Vulkan::CreateImage(IBL_BRDF_LUT_RESOLUTION, IBL_BRDF_LUT_RESOLUTION, VK_FORMAT_R16G16_SFLOAT, VK_IMAGE_TILING_OPTIMAL,
-			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, reserved_brdf_lut.resource->image, num_lut_mips);
-		Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, &reserved_brdf_lut.resource->image, reserved_brdf_lut.resource->view, 0, num_lut_mips);
+			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, reserved_brdf_lut.resource->image);
+		Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, &reserved_brdf_lut.resource->image, reserved_brdf_lut.resource->view);
 
 		VkViewport viewport = {};
 		viewport.x = 0.0f, viewport.y = 0.0f;
@@ -1123,36 +1122,31 @@ namespace Renderer
 		VkCommandBuffer command_buffer = Vulkan::BeginImmediateCommand();
 		std::vector<Vulkan::ImageView> attachment_image_views;
 
-		for (uint32_t mip = 0; mip < num_lut_mips; ++mip)
+		RenderPass::BeginInfo begin_info = {};
+		begin_info.render_width = IBL_PREFILTERED_CUBEMAP_RESOLUTION;
+		begin_info.render_height = IBL_PREFILTERED_CUBEMAP_RESOLUTION;
+
+		data->render_passes.gen_brdf_lut.SetAttachment(data->ibl.brdf_lut->view, 0);
+
+		BEGIN_PASS(command_buffer, data->render_passes.gen_brdf_lut, begin_info);
 		{
-			RenderPass::BeginInfo begin_info = {};
-			begin_info.render_width = static_cast<float>(IBL_PREFILTERED_CUBEMAP_RESOLUTION) * std::pow(0.5f, mip);
-			begin_info.render_height = static_cast<float>(IBL_PREFILTERED_CUBEMAP_RESOLUTION) * std::pow(0.5f, mip);
+			viewport.width = begin_info.render_width;
+			viewport.height = begin_info.render_height;
 
-			Vulkan::ImageView& attachment_view = attachment_image_views.emplace_back();
-			Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, &reserved_brdf_lut.resource->image, attachment_view, mip, 1);
-			data->render_passes.gen_brdf_lut.SetAttachment(attachment_view, 0);
+			scissor_rect.extent.width = viewport.width;
+			scissor_rect.extent.height = viewport.height;
 
-			BEGIN_PASS(command_buffer, data->render_passes.gen_brdf_lut, begin_info);
-			{
-				viewport.width = begin_info.render_width;
-				viewport.height = begin_info.render_height;
+			vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+			vkCmdSetScissor(command_buffer, 0, 1, &scissor_rect);
 
-				scissor_rect.extent.width = viewport.width;
-				scissor_rect.extent.height = viewport.height;
+			data->render_passes.gen_brdf_lut.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(uint32_t), &push_consts);
 
-				vkCmdSetViewport(command_buffer, 0, 1, &viewport);
-				vkCmdSetScissor(command_buffer, 0, 1, &scissor_rect);
+			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)data->descriptor_buffer_binding_infos.size(), data->descriptor_buffer_binding_infos.data());
+			data->render_passes.gen_brdf_lut.SetDescriptorBufferOffsets(command_buffer, 0, 5, &data->descriptor_buffer_indices[0], &data->descriptor_buffer_offsets[0]);
 
-				data->render_passes.gen_brdf_lut.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(uint32_t), &push_consts);
-
-				vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)data->descriptor_buffer_binding_infos.size(), data->descriptor_buffer_binding_infos.data());
-				data->render_passes.gen_brdf_lut.SetDescriptorBufferOffsets(command_buffer, 0, 5, &data->descriptor_buffer_indices[0], &data->descriptor_buffer_offsets[0]);
-
-				vkCmdDraw(command_buffer, 3, 1, 0, 0);
-			}
-			END_PASS(command_buffer, data->render_passes.gen_brdf_lut);
+			vkCmdDraw(command_buffer, 3, 1, 0, 0);
 		}
+		END_PASS(command_buffer, data->render_passes.gen_brdf_lut);
 
 		Vulkan::CmdTransitionImageLayout(command_buffer,
 			reserved_brdf_lut.resource->view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
@@ -1707,20 +1701,20 @@ namespace Renderer
 		ResourceSlotmap<MaterialResource>::ReservedResource reserved = data->material_slotmap.Reserve();
 
 		// Base color factor and texture
-		reserved.resource->data.base_color_factor = args.base_color_factor;
+		reserved.resource->data.albedo_factor = args.base_color_factor;
 		if (VK_RESOURCE_HANDLE_VALID(args.base_color_texture_handle))
 		{
 			TextureResource* base_color_texture = data->texture_slotmap.Find(args.base_color_texture_handle);
 
 			reserved.resource->base_color_texture_handle = args.base_color_texture_handle;
-			reserved.resource->data.base_color_texture_index = base_color_texture->descriptor.GetIndex();
+			reserved.resource->data.albedo_texture_index = base_color_texture->descriptor.GetIndex();
 		}
 		else
 		{
 			TextureResource* base_color_texture = data->texture_slotmap.Find(data->default_white_texture_handle);
 
 			reserved.resource->base_color_texture_handle = data->default_white_texture_handle;
-			reserved.resource->data.base_color_texture_index = base_color_texture->descriptor.GetIndex();
+			reserved.resource->data.albedo_texture_index = base_color_texture->descriptor.GetIndex();
 		}
 
 		// Normal texture

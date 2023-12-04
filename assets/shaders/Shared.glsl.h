@@ -69,10 +69,10 @@ DECLARE_STRUCT(CameraData)
 
 DECLARE_STRUCT(MaterialData)
 {
-	vec4 base_color_factor;
+	vec4 albedo_factor;
 	float metallic_factor;
 	float roughness_factor;
-	uint base_color_texture_index;
+	uint albedo_texture_index;
 	uint normal_texture_index;
 	uint metallic_roughness_texture_index;
 	uint sampler_index;
