@@ -157,7 +157,6 @@ namespace Application
 		data.active_scene.RenderUI();
 		Renderer::RenderUI();
 
-		// NOTE: Temporary menu code
 		ImGui::Begin("General");
 		float delta_time_ms = data.delta_time.count() * 1000.0f;
 

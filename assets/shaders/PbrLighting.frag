@@ -110,6 +110,7 @@ vec3 RadianceAtFragmentClearCoat(vec3 V, vec3 N, vec3 world_pos,
 	}
 	
 	// Evaluate indirect lighting from HDR environment
+	// TODO: This needs to be adjusted for the clearcoat implementation
 	vec3 R = reflect(-V, N);
 
 	vec2 brdf = SampleTexture(push_consts.brdf_lut_index, 0, vec2(max(dot(N, V), 0.0), roughness)).rg;
@@ -127,35 +128,6 @@ vec3 RadianceAtFragmentClearCoat(vec3 V, vec3 N, vec3 world_pos,
 
 	return Lo;
 }
-
-//vec3 CalculateLightingAtFragment(vec3 view_pos, vec3 view_dir, vec3 base_color, vec3 normal, float metallic, float roughness, float clearcoat_alpha, float clearcoat_roughness, vec3 clearcoat_normal)
-//{
-//	// TODO: This probably should be moved into the BRDF function above, to account for the weight of diffuse and specular
-//	vec3 f0 = vec3(0.04);
-//	f0 = mix(f0, base_color, metallic);
-//
-//	float NoV = max(dot(normal, view_dir), 0.0);
-//	vec3 kS = FresnelSchlickRoughness(NoV, f0, roughness);
-//
-//	// Image-based lighting, indirect diffuse
-//	// NOTE: Might be incorrect, since this does not take into account the clearcoat layer
-//	vec3 kD = 1.0 - kS;
-//	kD *= 1.0 - metallic;
-//
-//	vec3 indirect_diffuse = SampleTextureCube(push_consts.irradiance_cubemap_index, 0, normal).rgb;
-//	indirect_diffuse *= kD * base_color;
-//
-//	// Image-based lighting, specular
-//	vec3 R = reflect(-view_dir, normal);
-//	vec3 prefiltered = SampleTextureCubeLod(push_consts.prefiltered_cubemap_index, 0, R, roughness * push_consts.num_prefiltered_mips).rgb;
-//
-//	vec2 env_brdf = SampleTexture(push_consts.brdf_lut_index, 0, vec2(NoV, roughness)).rg;
-//	vec3 indirect_specular = prefiltered * (kS * env_brdf.x + env_brdf.y);
-//
-//	color += (indirect_diffuse + indirect_specular);
-//
-//	return color;
-//}
 
 void main()
 {
