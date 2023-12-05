@@ -5,31 +5,29 @@
 
 #include "BRDF.glsl"
 
-layout(set = DESCRIPTOR_SET_UNIFORM_BUFFER, binding = 0) uniform Camera
+layout(set = DESCRIPTOR_SET_UBO, binding = RESERVED_DESCRIPTOR_UBO_CAMERA) uniform Camera
 {
 	CameraData cam;
-} g_camera[];
+} g_camera;
 
-layout(set = DESCRIPTOR_SET_UNIFORM_BUFFER, binding = 0) uniform LightSources
+layout(set = DESCRIPTOR_SET_UBO, binding = RESERVED_DESCRIPTOR_UBO_LIGHTS) uniform Lights
 {
 	PointlightData pointlight[MAX_LIGHT_SOURCES];
-} g_light_sources[];
+	uint num_pointlights;
+} g_lights;
 
-layout(std140, set = DESCRIPTOR_SET_STORAGE_BUFFER, binding = 0) readonly buffer MaterialBuffer
+layout(set = DESCRIPTOR_SET_UBO, binding = RESERVED_DESCRIPTOR_UBO_MATERIALS) uniform Materials
 {
 	MaterialData mat[MAX_UNIQUE_MATERIALS];
-} g_materials[];
+} g_materials;
 
 layout(std140, push_constant) uniform constants
 {
-	layout(offset = 4) uint camera_ubo_index;
-	layout(offset = 8) uint irradiance_cubemap_index;
-	layout(offset = 12) uint prefiltered_cubemap_index;
-	layout(offset = 16) uint num_prefiltered_mips;
-	layout(offset = 20) uint brdf_lut_index;
-	layout(offset = 24) uint light_ubo_index;
-	layout(offset = 28) uint num_light_sources;
-	layout(offset = 32) uint mat_index;
+	layout(offset = 0) uint irradiance_cubemap_index;
+	layout(offset = 4) uint prefiltered_cubemap_index;
+	layout(offset = 8) uint num_prefiltered_mips;
+	layout(offset = 12) uint brdf_lut_index;
+	layout(offset = 16) uint mat_index;
 } push_consts;
 
 layout(location = 0) in vec4 frag_pos;
@@ -53,9 +51,9 @@ vec3 RadianceAtFragment(vec3 V, vec3 N, vec3 world_pos,
 	vec3 Lo = vec3(0.0);
 	
 	// Evaluate direct lighting
-	for (uint i = 0; i < push_consts.num_light_sources; ++i)
+	for (uint i = 0; i < g_lights.num_pointlights; ++i)
 	{
-		PointlightData pointlight = g_light_sources[push_consts.light_ubo_index].pointlight[i];
+		PointlightData pointlight = g_lights.pointlight[i];
 		vec3 light_color = pointlight.color * pointlight.intensity;
 
 		vec3 L = normalize(pointlight.position - world_pos.xyz);
@@ -68,18 +66,18 @@ vec3 RadianceAtFragment(vec3 V, vec3 N, vec3 world_pos,
 	// Evaluate indirect lighting from HDR environment
 	vec3 R = reflect(-V, N);
 
-	vec2 brdf = SampleTexture(push_consts.brdf_lut_index, 0, vec2(max(dot(N, V), 0.0), roughness)).rg;
+	vec2 env_brdf = SampleTexture(push_consts.brdf_lut_index, 0, vec2(max(dot(N, V), 0.0), roughness)).rg;
 	vec3 reflection = SampleTextureCubeLod(push_consts.prefiltered_cubemap_index, 0, R, roughness * push_consts.num_prefiltered_mips).rgb;
 	vec3 irradiance = SampleTextureCube(push_consts.irradiance_cubemap_index, 0, N).rgb;
 
-	vec3 diffuse = irradiance * albedo;
-	vec3 F = F_SchlickRoughness(max(dot(N, V), 0.0), f0, roughness);
-	vec3 specular = reflection * (F * brdf.x + brdf.y);
+	vec3 diffuse = irradiance * albedo * INV_PI;
 
-	vec3 kD = 1.0 - F;
-	kD *= 1.0 - metallic;
+	vec3 F = F_SchlickRoughness(max(dot(N, V), 0.0), f0, roughness);
+	vec3 specular = reflection * mix(env_brdf.xxx, env_brdf.yyy, f0);
+	
+	vec3 kD = (1.0 - F) * (1.0 - metallic);
 	vec3 ambient = (kD * diffuse + specular);
-	Lo += ambient;
+	//Lo += ambient;
 
 	return Lo;
 }
@@ -97,9 +95,9 @@ vec3 RadianceAtFragmentClearCoat(vec3 V, vec3 N, vec3 world_pos,
 	vec3 Lo = vec3(0.0);
 
 	// Evaluate direct lighting
-	for (uint i = 0; i < push_consts.num_light_sources; ++i)
+	for (uint i = 0; i < g_lights.num_pointlights; ++i)
 	{
-		PointlightData pointlight = g_light_sources[push_consts.light_ubo_index].pointlight[i];
+		PointlightData pointlight = g_lights.pointlight[i];
 		vec3 light_color = pointlight.color * pointlight.intensity;
 		
 		vec3 L = normalize(pointlight.position - world_pos.xyz);
@@ -113,16 +111,16 @@ vec3 RadianceAtFragmentClearCoat(vec3 V, vec3 N, vec3 world_pos,
 	// TODO: This needs to be adjusted for the clearcoat implementation
 	vec3 R = reflect(-V, N);
 
-	vec2 brdf = SampleTexture(push_consts.brdf_lut_index, 0, vec2(max(dot(N, V), 0.0), roughness)).rg;
+	vec2 env_brdf = SampleTexture(push_consts.brdf_lut_index, 0, vec2(max(dot(N, V), 0.0), roughness)).rg;
 	vec3 reflection = SampleTextureCubeLod(push_consts.prefiltered_cubemap_index, 0, R, roughness * push_consts.num_prefiltered_mips).rgb;
 	vec3 irradiance = SampleTextureCube(push_consts.irradiance_cubemap_index, 0, N).rgb;
 
-	vec3 diffuse = irradiance * albedo;
-	vec3 F = F_SchlickRoughness(max(dot(N, V), 0.0), f0, roughness);
-	vec3 specular = reflection * (F * brdf.x + brdf.y);
+	vec3 diffuse = irradiance * albedo * INV_PI;
 
-	vec3 kD = 1.0 - F;
-	kD *= 1.0 - metallic;
+	vec3 F = F_SchlickRoughness(max(dot(N, V), 0.0), f0, roughness);
+	vec3 specular = reflection * mix(env_brdf.xxx, env_brdf.yyy, f0);
+	
+	vec3 kD = (1.0 - F) * (1.0 - metallic);
 	vec3 ambient = (kD * diffuse + specular);
 	Lo += ambient;
 
@@ -131,7 +129,7 @@ vec3 RadianceAtFragmentClearCoat(vec3 V, vec3 N, vec3 world_pos,
 
 void main()
 {
-	MaterialData material = g_materials[RESERVED_DESCRIPTOR_STORAGE_BUFFER_MATERIAL].mat[push_consts.mat_index];
+	MaterialData material = g_materials.mat[push_consts.mat_index];
 	vec3 albedo = SampleTexture(material.albedo_texture_index, material.sampler_index, frag_tex_coord).rgb * material.albedo_factor.rgb;
 	vec3 normal = SampleTexture(material.normal_texture_index, material.sampler_index, frag_tex_coord).rgb;
 	vec2 metallic_roughness = SampleTexture(material.metallic_roughness_texture_index, material.sampler_index, frag_tex_coord).bg * vec2(material.metallic_factor, material.roughness_factor);
@@ -141,7 +139,7 @@ void main()
 	normal = normal * 2.0 - 1.0;
 	normal = normalize(TBN * normal);
 
-	vec3 view_pos = g_camera[push_consts.camera_ubo_index].cam.view_pos.xyz;
+	vec3 view_pos = g_camera.cam.view_pos.xyz;
 	vec3 view_dir = normalize(view_pos - frag_pos.xyz);
 
 	vec3 color = vec3(0.0);

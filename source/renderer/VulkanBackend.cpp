@@ -292,6 +292,7 @@ namespace Vulkan
 			VkPhysicalDeviceFeatures2 device_features2 = {};
 			device_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
 			device_features2.pNext = &descriptor_buffer_features;
+
 			vkGetPhysicalDeviceFeatures2(device, &device_features2);
 
 			if (device_properties2.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU &&
@@ -303,6 +304,7 @@ namespace Vulkan
 				vk_inst.physical_device = device;
 
 				vk_inst.device_props.max_anisotropy = device_properties2.properties.limits.maxSamplerAnisotropy;
+				vk_inst.device_props.descriptor_buffer_offset_alignment = descriptor_buffer_properties.descriptorBufferOffsetAlignment;
 
 				vk_inst.descriptor_sizes.uniform_buffer = descriptor_buffer_properties.uniformBufferDescriptorSize;
 				vk_inst.descriptor_sizes.storage_buffer = descriptor_buffer_properties.storageBufferDescriptorSize;
@@ -876,21 +878,21 @@ namespace Vulkan
 	void CreateStagingBuffer(VkDeviceSize size, Buffer& buffer)
 	{
 		CreateBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, buffer);
-		VkCheckResult(vkMapMemory(vk_inst.device, buffer.memory, 0, size, 0, &buffer.ptr));
+		VkCheckResult(vkMapMemory(vk_inst.device, buffer.memory, 0, size, 0, (void**)&buffer.ptr));
 	}
 
 	void CreateUniformBuffer(VkDeviceSize size, Buffer& buffer)
 	{
 		CreateBuffer(size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, buffer);
-		VkCheckResult(vkMapMemory(vk_inst.device, buffer.memory, 0, size, 0, &buffer.ptr));
+		VkCheckResult(vkMapMemory(vk_inst.device, buffer.memory, 0, size, 0, (void**)&buffer.ptr));
 	}
 
 	void CreateDescriptorBuffer(VkDeviceSize size, Buffer& buffer)
 	{
 		CreateBuffer(size, VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, buffer);
-		VkCheckResult(vkMapMemory(vk_inst.device, buffer.memory, 0, size, 0, &buffer.ptr));
+		VkCheckResult(vkMapMemory(vk_inst.device, buffer.memory, 0, size, 0, (void**)&buffer.ptr));
 	}
 
 	void CreateVertexBuffer(VkDeviceSize size, Buffer& buffer)

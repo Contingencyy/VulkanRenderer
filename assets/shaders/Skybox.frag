@@ -7,8 +7,8 @@
 
 layout(std140, push_constant) uniform constants
 {
-	layout(offset = 4) uint env_texture_index;
-	layout(offset = 8) uint env_sampler_index;
+	layout(offset = 0) uint env_texture_index;
+	layout(offset = 4) uint env_sampler_index;
 } push_consts;
 
 layout(location = 0) in vec3 local_position;

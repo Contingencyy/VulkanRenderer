@@ -38,15 +38,15 @@ float V_Kelemen(float LoH, float roughness)
 
 float Fd_Lambert()
 {
-	return 1.0f * INV_PI;
+	return INV_PI;
 }
 
 float Fd_Burley(float NoV, float NoL, float LoH, float roughness)
 {
 	float f90 = 0.5f + 2.0f * roughness * LoH * LoH;
-	float light_scatter = F_Schlick90(NoL, 1.0f, f90);
-	float view_scatter = F_Schlick90(NoV, 1.0f, f90);
-	return light_scatter * view_scatter * (1.0f / PI);
+	float light_scatter = F_Schlick90(NoL, 1.0, f90);
+	float view_scatter = F_Schlick90(NoV, 1.0, f90);
+	return light_scatter * view_scatter * (1.0 * INV_PI);
 }
 
 void BaseContribution(vec3 L, vec3 V, vec3 N, vec3 f0, vec3 albedo, float metallic, float roughness, inout vec3 brdf_diffuse, inout vec3 brdf_specular)
@@ -66,24 +66,23 @@ void BaseContribution(vec3 L, vec3 V, vec3 N, vec3 f0, vec3 albedo, float metall
 		float G = G_SmithGGXCorrelated(NoV, NoL, roughness);
 		vec3 F = F_Schlick(NoV, f0);
 		
-		vec3 kD = vec3(1.0) - F;
-		kD *= 1.0 - metallic;
+		vec3 kD = (1.0 - F) * (1.0 - metallic);
 
 		brdf_specular = (D * G) * F;
-		brdf_specular *= NoL;
 		brdf_diffuse = kD * albedo * Fd_Burley(NoV, NoL, LoH, roughness);
-		brdf_diffuse *= NoL;
 	}
 }
 
 vec3 BRDF(vec3 L, vec3 light_color, vec3 V, vec3 N, vec3 f0, vec3 albedo, float metallic, float roughness)
 {
+	float NoL = clamp(dot(N, L), 0.0, 1.0);
+
 	vec3 brdf_diffuse = vec3(0.0);
 	vec3 brdf_specular = vec3(0.0);
 	BaseContribution(L, V, N, f0, albedo, metallic, roughness, brdf_diffuse, brdf_specular);
 
 	vec3 color = (brdf_diffuse + brdf_specular);
-	color *= light_color;
+	color *= light_color * NoL;
 	return color;
 }
 
@@ -112,13 +111,14 @@ void ClearCoatContribution(vec3 L, vec3 V, vec3 N, vec3 f0, float roughness, ino
 		vec3 F = F_Schlick(LoH, f0);
 
 		brdf_clearcoat = (D * G) * F;
-		brdf_clearcoat *= NoL;
 	}
 }
 
 vec3 BRDFClearCoat(vec3 L, vec3 light_color, vec3 V, vec3 N, vec3 f0, vec3 albedo, float metallic, float roughness,
 	float coat_alpha, vec3 coat_normal, float coat_roughness)
 {
+	float NoL = clamp(dot(N, L), 0.0, 1.0);
+
 	vec3 Fc = vec3(0.0);
 	vec3 brdf_clearcoat = vec3(0.0);
 	ClearCoatContribution(L, V, coat_normal, f0, coat_roughness, Fc, brdf_clearcoat);
@@ -128,6 +128,6 @@ vec3 BRDFClearCoat(vec3 L, vec3 light_color, vec3 V, vec3 N, vec3 f0, vec3 albed
 	BaseContribution(L, V, N, f0, albedo, metallic, roughness, brdf_diffuse, brdf_specular);
 
 	vec3 color = (brdf_diffuse + brdf_specular) * (1.0 - coat_alpha * Fc) + coat_alpha * brdf_clearcoat;
-	color *= light_color;
+	color *= light_color * NoL;
 	return color;
 }

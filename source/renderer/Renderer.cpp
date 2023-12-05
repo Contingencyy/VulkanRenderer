@@ -120,7 +120,7 @@ namespace Renderer
 		std::vector<VkFence> in_flight_fences;
 
 		// Descriptor buffers
-		DescriptorBuffer descriptor_buffer_uniform{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, (uint32_t)vk_inst.descriptor_sizes.uniform_buffer };
+		DescriptorBuffer descriptor_buffer_uniform{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, (uint32_t)vk_inst.descriptor_sizes.uniform_buffer, RESERVED_DESCRIPTOR_UBO_COUNT * VulkanInstance::MAX_FRAMES_IN_FLIGHT };
 		DescriptorBuffer descriptor_buffer_storage{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, (uint32_t)vk_inst.descriptor_sizes.storage_buffer };
 		DescriptorBuffer descriptor_buffer_storage_image{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, (uint32_t)vk_inst.descriptor_sizes.storage_image };
 		DescriptorBuffer descriptor_buffer_sampled_image{ VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, (uint32_t)vk_inst.descriptor_sizes.sampled_image };
@@ -161,24 +161,27 @@ namespace Renderer
 			TextureResource* brdf_lut = nullptr;
 		} ibl;
 
+		struct UBOs
+		{
+			std::vector<Vulkan::Buffer> camera_buffers;
+			std::vector<Vulkan::Buffer> light_buffers;
+			std::vector<Vulkan::Buffer> material_buffers;
+			std::vector<Vulkan::Buffer> settings_buffers;
+		} ubos;
+		
+		struct Frame
+		{
+			// TODO: Free reserved descriptors on Exit()
+			DescriptorAllocation ubo_descriptors;
+		} per_frame[VulkanInstance::MAX_FRAMES_IN_FLIGHT];
+
 		DescriptorAllocation reserved_storage_image_descriptors;
 
 		// Draw submission list
 		DrawList draw_list;
-
-		// Uniform buffers
-		// TODO: Free reserved descriptors on Exit()
-		DescriptorAllocation reserved_ubo_descriptors;
-		std::vector<Vulkan::Buffer> camera_uniform_buffers;
-		std::vector<Vulkan::Buffer> light_uniform_buffers;
-		uint32_t num_light_sources = 0;
+		uint32_t num_pointlights;
 
 		std::vector<Vulkan::Buffer> instance_buffers;
-
-		// Storage buffers
-		// TODO: Free reserved descriptors on Exit()
-		DescriptorAllocation reserved_storage_descriptors;
-		Vulkan::Buffer material_buffer;
 
 		// Default resources
 		TextureHandle_t default_white_texture_handle;
@@ -374,7 +377,7 @@ namespace Renderer
 
 		// Write data to the staging buffer
 		Vulkan::WriteBuffer(staging_buffer.ptr, (void*)&UNIT_CUBE_VERTICES[0], vb_size);
-		Vulkan::WriteBuffer((uint8_t*)staging_buffer.ptr + vb_size, (void*)&UNIT_CUBE_INDICES[0], ib_size);
+		Vulkan::WriteBuffer(staging_buffer.ptr + vb_size, (void*)&UNIT_CUBE_INDICES[0], ib_size);
 
 		// Create cube vertex and index buffer
 		Vulkan::CreateVertexBuffer(vb_size, data->unit_cube_vertex_buffer);
@@ -390,21 +393,33 @@ namespace Renderer
 
 	static void CreateUniformBuffers()
 	{
-		data->camera_uniform_buffers.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
+		data->ubos.camera_buffers.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
 		VkDeviceSize camera_buffer_size = sizeof(CameraData);
 
-		data->light_uniform_buffers.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
-		VkDeviceSize light_buffer_size = MAX_LIGHT_SOURCES * sizeof(PointlightData);
+		data->ubos.light_buffers.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
+		VkDeviceSize light_buffer_size = sizeof(uint32_t) + MAX_LIGHT_SOURCES * sizeof(PointlightData);
+
+		data->ubos.material_buffers.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
+		VkDeviceSize material_buffer_size = MAX_UNIQUE_MATERIALS * sizeof(MaterialData);
+
+		//data->ubos.settings_buffers.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
+		//VkDeviceSize settings_buffer_sizhe = sizeof(Settings);
 
 		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
-			Vulkan::CreateUniformBuffer(camera_buffer_size, data->camera_uniform_buffers[i]);
-			data->reserved_ubo_descriptors.WriteDescriptor(data->camera_uniform_buffers[i],
-				camera_buffer_size, RESERVED_DESCRIPTOR_UNIFORM_BUFFER_CAMERA * VulkanInstance::MAX_FRAMES_IN_FLIGHT + i);
+			data->per_frame[i].ubo_descriptors = data->descriptor_buffer_uniform.Allocate(RESERVED_DESCRIPTOR_UBO_COUNT, vk_inst.device_props.descriptor_buffer_offset_alignment);
 
-			Vulkan::CreateUniformBuffer(light_buffer_size, data->light_uniform_buffers[i]);
-			data->reserved_ubo_descriptors.WriteDescriptor(data->light_uniform_buffers[i],
-				light_buffer_size, RESERVED_DESCRIPTOR_UNIFORM_BUFFER_LIGHT_SOURCES * VulkanInstance::MAX_FRAMES_IN_FLIGHT + i);
+			Vulkan::CreateUniformBuffer(camera_buffer_size, data->ubos.camera_buffers[i]);
+			data->per_frame[i].ubo_descriptors.WriteDescriptor(data->ubos.camera_buffers[i],
+				camera_buffer_size, RESERVED_DESCRIPTOR_UBO_CAMERA);
+
+			Vulkan::CreateUniformBuffer(light_buffer_size, data->ubos.light_buffers[i]);
+			data->per_frame[i].ubo_descriptors.WriteDescriptor(data->ubos.light_buffers[i],
+				light_buffer_size, RESERVED_DESCRIPTOR_UBO_LIGHTS);
+
+			Vulkan::CreateUniformBuffer(material_buffer_size, data->ubos.material_buffers[i]);
+			data->per_frame[i].ubo_descriptors.WriteDescriptor(data->ubos.material_buffers[i],
+				material_buffer_size, RESERVED_DESCRIPTOR_UBO_MATERIALS);
 		}
 	}
 
@@ -418,16 +433,8 @@ namespace Renderer
 			Vulkan::Buffer& instance_buffer = data->instance_buffers[i];
 			Vulkan::CreateBuffer(instance_buffer_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
 				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, instance_buffer);
-			VkCheckResult(vkMapMemory(vk_inst.device, instance_buffer.memory, 0, instance_buffer_size, 0, &instance_buffer.ptr));
+			VkCheckResult(vkMapMemory(vk_inst.device, instance_buffer.memory, 0, instance_buffer_size, 0, (void**)&instance_buffer.ptr));
 		}
-	}
-
-	static void CreateMaterialBuffer()
-	{
-		VkDeviceSize material_buffer_size = MAX_UNIQUE_MATERIALS * sizeof(MaterialResource);
-		Vulkan::CreateBuffer(material_buffer_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, data->material_buffer);
-		data->reserved_storage_descriptors.WriteDescriptor(data->material_buffer, material_buffer_size, RESERVED_DESCRIPTOR_STORAGE_BUFFER_MATERIAL);
 	}
 
 	static void CreateRenderTargets()
@@ -549,14 +556,10 @@ namespace Renderer
 
 			data->render_passes.skybox.SetAttachmentInfos(attachment_infos);
 
-			std::vector<VkPushConstantRange> push_ranges(2);
-			push_ranges[0].size = sizeof(uint32_t);
+			std::vector<VkPushConstantRange> push_ranges(1);
+			push_ranges[0].size = 2 * sizeof(uint32_t);
 			push_ranges[0].offset = 0;
-			push_ranges[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-			push_ranges[1].size = 2 * sizeof(uint32_t);
-			push_ranges[1].offset = push_ranges[0].size;
-			push_ranges[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+			push_ranges[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
 			Vulkan::GraphicsPipelineInfo info = {};
 			info.input_bindings.resize(1);
@@ -604,14 +607,10 @@ namespace Renderer
 
 			data->render_passes.lighting.SetAttachmentInfos(attachment_infos);
 
-			std::vector<VkPushConstantRange> push_ranges(2);
-			push_ranges[0].size = sizeof(uint32_t);
+			std::vector<VkPushConstantRange> push_ranges(1);
+			push_ranges[0].size = 5 * sizeof(uint32_t);
 			push_ranges[0].offset = 0;
-			push_ranges[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-			push_ranges[1].size = 8 * sizeof(uint32_t);
-			push_ranges[1].offset = push_ranges[0].size;
-			push_ranges[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+			push_ranges[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
 			Vulkan::GraphicsPipelineInfo info = {};
 			info.input_bindings = GetVertexBindingDescription();
@@ -696,7 +695,7 @@ namespace Renderer
 			info.input_attributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
 			info.input_attributes[0].offset = 0;
 			info.color_attachment_formats = data->render_passes.gen_cubemap.GetColorAttachmentFormats();
-			info.vs_path = "assets/shaders/EquirectangularToCube.vert";
+			info.vs_path = "assets/shaders/Cube.vert";
 			info.fs_path = "assets/shaders/EquirectangularToCube.frag";
 
 			data->render_passes.gen_cubemap.Build(descriptor_set_layouts, push_ranges, info);
@@ -733,7 +732,7 @@ namespace Renderer
 			info.input_attributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
 			info.input_attributes[0].offset = 0;
 			info.color_attachment_formats = data->render_passes.gen_irradiance_cube.GetColorAttachmentFormats();
-			info.vs_path = "assets/shaders/EquirectangularToCube.vert";
+			info.vs_path = "assets/shaders/Cube.vert";
 			info.fs_path = "assets/shaders/IrradianceCube.frag";
 
 			data->render_passes.gen_irradiance_cube.Build(descriptor_set_layouts, push_ranges, info);
@@ -770,7 +769,7 @@ namespace Renderer
 			info.input_attributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
 			info.input_attributes[0].offset = 0;
 			info.color_attachment_formats = data->render_passes.gen_prefiltered_cube.GetColorAttachmentFormats();
-			info.vs_path = "assets/shaders/EquirectangularToCube.vert";
+			info.vs_path = "assets/shaders/Cube.vert";
 			info.fs_path = "assets/shaders/PrefilteredEnvCube.frag";
 
 			data->render_passes.gen_prefiltered_cube.Build(descriptor_set_layouts, push_ranges, info);
@@ -1182,10 +1181,8 @@ namespace Renderer
 		CreateCommandBuffers();
 		CreateSyncObjects();
 
-		data->reserved_ubo_descriptors = data->descriptor_buffer_uniform.Allocate(RESERVED_DESCRIPTOR_UNIFORM_BUFFER_COUNT * VulkanInstance::MAX_FRAMES_IN_FLIGHT);
 		CreateUniformBuffers();
-		data->reserved_storage_descriptors = data->descriptor_buffer_storage.Allocate(RESERVED_DESCRIPTOR_STORAGE_BUFFER_COUNT);
-		CreateMaterialBuffer();
+
 		CreateInstanceBuffers();
 
 		CreateDefaultSamplers();
@@ -1211,11 +1208,11 @@ namespace Renderer
 
 		for (size_t i = 0; i < VulkanInstance::VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
-			Vulkan::DestroyBuffer(data->camera_uniform_buffers[i]);
-			Vulkan::DestroyBuffer(data->light_uniform_buffers[i]);
+			Vulkan::DestroyBuffer(data->ubos.camera_buffers[i]);
+			Vulkan::DestroyBuffer(data->ubos.light_buffers[i]);
+			Vulkan::DestroyBuffer(data->ubos.material_buffers[i]);
 			Vulkan::DestroyBuffer(data->instance_buffers[i]);
 		}
-		Vulkan::DestroyBuffer(data->material_buffer);
 
 		// Clean up the renderer data
 		delete data;
@@ -1249,17 +1246,24 @@ namespace Renderer
 		ImGui_ImplVulkan_NewFrame();
 		ImGui::NewFrame();
 
-		CameraData ubo = {};
-		ubo.view = frame_info.view;
-		ubo.proj = frame_info.proj;
-		ubo.view_pos = glm::inverse(frame_info.view)[3];
+		CameraData camera_data = {};
+		camera_data.view = frame_info.view;
+		camera_data.proj = frame_info.proj;
+		camera_data.view_pos = glm::inverse(frame_info.view)[3];
 
-		memcpy(data->camera_uniform_buffers[vk_inst.current_frame].ptr, &ubo, sizeof(ubo));
+		memcpy(data->ubos.camera_buffers[vk_inst.current_frame].ptr, &camera_data, sizeof(camera_data));
 		data->skybox_texture_handle = frame_info.skybox_texture_handle;
 	}
 
 	void RenderFrame()
 	{
+		// Update number of lights in the light ubo
+		memcpy((PointlightData*)data->ubos.light_buffers[vk_inst.current_frame].ptr + MAX_LIGHT_SOURCES, &data->num_pointlights, sizeof(uint32_t));
+
+		// Update UBO descriptor buffer offset
+		// We need a UBO per in-flight frame, so we need to update the offset at which we want to bind our UBOs from the descriptor buffer
+		data->descriptor_buffer_offsets[DESCRIPTOR_SET_UBO] = VK_ALIGN_POW2(RESERVED_DESCRIPTOR_UBO_COUNT * vk_inst.current_frame * vk_inst.descriptor_sizes.uniform_buffer, vk_inst.device_props.descriptor_buffer_offset_alignment);
+
 		VkCommandBuffer command_buffer = data->command_buffers[vk_inst.current_frame];
 
 		VkCommandBufferBeginInfo command_buffer_begin_info = {};
@@ -1294,7 +1298,6 @@ namespace Renderer
 
 			struct PushConsts
 			{
-				uint32_t camera_ubo_index;
 				uint32_t env_texture_index;
 				uint32_t env_sampler_index;
 			} push_consts;
@@ -1304,12 +1307,10 @@ namespace Renderer
 			//TextureResource* skybox_texture = data->texture_slotmap.Find(data->texture_slotmap.Find(data->texture_slotmap.Find(data->skybox_texture_handle)->next)->next);
 			VK_ASSERT(skybox_texture);
 
-			push_consts.camera_ubo_index = RESERVED_DESCRIPTOR_UNIFORM_BUFFER_CAMERA * VulkanInstance::MAX_FRAMES_IN_FLIGHT + vk_inst.current_frame;
 			push_consts.env_texture_index = skybox_texture->descriptor.GetIndex();
 			push_consts.env_sampler_index = 0;
 
-			data->render_passes.skybox.PushConstants(command_buffer, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(uint32_t), &push_consts);
-			data->render_passes.skybox.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(uint32_t), 2 * sizeof(uint32_t), &push_consts.env_texture_index);
+			data->render_passes.skybox.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push_consts), &push_consts);
 
 			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)data->descriptor_buffer_binding_infos.size(), data->descriptor_buffer_binding_infos.data());
 			data->render_passes.skybox.SetDescriptorBufferOffsets(command_buffer, 0, 5, &data->descriptor_buffer_indices[0], &data->descriptor_buffer_offsets[0]);
@@ -1333,13 +1334,10 @@ namespace Renderer
 			// Push constants
 			struct PushConsts
 			{
-				uint32_t camera_ubo_index;
 				uint32_t irradiance_cubemap_index;
 				uint32_t prefiltered_cubemap_index;
 				uint32_t num_prefiltered_mips;
 				uint32_t brdf_lut_index;
-				uint32_t light_ubo_index;
-				uint32_t num_light_sources;
 				uint32_t mat_index;
 			} push_consts;
 
@@ -1355,16 +1353,12 @@ namespace Renderer
 				VK_EXCEPT("Renderer::RenderFrame", "HDR environment map is missing a prefiltered cubemap");
 			}
 
-			push_consts.camera_ubo_index = RESERVED_DESCRIPTOR_UNIFORM_BUFFER_CAMERA * VulkanInstance::MAX_FRAMES_IN_FLIGHT + vk_inst.current_frame;
 			push_consts.irradiance_cubemap_index = irradiance_cubemap->descriptor.GetIndex();
 			push_consts.prefiltered_cubemap_index = prefiltered_cubemap->descriptor.GetIndex();
 			push_consts.num_prefiltered_mips = prefiltered_cubemap->view.num_mips;
 			push_consts.brdf_lut_index = data->ibl.brdf_lut->descriptor.GetIndex();
-			push_consts.light_ubo_index = RESERVED_DESCRIPTOR_UNIFORM_BUFFER_LIGHT_SOURCES * VulkanInstance::MAX_FRAMES_IN_FLIGHT + vk_inst.current_frame;
-			push_consts.num_light_sources = data->num_light_sources;
 
-			data->render_passes.lighting.PushConstants(command_buffer, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(uint32_t), &push_consts);
-			data->render_passes.lighting.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 4, 7 * sizeof(uint32_t), &push_consts);
+			data->render_passes.lighting.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 4 * sizeof(uint32_t), &push_consts);
 
 			// Bind descriptor buffers
 			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)data->descriptor_buffer_binding_infos.size(), data->descriptor_buffer_binding_infos.data());
@@ -1373,7 +1367,7 @@ namespace Renderer
 			// Instance buffer
 			const Vulkan::Buffer& instance_buffer = data->instance_buffers[vk_inst.current_frame];
 
-			for (size_t i = 0; i < data->draw_list.current_entry; ++i)
+			for (uint32_t i = 0; i < data->draw_list.current_entry; ++i)
 			{
 				const DrawList::Entry& entry = data->draw_list.entries[i];
 
@@ -1392,7 +1386,7 @@ namespace Renderer
 				VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->normal_texture_handle));
 				VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->metallic_roughness_texture_handle));
 
-				data->render_passes.lighting.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 32, sizeof(uint32_t), &entry.material_handle.index);
+				data->render_passes.lighting.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 16, sizeof(uint32_t), &i);
 
 				// Vertex and index buffers
 				VkBuffer vertex_buffers[] = { mesh->vertex_buffer.buffer, instance_buffer.buffer };
@@ -1545,7 +1539,7 @@ namespace Renderer
 		data->stats.Reset();
 		data->draw_list.Reset();
 		vk_inst.current_frame = (vk_inst.current_frame + 1) % VulkanInstance::MAX_FRAMES_IN_FLIGHT;
-		data->num_light_sources = 0;
+		data->num_pointlights = 0;
 	}
 
 	TextureHandle_t CreateTexture(const CreateTextureArgs& args)
@@ -1672,7 +1666,7 @@ namespace Renderer
 
 		// Write data into staging buffer
 		Vulkan::WriteBuffer(staging_buffer.ptr, (void*)args.vertices.data(), vertex_buffer_size);
-		Vulkan::WriteBuffer((uint8_t*)staging_buffer.ptr + vertex_buffer_size, (void*)args.indices.data(), index_buffer_size);
+		Vulkan::WriteBuffer(staging_buffer.ptr + vertex_buffer_size, (void*)args.indices.data(), index_buffer_size);
 
 		// Reserve mesh resource
 		ResourceSlotmap<MeshResource>::ReservedResource reserved = data->mesh_slotmap.Reserve();
@@ -1807,22 +1801,6 @@ namespace Renderer
 		// NOTE: Currently this is always the default sampler, ideally the model loading also creates samplers
 		reserved.resource->data.sampler_index = 0;
 
-		VkDeviceSize material_size = sizeof(MaterialData);
-
-		// TODO: Suballocate from big upload buffer, having a staging buffer for every little upload is unnecessary
-		// Create staging buffer
-		Vulkan::Buffer staging_buffer;
-		Vulkan::CreateStagingBuffer(material_size, staging_buffer);
-
-		// Write data into staging buffer
-		Vulkan::WriteBuffer(staging_buffer.ptr, (void*)&reserved.resource->data, material_size);
-
-		// Copy staging buffer material resource into device local material buffer
-		Vulkan::CopyBuffer(staging_buffer, data->material_buffer, material_size, 0, reserved.handle.index * material_size);
-
-		// Destroy staging buffer
-		Vulkan::DestroyBuffer(staging_buffer);
-
 		return reserved.handle;
 	}
 
@@ -1838,6 +1816,10 @@ namespace Renderer
 		Vulkan::Buffer& instance_buffer = data->instance_buffers[vk_inst.current_frame];
 		memcpy((glm::mat4*)instance_buffer.ptr + data->draw_list.current_entry, &transform, sizeof(glm::mat4));
 
+		MaterialResource* material = data->material_slotmap.Find(material_handle);
+		VK_ASSERT(material);
+		memcpy((MaterialData*)data->ubos.material_buffers[vk_inst.current_frame].ptr + data->draw_list.current_entry, &material->data, sizeof(MaterialData));
+
 		DrawList::Entry& entry = data->draw_list.GetNextEntry();
 		entry.mesh_handle = mesh_handle;
 		entry.material_handle = material_handle;
@@ -1846,14 +1828,14 @@ namespace Renderer
 
 	void SubmitPointlight(const glm::vec3& pos, const glm::vec3& color, float intensity)
 	{
-		VK_ASSERT(data->num_light_sources < MAX_LIGHT_SOURCES && "Exceeded the maximum amount of light sources");
+		VK_ASSERT(data->num_pointlights < MAX_LIGHT_SOURCES && "Exceeded the maximum amount of light sources");
 
-		PointlightData* pointlight_data = (PointlightData*)data->light_uniform_buffers[vk_inst.current_frame].ptr;
-		pointlight_data[data->num_light_sources].position = pos;
-		pointlight_data[data->num_light_sources].intensity = intensity;
-		pointlight_data[data->num_light_sources].color = color;
+		PointlightData* pointlight_data = (PointlightData*)data->ubos.light_buffers[vk_inst.current_frame].ptr;
+		pointlight_data[data->num_pointlights].position = pos;
+		pointlight_data[data->num_pointlights].intensity = intensity;
+		pointlight_data[data->num_pointlights].color = color;
 
-		data->num_light_sources++;
+		data->num_pointlights++;
 	}
 
 }

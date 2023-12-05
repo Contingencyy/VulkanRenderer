@@ -12,14 +12,11 @@ public:
 	DescriptorBuffer(VkDescriptorType type, uint32_t descriptor_size, uint32_t num_descriptors = DEFAULT_DESCRIPTOR_BUFFER_SIZE);
 	~DescriptorBuffer();
 
-	DescriptorAllocation Allocate(uint32_t num_descriptors = 1);
+	DescriptorAllocation Allocate(uint32_t num_descriptors = 1, uint32_t align = 0);
 	void Free(const DescriptorAllocation& allocation);
 
 	VkDescriptorBufferBindingInfoEXT GetBindingInfo() const;
 	VkDescriptorSetLayout GetDescriptorSetLayout() const { return m_layout; }
-
-private:
-	void* GetDescriptorPointer(uint32_t offset);
 
 private:
 	VkDescriptorType m_descriptor_type;
@@ -29,5 +26,6 @@ private:
 	uint32_t m_num_descriptors = 0;
 	uint32_t m_descriptor_size = 0;
 	uint32_t m_current_descriptor_offset = 0;
+	uint8_t* m_current_ptr = nullptr;
 
 };

@@ -12,7 +12,7 @@ class DescriptorAllocation
 {
 public:
 	DescriptorAllocation() = default;
-	DescriptorAllocation(VkDescriptorType type, uint32_t descriptor_offset, uint32_t num_descriptors, uint32_t descriptor_size, void* base_ptr);
+	DescriptorAllocation(VkDescriptorType type, uint32_t descriptor_offset, uint32_t num_descriptors, uint32_t descriptor_size, uint8_t* base_ptr);
 
 	void* GetDescriptor(uint32_t offset = 0);
 	uint32_t GetIndex(uint32_t offset = 0);
@@ -30,6 +30,6 @@ private:
 	uint32_t m_num_descriptors = 0;
 	uint32_t m_descriptor_size = 0;
 
-	void* m_ptr = nullptr;
+	uint8_t* m_ptr = nullptr;
 
 };

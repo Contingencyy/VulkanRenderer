@@ -17,7 +17,7 @@ namespace Vulkan
 	{
 		VkBuffer buffer = VK_NULL_HANDLE;
 		VkDeviceMemory memory = VK_NULL_HANDLE;
-		void* ptr = nullptr;
+		uint8_t* ptr = nullptr;
 
 		VkDeviceSize size = 0;
 		VkDeviceSize offset = 0;
@@ -159,6 +159,7 @@ struct VulkanInstance
 	struct DeviceProperties
 	{
 		uint32_t max_anisotropy;
+		uint32_t descriptor_buffer_offset_alignment;
 	} device_props;
 
 	struct DescriptorSizes
