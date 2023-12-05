@@ -787,25 +787,15 @@ namespace Vulkan
 		vkDestroyInstance(vk_inst.instance, nullptr);
 	}
 
-	bool SwapChainAcquireNextImage()
+	VkResult SwapChainAcquireNextImage()
 	{
 		VkResult image_result = vkAcquireNextImageKHR(vk_inst.device, vk_inst.swapchain.swapchain, UINT64_MAX,
 			vk_inst.swapchain.image_available_semaphores[vk_inst.current_frame], VK_NULL_HANDLE, &vk_inst.swapchain.current_image);
 
-		if (image_result == VK_ERROR_OUT_OF_DATE_KHR || image_result == VK_SUBOPTIMAL_KHR)
-		{
-			Vulkan::RecreateSwapChain();
-			return true;
-		}
-		else if (image_result != VK_SUCCESS && image_result != VK_SUBOPTIMAL_KHR)
-		{
-			VkCheckResult(image_result);
-		}
-
-		return false;
+		return image_result;
 	}
 
-	bool SwapChainPresent(const std::vector<VkSemaphore>& signal_semaphores)
+	VkResult SwapChainPresent(const std::vector<VkSemaphore>& signal_semaphores)
 	{
 		VkPresentInfoKHR present_info = {};
 		present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -818,18 +808,7 @@ namespace Vulkan
 		present_info.pResults = nullptr;
 
 		VkResult present_result = vkQueuePresentKHR(vk_inst.queues.graphics, &present_info);
-
-		if (present_result == VK_ERROR_OUT_OF_DATE_KHR || present_result == VK_SUBOPTIMAL_KHR)
-		{
-			Vulkan::RecreateSwapChain();
-			return true;
-		}
-		else
-		{
-			VkCheckResult(present_result);
-		}
-
-		return false;
+		return present_result;
 	}
 
 	void RecreateSwapChain()
@@ -998,6 +977,7 @@ namespace Vulkan
 		view.num_mips = num_mips;
 		view.base_layer = base_layer;
 		view.num_layers = num_layers;
+		view.layout = VK_IMAGE_LAYOUT_UNDEFINED;
 		VkCheckResult(vkCreateImageView(vk_inst.device, &view_info, nullptr, &view.view));
 	}
 

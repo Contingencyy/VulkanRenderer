@@ -77,7 +77,7 @@ vec3 RadianceAtFragment(vec3 V, vec3 N, vec3 world_pos,
 	
 	vec3 kD = (1.0 - F) * (1.0 - metallic);
 	vec3 ambient = (kD * diffuse + specular);
-	//Lo += ambient;
+	Lo += ambient;
 
 	return Lo;
 }

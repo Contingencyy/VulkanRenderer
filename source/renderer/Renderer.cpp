@@ -1230,12 +1230,21 @@ namespace Renderer
 		VkCheckResult(vkResetFences(vk_inst.device, 1, &data->in_flight_fences[vk_inst.current_frame]));
 
 		// Get an available image index from the swap chain
-		bool resized = Vulkan::SwapChainAcquireNextImage();
-		if (resized)
+		VkResult result = Vulkan::SwapChainAcquireNextImage();
+		if ((result == VK_ERROR_OUT_OF_DATE_KHR) || (result == VK_SUBOPTIMAL_KHR))
 		{
-			DestroyRenderTargets();
-			CreateRenderTargets();
+			if (result == VK_ERROR_OUT_OF_DATE_KHR)
+			{
+				Vulkan::RecreateSwapChain();
+				DestroyRenderTargets();
+				CreateRenderTargets();
+			}
+
 			return;
+		}
+		else
+		{
+			VkCheckResult(result);
 		}
 
 		// Reset and record the command buffer
@@ -1525,15 +1534,25 @@ namespace Renderer
 
 		VkCheckResult(vkQueueSubmit(vk_inst.queues.graphics, 1, &submit_info, data->in_flight_fences[vk_inst.current_frame]));
 
+		ImGui::EndFrame();
+
 		// Present
-		bool resized = Vulkan::SwapChainPresent(signal_semaphores);
-		if (resized)
+		VkResult result = Vulkan::SwapChainPresent(signal_semaphores);
+		if ((result == VK_ERROR_OUT_OF_DATE_KHR) || (result == VK_SUBOPTIMAL_KHR))
 		{
+			Vulkan::RecreateSwapChain();
 			DestroyRenderTargets();
 			CreateRenderTargets();
-		}
 
-		ImGui::EndFrame();
+			if (result == VK_ERROR_OUT_OF_DATE_KHR)
+			{
+				return;
+			}
+		}
+		else
+		{
+			VkCheckResult(result);
+		}
 
 		// Reset/Update per-frame data
 		data->stats.Reset();

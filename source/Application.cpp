@@ -122,8 +122,8 @@ namespace Application
 		Assets::LoadTexture("assets/textures/hdr/Env_Victorian_Hall.hdr", "Env", TextureFormat_RGBA32_SFLOAT, true, true);
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatTest/ClearCoatTest.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatCarPaint/ClearCoatCarPaint.gltf", "model");
-		//Assets::LoadGLTF("assets/models/gltf/MetalRoughSpheres/MetalRoughSpheres.gltf", "model");
-		Assets::LoadGLTF("assets/models/gltf/ABeautifulGame/ABeautifulGame.gltf", "model");
+		Assets::LoadGLTF("assets/models/gltf/MetalRoughSpheres/MetalRoughSpheres.gltf", "model");
+		//Assets::LoadGLTF("assets/models/gltf/ABeautifulGame/ABeautifulGame.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/Bmw_M6/scene.gltf", "model");
 
 		glm::mat4 transform = glm::scale(glm::identity<glm::mat4>(), glm::vec3(10.0f));

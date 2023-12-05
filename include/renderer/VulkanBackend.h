@@ -46,8 +46,8 @@ namespace Vulkan
 	void Init(::GLFWwindow* window);
 	void Exit();
 	
-	bool SwapChainAcquireNextImage();
-	bool SwapChainPresent(const std::vector<VkSemaphore>& signal_semaphores);
+	VkResult SwapChainAcquireNextImage();
+	VkResult SwapChainPresent(const std::vector<VkSemaphore>& signal_semaphores);
 	void RecreateSwapChain();
 
 	void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags mem_flags, Buffer& buffer);
