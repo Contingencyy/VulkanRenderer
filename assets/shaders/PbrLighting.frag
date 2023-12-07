@@ -5,21 +5,26 @@
 
 #include "BRDF.glsl"
 
-layout(set = DESCRIPTOR_SET_UBO, binding = RESERVED_DESCRIPTOR_UBO_CAMERA) uniform Camera
+layout(set = DESCRIPTOR_SET_UBO, binding = RESERVED_DESCRIPTOR_UBO_SETTINGS) uniform SettingsUBO
 {
-	CameraData cam;
-} g_camera;
+	RenderSettings settings;
+};
 
-layout(set = DESCRIPTOR_SET_UBO, binding = RESERVED_DESCRIPTOR_UBO_LIGHTS) uniform Lights
+layout(set = DESCRIPTOR_SET_UBO, binding = RESERVED_DESCRIPTOR_UBO_CAMERA) uniform CameraUBO
 {
-	PointlightData pointlight[MAX_LIGHT_SOURCES];
+	CameraData camera;
+};
+
+layout(set = DESCRIPTOR_SET_UBO, binding = RESERVED_DESCRIPTOR_UBO_LIGHTS) uniform LightUBO
+{
+	PointlightData pointlights[MAX_LIGHT_SOURCES];
 	uint num_pointlights;
-} g_lights;
+};
 
-layout(set = DESCRIPTOR_SET_UBO, binding = RESERVED_DESCRIPTOR_UBO_MATERIALS) uniform Materials
+layout(set = DESCRIPTOR_SET_UBO, binding = RESERVED_DESCRIPTOR_UBO_MATERIALS) uniform MaterialUBO
 {
-	MaterialData mat[MAX_UNIQUE_MATERIALS];
-} g_materials;
+	MaterialData materials[MAX_UNIQUE_MATERIALS];
+};
 
 layout(std140, push_constant) uniform constants
 {
@@ -51,9 +56,9 @@ vec3 RadianceAtFragment(vec3 V, vec3 N, vec3 world_pos,
 	vec3 Lo = vec3(0.0);
 	
 	// Evaluate direct lighting
-	for (uint i = 0; i < g_lights.num_pointlights; ++i)
+	for (uint i = 0; i < num_pointlights; ++i)
 	{
-		PointlightData pointlight = g_lights.pointlight[i];
+		PointlightData pointlight = pointlights[i];
 		vec3 light_color = pointlight.color * pointlight.intensity;
 
 		vec3 L = normalize(pointlight.position - world_pos.xyz);
@@ -71,13 +76,22 @@ vec3 RadianceAtFragment(vec3 V, vec3 N, vec3 world_pos,
 	vec3 irradiance = SampleTextureCube(push_consts.irradiance_cubemap_index, 0, N).rgb;
 
 	vec3 diffuse = irradiance * albedo * INV_PI;
-
+	
 	vec3 F = F_SchlickRoughness(max(dot(N, V), 0.0), f0, roughness);
-	vec3 specular = reflection * mix(env_brdf.xxx, env_brdf.yyy, f0);
+	vec3 specular = reflection * (F * env_brdf.x + env_brdf.y);
 	
 	vec3 kD = (1.0 - F) * (1.0 - metallic);
 	vec3 ambient = (kD * diffuse + specular);
 	Lo += ambient;
+
+	if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_INDIRECT_DIFFUSE)
+	{
+		Lo = kD * diffuse;
+	}
+	else if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_INDIRECT_SPECULAR)
+	{
+		Lo = specular;
+	}
 
 	return Lo;
 }
@@ -95,9 +109,9 @@ vec3 RadianceAtFragmentClearCoat(vec3 V, vec3 N, vec3 world_pos,
 	vec3 Lo = vec3(0.0);
 
 	// Evaluate direct lighting
-	for (uint i = 0; i < g_lights.num_pointlights; ++i)
+	for (uint i = 0; i < num_pointlights; ++i)
 	{
-		PointlightData pointlight = g_lights.pointlight[i];
+		PointlightData pointlight = pointlights[i];
 		vec3 light_color = pointlight.color * pointlight.intensity;
 		
 		vec3 L = normalize(pointlight.position - world_pos.xyz);
@@ -118,18 +132,27 @@ vec3 RadianceAtFragmentClearCoat(vec3 V, vec3 N, vec3 world_pos,
 	vec3 diffuse = irradiance * albedo * INV_PI;
 
 	vec3 F = F_SchlickRoughness(max(dot(N, V), 0.0), f0, roughness);
-	vec3 specular = reflection * mix(env_brdf.xxx, env_brdf.yyy, f0);
+	vec3 specular = reflection * (F * env_brdf.x + env_brdf.y);
 	
 	vec3 kD = (1.0 - F) * (1.0 - metallic);
 	vec3 ambient = (kD * diffuse + specular);
 	Lo += ambient;
+
+	if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_INDIRECT_DIFFUSE)
+	{
+		Lo = kD * diffuse;
+	}
+	else if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_INDIRECT_SPECULAR)
+	{
+		Lo = specular;
+	}
 
 	return Lo;
 }
 
 void main()
 {
-	MaterialData material = g_materials.mat[push_consts.mat_index];
+	MaterialData material = materials[push_consts.mat_index];
 	vec3 albedo = SampleTexture(material.albedo_texture_index, material.sampler_index, frag_tex_coord).rgb * material.albedo_factor.rgb;
 	vec3 normal = SampleTexture(material.normal_texture_index, material.sampler_index, frag_tex_coord).rgb;
 	vec2 metallic_roughness = SampleTexture(material.metallic_roughness_texture_index, material.sampler_index, frag_tex_coord).bg * vec2(material.metallic_factor, material.roughness_factor);
@@ -139,11 +162,11 @@ void main()
 	normal = normal * 2.0 - 1.0;
 	normal = normalize(TBN * normal);
 
-	vec3 view_pos = g_camera.cam.view_pos.xyz;
+	vec3 view_pos = camera.view_pos.xyz;
 	vec3 view_dir = normalize(view_pos - frag_pos.xyz);
 
 	vec3 color = vec3(0.0);
-	
+
 	if (material.has_clearcoat == 1)
 	{
 		float clearcoat_alpha = SampleTexture(material.clearcoat_alpha_texture_index, material.sampler_index, frag_tex_coord).r * material.clearcoat_alpha_factor;
@@ -153,11 +176,24 @@ void main()
 		clearcoat_normal = clearcoat_normal * 2.0 - 1.0;
 		clearcoat_normal = normalize(TBN * clearcoat_normal);
 
-		color += RadianceAtFragmentClearCoat(
+		color = RadianceAtFragmentClearCoat(
 			view_dir, normal, frag_pos.xyz,
 			albedo, metallic_roughness.x, metallic_roughness.y,
 			clearcoat_alpha, clearcoat_normal, clearcoat_roughness
 		);
+
+		if (settings.debug_render_mode == DEBUG_RENDER_MODE_CLEARCOAT_ALPHA)
+		{
+			color = vec3(clearcoat_alpha);
+		}
+		else if (settings.debug_render_mode == DEBUG_RENDER_MODE_CLEARCOAT_NORMAL)
+		{
+			color = abs(clearcoat_normal);
+		}
+		else if (settings.debug_render_mode == DEBUG_RENDER_MODE_CLEARCOAT_ROUGHNESS)
+		{
+			color = vec3(0.0, clearcoat_roughness, 0.0);
+		}
 	}
 	else
 	{
@@ -165,7 +201,33 @@ void main()
 			view_dir, normal, frag_pos.xyz,
 			albedo, metallic_roughness.x, metallic_roughness.y
 		);
+
+		// If this is not a clearcoat material and we want a clearcoat debug view,
+		// simply write debug pink to indicate that this is not a clearcoat material
+		if (settings.debug_render_mode == DEBUG_RENDER_MODE_CLEARCOAT_ALPHA ||
+			settings.debug_render_mode == DEBUG_RENDER_MODE_CLEARCOAT_NORMAL ||
+			settings.debug_render_mode == DEBUG_RENDER_MODE_CLEARCOAT_ROUGHNESS)
+		{
+			color = vec3(1.0, 0.0, 1.0);
+		}
 	}
-	
+
+	switch(settings.debug_render_mode)
+	{
+		case DEBUG_RENDER_MODE_ALBEDO:
+		{
+			color = albedo.xyz;
+		} break;
+		case DEBUG_RENDER_MODE_NORMAL:
+		{
+			color = abs(normal);
+		} break;
+		case DEBUG_RENDER_MODE_METALLIC_ROUGHNESS:
+		{
+			// In source textures, metallic is blue, roughness is green, we mimic that
+			color = vec3(0.0, metallic_roughness.yx);
+		} break;
+	}
+
 	out_color = vec4(color, 1.0);
 }

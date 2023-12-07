@@ -5,10 +5,10 @@
 
 #include "Shared.glsl.h"
 
-layout(set = DESCRIPTOR_SET_UBO, binding = RESERVED_DESCRIPTOR_UBO_CAMERA) uniform Camera
+layout(set = DESCRIPTOR_SET_UBO, binding = RESERVED_DESCRIPTOR_UBO_CAMERA) uniform CameraUBO
 {
-	CameraData cam;
-} g_camera;
+	CameraData camera;
+};
 
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec2 tex_coord;
@@ -35,5 +35,5 @@ void main()
 	frag_tangent = normalize(frag_tangent - dot(frag_tangent, frag_normal) * frag_normal);
 	frag_bitangent = normalize(cross(frag_normal, frag_tangent)) * (-tangent.w);
 
-	gl_Position = g_camera.cam.proj * g_camera.cam.view * frag_pos;
+	gl_Position = camera.proj * camera.view * frag_pos;
 }

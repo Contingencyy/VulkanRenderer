@@ -175,6 +175,7 @@ namespace Renderer
 			DescriptorAllocation ubo_descriptors;
 		} per_frame[VulkanInstance::MAX_FRAMES_IN_FLIGHT];
 
+		// TODO: Free reserved descriptors on Exit()
 		DescriptorAllocation reserved_storage_image_descriptors;
 
 		// Draw submission list
@@ -194,13 +195,7 @@ namespace Renderer
 		// TODO: Free reserved descriptors on Exit()
 		DescriptorAllocation reserved_sampler_descriptors;
 
-		struct Settings
-		{
-			struct Debug
-			{
-				uint32_t debug_render_mode;
-			} debug;
-		} settings;
+		RenderSettings settings;
 
 		struct Statistics
 		{
@@ -393,6 +388,9 @@ namespace Renderer
 
 	static void CreateUniformBuffers()
 	{
+		data->ubos.settings_buffers.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
+		VkDeviceSize settings_buffer_size = sizeof(RenderSettings);
+
 		data->ubos.camera_buffers.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
 		VkDeviceSize camera_buffer_size = sizeof(CameraData);
 
@@ -402,12 +400,13 @@ namespace Renderer
 		data->ubos.material_buffers.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
 		VkDeviceSize material_buffer_size = MAX_UNIQUE_MATERIALS * sizeof(MaterialData);
 
-		//data->ubos.settings_buffers.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
-		//VkDeviceSize settings_buffer_sizhe = sizeof(Settings);
-
 		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
 			data->per_frame[i].ubo_descriptors = data->descriptor_buffer_uniform.Allocate(RESERVED_DESCRIPTOR_UBO_COUNT, vk_inst.device_props.descriptor_buffer_offset_alignment);
+
+			Vulkan::CreateUniformBuffer(settings_buffer_size, data->ubos.settings_buffers[i]);
+			data->per_frame[i].ubo_descriptors.WriteDescriptor(data->ubos.settings_buffers[i],
+				settings_buffer_size, RESERVED_DESCRIPTOR_UBO_SETTINGS);
 
 			Vulkan::CreateUniformBuffer(camera_buffer_size, data->ubos.camera_buffers[i]);
 			data->per_frame[i].ubo_descriptors.WriteDescriptor(data->ubos.camera_buffers[i],
@@ -1211,6 +1210,7 @@ namespace Renderer
 			Vulkan::DestroyBuffer(data->ubos.camera_buffers[i]);
 			Vulkan::DestroyBuffer(data->ubos.light_buffers[i]);
 			Vulkan::DestroyBuffer(data->ubos.material_buffers[i]);
+			Vulkan::DestroyBuffer(data->ubos.settings_buffers[i]);
 			Vulkan::DestroyBuffer(data->instance_buffers[i]);
 		}
 
@@ -1255,12 +1255,15 @@ namespace Renderer
 		ImGui_ImplVulkan_NewFrame();
 		ImGui::NewFrame();
 
+		// Set UBO data for the current frame, like camera data and settings
 		CameraData camera_data = {};
 		camera_data.view = frame_info.view;
 		camera_data.proj = frame_info.proj;
 		camera_data.view_pos = glm::inverse(frame_info.view)[3];
-
 		memcpy(data->ubos.camera_buffers[vk_inst.current_frame].ptr, &camera_data, sizeof(camera_data));
+
+		memcpy(data->ubos.settings_buffers[vk_inst.current_frame].ptr, &data->settings, sizeof(RenderSettings));
+
 		data->skybox_texture_handle = frame_info.skybox_texture_handle;
 	}
 
@@ -1415,21 +1418,18 @@ namespace Renderer
 		// ----------------------------------------------------------------------------------------------------------------
 		// Post-process pass
 
-		if (data->settings.debug.debug_render_mode == DEBUG_RENDER_MODE_NONE)
+		BEGIN_PASS(command_buffer, data->render_passes.post_process, begin_info);
 		{
-			BEGIN_PASS(command_buffer, data->render_passes.post_process, begin_info);
-			{
-				vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)data->descriptor_buffer_binding_infos.size(), data->descriptor_buffer_binding_infos.data());
-				data->render_passes.post_process.SetDescriptorBufferOffsets(command_buffer, 0, 5, &data->descriptor_buffer_indices[0], &data->descriptor_buffer_offsets[0]);
+			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)data->descriptor_buffer_binding_infos.size(), data->descriptor_buffer_binding_infos.data());
+			data->render_passes.post_process.SetDescriptorBufferOffsets(command_buffer, 0, 5, &data->descriptor_buffer_indices[0], &data->descriptor_buffer_offsets[0]);
 
-				uint32_t src_dst_indices[2] = { RESERVED_DESCRIPTOR_STORAGE_IMAGE_HDR, RESERVED_DESCRIPTOR_STORAGE_IMAGE_SDR };
-				data->render_passes.post_process.PushConstants(command_buffer, VK_SHADER_STAGE_COMPUTE_BIT, 0, 2 * sizeof(uint32_t), &src_dst_indices);
-				uint32_t dispatch_x = VK_ALIGN_POW2(begin_info.render_width, 8) / 8;
-				uint32_t dispatch_y = VK_ALIGN_POW2(begin_info.render_height, 8) / 8;
-				vkCmdDispatch(command_buffer, dispatch_x, dispatch_y, 1);
-			}
-			END_PASS(command_buffer, data->render_passes.post_process);
+			uint32_t src_dst_indices[2] = { RESERVED_DESCRIPTOR_STORAGE_IMAGE_HDR, RESERVED_DESCRIPTOR_STORAGE_IMAGE_SDR };
+			data->render_passes.post_process.PushConstants(command_buffer, VK_SHADER_STAGE_COMPUTE_BIT, 0, 2 * sizeof(uint32_t), &src_dst_indices);
+			uint32_t dispatch_x = VK_ALIGN_POW2(begin_info.render_width, 8) / 8;
+			uint32_t dispatch_y = VK_ALIGN_POW2(begin_info.render_height, 8) / 8;
+			vkCmdDispatch(command_buffer, dispatch_x, dispatch_y, 1);
 		}
+		END_PASS(command_buffer, data->render_passes.post_process);
 	}
 
 	void RenderUI()
@@ -1442,14 +1442,14 @@ namespace Renderer
 		ImGui::SetNextItemOpen(true, ImGuiCond_Once);
 		if (ImGui::CollapsingHeader("Debug"))
 		{
-			if (ImGui::BeginCombo("Debug render mode", DEBUG_RENDER_MODE_LABELS[data->settings.debug.debug_render_mode]))
+			if (ImGui::BeginCombo("Debug render mode", DEBUG_RENDER_MODE_LABELS[data->settings.debug_render_mode]))
 			{
 				for (uint32_t i = 0; i < DEBUG_RENDER_MODE_NUM_MODES; ++i)
 				{
-					bool is_selected = i == data->settings.debug.debug_render_mode;
+					bool is_selected = i == data->settings.debug_render_mode;
 					if (ImGui::Selectable(DEBUG_RENDER_MODE_LABELS[i], is_selected))
 					{
-						data->settings.debug.debug_render_mode = i;
+						data->settings.debug_render_mode = i;
 					}
 
 					if (is_selected)

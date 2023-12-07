@@ -23,11 +23,11 @@ const uint DESCRIPTOR_SET_SAMPLED_IMAGE = 3;
 const uint DESCRIPTOR_SET_SAMPLER = 4;
 
 // Reserved descriptors
-const uint RESERVED_DESCRIPTOR_UBO_COUNT = 3;
-const uint RESERVED_DESCRIPTOR_UBO_CAMERA = 0;
-const uint RESERVED_DESCRIPTOR_UBO_LIGHTS = 1;
-const uint RESERVED_DESCRIPTOR_UBO_MATERIALS = 2;
-//const uint RESERVED_DESCRIPTOR_UBO_SETTINGS = 3;
+const uint RESERVED_DESCRIPTOR_UBO_COUNT = 4;
+const uint RESERVED_DESCRIPTOR_UBO_SETTINGS = 0;
+const uint RESERVED_DESCRIPTOR_UBO_CAMERA = 1;
+const uint RESERVED_DESCRIPTOR_UBO_LIGHTS = 2;
+const uint RESERVED_DESCRIPTOR_UBO_MATERIALS = 3;
 
 const uint RESERVED_DESCRIPTOR_STORAGE_BUFFER_COUNT = 0;
 
@@ -41,14 +41,15 @@ const uint MAX_LIGHT_SOURCES = 100;
 
 // Debug render modes
 const uint DEBUG_RENDER_MODE_NONE = 0;
-const uint DEBUG_RENDER_MODE_BASE_COLOR = 1;
+const uint DEBUG_RENDER_MODE_ALBEDO = 1;
 const uint DEBUG_RENDER_MODE_NORMAL = 2;
 const uint DEBUG_RENDER_MODE_METALLIC_ROUGHNESS = 3;
 const uint DEBUG_RENDER_MODE_CLEARCOAT_ALPHA = 4;
 const uint DEBUG_RENDER_MODE_CLEARCOAT_NORMAL = 5;
 const uint DEBUG_RENDER_MODE_CLEARCOAT_ROUGHNESS = 6;
 const uint DEBUG_RENDER_MODE_IBL_INDIRECT_DIFFUSE = 7;
-const uint DEBUG_RENDER_MODE_NUM_MODES = 8;
+const uint DEBUG_RENDER_MODE_IBL_INDIRECT_SPECULAR = 8;
+const uint DEBUG_RENDER_MODE_NUM_MODES = 9;
 
 #ifdef __cplusplus
 
@@ -56,10 +57,18 @@ const uint DEBUG_RENDER_MODE_NUM_MODES = 8;
 
 const std::vector<const char*> DEBUG_RENDER_MODE_LABELS =
 {
-	"None", "Base color", "Normal", "Metallic roughness", "Clearcoat alpha", "Clearcoat normal", "Clearcoat roughness", "IBL indirect diffuse"
+	"None",
+	"Albedo", "Normal", "Metallic roughness",
+	"Clearcoat alpha", "Clearcoat normal", "Clearcoat roughness",
+	"IBL indirect diffuse", "IBL indirect specular"
 };
 
 #endif
+
+DECLARE_STRUCT(RenderSettings)
+{
+	uint debug_render_mode;
+};
 
 DECLARE_STRUCT(CameraData)
 {

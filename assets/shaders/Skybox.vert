@@ -5,10 +5,10 @@
 
 #include "Shared.glsl.h"
 
-layout(set = DESCRIPTOR_SET_UBO, binding = RESERVED_DESCRIPTOR_UBO_CAMERA) uniform Camera
+layout(set = DESCRIPTOR_SET_UBO, binding = RESERVED_DESCRIPTOR_UBO_CAMERA) uniform CameraUBO
 {
-	CameraData cam;
-} g_camera;
+	CameraData camera;
+};
 
 layout(location = 0) in vec3 position;
 
@@ -18,8 +18,8 @@ void main()
 {
 	local_position = position;
 
-	mat4 view_no_translate = mat4(mat3(g_camera.cam.view));
-	vec4 clip_position = g_camera.cam.proj * view_no_translate * vec4(position, 1.0);
+	mat4 view_no_translate = mat4(mat3(camera.view));
+	vec4 clip_position = camera.proj * view_no_translate * vec4(position, 1.0);
 
 	gl_Position = clip_position.xyww;
 }
