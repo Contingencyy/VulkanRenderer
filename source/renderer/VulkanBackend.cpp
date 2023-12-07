@@ -63,7 +63,6 @@ namespace Vulkan
 		uint32_t glfw_extension_count = 0;
 		const char** glfw_extensions;
 		glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extension_count);
-
 		std::vector<const char*> extensions(glfw_extensions, glfw_extensions + glfw_extension_count);
 
 		if (VulkanInstance::ENABLE_VALIDATION_LAYERS)
@@ -517,28 +516,13 @@ namespace Vulkan
 		VkCheckResult(vkCreateSwapchainKHR(vk_inst.device, &create_info, nullptr, &vk_inst.swapchain.swapchain));
 		VkCheckResult(vkGetSwapchainImagesKHR(vk_inst.device, vk_inst.swapchain.swapchain, &image_count, nullptr));
 
-		std::vector<VkImage> swapchain_images(image_count);
-		VkCheckResult(vkGetSwapchainImagesKHR(vk_inst.device, vk_inst.swapchain.swapchain, &image_count, swapchain_images.data()));
+		vk_inst.swapchain.images.resize(image_count);
+		vk_inst.swapchain.layouts.clear();
+		vk_inst.swapchain.layouts.resize(image_count);
+		VkCheckResult(vkGetSwapchainImagesKHR(vk_inst.device, vk_inst.swapchain.swapchain, &image_count, vk_inst.swapchain.images.data()));
 
 		vk_inst.swapchain.extent = extent;
 		vk_inst.swapchain.format = create_info.imageFormat;
-
-		vk_inst.swapchain.images.resize(image_count);
-		vk_inst.swapchain.views.resize(image_count);
-		for (size_t i = 0; i < image_count; ++i)
-		{
-			vk_inst.swapchain.images[i].image = swapchain_images[i];
-			vk_inst.swapchain.images[i].memory = VK_NULL_HANDLE;
-			vk_inst.swapchain.images[i].format = vk_inst.swapchain.format;
-
-			vk_inst.swapchain.views[i].image = &vk_inst.swapchain.images[i];
-			vk_inst.swapchain.views[i].view_type = VK_IMAGE_VIEW_TYPE_2D;
-			vk_inst.swapchain.views[i].base_mip = 0;
-			vk_inst.swapchain.views[i].num_mips = 1;
-			vk_inst.swapchain.views[i].base_layer = 0;
-			vk_inst.swapchain.views[i].num_layers = 1;
-			vk_inst.swapchain.views[i].layout = VK_IMAGE_LAYOUT_UNDEFINED;
-		}
 
 		VkSemaphoreCreateInfo semaphore_info = {};
 		semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;

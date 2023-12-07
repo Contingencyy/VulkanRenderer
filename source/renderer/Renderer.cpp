@@ -1494,21 +1494,29 @@ namespace Renderer
 		copy_region.dstOffset = { 0, 0, 0 };
 		copy_region.extent = { vk_inst.swapchain.extent.width, vk_inst.swapchain.extent.height, 1 };
 
-		std::vector<VkImageMemoryBarrier2> swapchain_copy_begin_transitions =
+		Vulkan::ImageView swapchain_view;
+		Vulkan::Image swapchain_image;
+		swapchain_view.image = &swapchain_image;
+		swapchain_view.image->image = vk_inst.swapchain.images[vk_inst.swapchain.current_image];
+		swapchain_view.image->format = vk_inst.swapchain.format;
+		swapchain_view.layout = vk_inst.swapchain.layouts[vk_inst.swapchain.current_image];
+
+		std::vector<VkImageMemoryBarrier2> copy_barriers =
 		{
 			Vulkan::ImageMemoryBarrier(data->render_targets.sdr->view, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL),
-			Vulkan::ImageMemoryBarrier(vk_inst.swapchain.views[vk_inst.current_frame], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+			Vulkan::ImageMemoryBarrier(swapchain_view, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
 		};
-		Vulkan::CmdTransitionImageLayouts(command_buffer, swapchain_copy_begin_transitions);
 
+		Vulkan::CmdTransitionImageLayouts(command_buffer, copy_barriers);
+		vk_inst.swapchain.layouts[vk_inst.swapchain.current_image] = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 		vkCmdCopyImage(command_buffer, data->render_targets.sdr->image.image, data->render_targets.sdr->view.layout,
-			vk_inst.swapchain.images[vk_inst.current_frame].image, vk_inst.swapchain.views[vk_inst.current_frame].layout, 1, &copy_region);
-
-		Vulkan::CmdTransitionImageLayout(command_buffer, vk_inst.swapchain.views[vk_inst.current_frame], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
-
-		VkCheckResult(vkEndCommandBuffer(command_buffer));
+			vk_inst.swapchain.images[vk_inst.swapchain.current_image], vk_inst.swapchain.layouts[vk_inst.swapchain.current_image], 1, &copy_region);
+		Vulkan::CmdTransitionImageLayout(command_buffer, swapchain_view, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+		vk_inst.swapchain.layouts[vk_inst.swapchain.current_image] = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
 		// Submit the command buffer for execution
+		VkCheckResult(vkEndCommandBuffer(command_buffer));
+
 		VkSubmitInfo submit_info = {};
 		submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
