@@ -14,11 +14,14 @@ void* DescriptorAllocation::GetDescriptor(uint32_t offset)
 
 uint32_t DescriptorAllocation::GetIndex(uint32_t offset)
 {
+	VK_ASSERT(!IsNull());
 	return m_descriptor_offset + offset;
 }
 
 void DescriptorAllocation::WriteDescriptor(const Vulkan::Buffer& buffer, VkDeviceSize size, uint32_t offset)
 {
+	VK_ASSERT(!IsNull());
+
 	VkBufferDeviceAddressInfoEXT buffer_address_info = {};
 	buffer_address_info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
 	buffer_address_info.buffer = buffer.buffer;
@@ -52,6 +55,8 @@ void DescriptorAllocation::WriteDescriptor(const Vulkan::Buffer& buffer, VkDevic
 
 void DescriptorAllocation::WriteDescriptor(const Vulkan::ImageView& view, VkImageLayout layout, uint32_t offset)
 {
+	VK_ASSERT(!IsNull());
+
 	VkDescriptorImageInfo image_info = {};
 	image_info.imageView = view.view;
 	image_info.imageLayout = layout;
@@ -77,6 +82,8 @@ void DescriptorAllocation::WriteDescriptor(const Vulkan::ImageView& view, VkImag
 
 void DescriptorAllocation::WriteDescriptor(const VkSampler sampler, uint32_t offset)
 {
+	VK_ASSERT(!IsNull());
+
 	VkDescriptorGetInfoEXT descriptor_info = {};
 	descriptor_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
 	descriptor_info.type = VK_DESCRIPTOR_TYPE_SAMPLER;
