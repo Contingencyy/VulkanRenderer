@@ -92,6 +92,10 @@ vec3 RadianceAtFragment(vec3 V, vec3 N, vec3 world_pos,
 	{
 		Lo = specular;
 	}
+	else if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_BRDF_LUT)
+	{
+		Lo = vec3(env_brdf, 0.0);
+	}
 
 	return Lo;
 }
@@ -145,6 +149,10 @@ vec3 RadianceAtFragmentClearCoat(vec3 V, vec3 N, vec3 world_pos,
 	else if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_INDIRECT_SPECULAR)
 	{
 		Lo = specular;
+	}
+	else if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_BRDF_LUT)
+	{
+		Lo = vec3(env_brdf, 0.0);
 	}
 
 	return Lo;

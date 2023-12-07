@@ -179,7 +179,8 @@ struct VulkanInstance
 		VkExtent2D extent = { 0, 0 };
 		uint32_t current_image = 0;
 
-		std::vector<VkImage> images;
+		std::vector<Vulkan::Image> images;
+		std::vector<Vulkan::ImageView> views;
 		std::vector<VkSemaphore> image_available_semaphores;
 	} swapchain;
 

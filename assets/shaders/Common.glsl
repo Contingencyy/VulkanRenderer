@@ -50,7 +50,7 @@ vec4 SampleTextureCubeLod(uint tex_idx, uint samp_idx, vec3 samp_dir, float lod)
 
 */
 
-vec2 Hammersley2D(uint i, uint normal) 
+vec2 Hammersley2D(uint i, uint N) 
 {
 	uint bits = (i << 16u) | (i >> 16u);
 	bits = ((bits & 0x55555555u) << 1u) | ((bits & 0xAAAAAAAAu) >> 1u);
@@ -58,23 +58,33 @@ vec2 Hammersley2D(uint i, uint normal)
 	bits = ((bits & 0x0F0F0F0Fu) << 4u) | ((bits & 0xF0F0F0F0u) >> 4u);
 	bits = ((bits & 0x00FF00FFu) << 8u) | ((bits & 0xFF00FF00u) >> 8u);
 	float rdi = float(bits) * 2.3283064365386963e-10;
-	return vec2(float(i) /float(normal), rdi);
+	return vec2(float(i) /float(N), rdi);
 }
 
-vec3 ImportanceSampleGGX(vec2 Xi, vec3 normal, float roughness)
+float random(vec2 co)
 {
-	float a = roughness * roughness;
+	float a = 12.9898;
+	float b = 78.233;
+	float c = 43758.5453;
+	float dt= dot(co.xy ,vec2(a,b));
+	float sn= mod(dt,3.14);
+	return fract(sin(sn) * c);
+}
 
-	float phi = 2.0 * PI * Xi.x;
-	float cos_theta = sqrt((1.0 - Xi.y) / (1.0 + (a * a - 1.0) * Xi.y));
-	float sin_theta = sqrt(1.0 - cos_theta * cos_theta);
+vec3 ImportanceSampleGGX(vec2 Xi, float roughness, vec3 normal) 
+{
+	// Maps a 2D point to a hemisphere with spread based on roughness
+	float alpha = roughness * roughness;
+	float phi = 2.0 * PI * Xi.x + random(normal.xz) * 0.1;
+	float cosTheta = sqrt((1.0 - Xi.y) / (1.0 + (alpha*alpha - 1.0) * Xi.y));
+	float sinTheta = sqrt(1.0 - cosTheta * cosTheta);
+	vec3 H = vec3(sinTheta * cos(phi), sinTheta * sin(phi), cosTheta);
 
-	vec3 cartesian = vec3(cos(phi) * sin_theta, sin(phi) * sin_theta, cos_theta);
-	
+	// Tangent space
 	vec3 up = abs(normal.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
-	vec3 tangent = normalize(cross(up, normal));
-	vec3 bitangent = cross(normal, tangent);
+	vec3 tangentX = normalize(cross(up, normal));
+	vec3 tangentY = normalize(cross(normal, tangentX));
 
-	vec3 sample_vec = tangent * cartesian.x + bitangent * cartesian.y + normal * cartesian.z;
-	return normalize(sample_vec);
+	// Convert to world Space
+	return normalize(tangentX * H.x + tangentY * H.y + normal * H.z);
 }

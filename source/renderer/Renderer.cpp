@@ -780,8 +780,9 @@ namespace Renderer
 			attachment_infos[0].attachment_type = RenderPass::ATTACHMENT_TYPE_COLOR;
 			attachment_infos[0].format = VK_FORMAT_R16G16_SFLOAT;
 			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-			attachment_infos[0].load_op = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+			attachment_infos[0].load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
 			attachment_infos[0].store_op = VK_ATTACHMENT_STORE_OP_STORE;
+			attachment_infos[0].clear_value = { 0.0, 0.0, 0.0, 1.0 };
 
 			data->render_passes.gen_brdf_lut.SetAttachmentInfos(attachment_infos);
 
@@ -794,6 +795,7 @@ namespace Renderer
 			info.color_attachment_formats = data->render_passes.gen_brdf_lut.GetColorAttachmentFormats();
 			info.vs_path = "assets/shaders/BRDF_LUT.vert";
 			info.fs_path = "assets/shaders/BRDF_LUT.frag";
+			info.cull_mode = VK_CULL_MODE_NONE;
 
 			data->render_passes.gen_brdf_lut.Build(descriptor_set_layouts, push_ranges, info);
 		}
@@ -1103,8 +1105,8 @@ namespace Renderer
 
 		// Create the BRDF LUT
 		Vulkan::CreateImage(IBL_BRDF_LUT_RESOLUTION, IBL_BRDF_LUT_RESOLUTION, VK_FORMAT_R16G16_SFLOAT, VK_IMAGE_TILING_OPTIMAL,
-			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, reserved_brdf_lut.resource->image);
-		Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, &reserved_brdf_lut.resource->image, reserved_brdf_lut.resource->view);
+			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, data->ibl.brdf_lut->image);
+		Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, &data->ibl.brdf_lut->image, data->ibl.brdf_lut->view);
 
 		VkViewport viewport = {};
 		viewport.x = 0.0f, viewport.y = 0.0f;
@@ -1118,11 +1120,10 @@ namespace Renderer
 		} push_consts;
 
 		VkCommandBuffer command_buffer = Vulkan::BeginImmediateCommand();
-		std::vector<Vulkan::ImageView> attachment_image_views;
 
 		RenderPass::BeginInfo begin_info = {};
-		begin_info.render_width = IBL_PREFILTERED_CUBEMAP_RESOLUTION;
-		begin_info.render_height = IBL_PREFILTERED_CUBEMAP_RESOLUTION;
+		begin_info.render_width = IBL_BRDF_LUT_RESOLUTION;
+		begin_info.render_height = IBL_BRDF_LUT_RESOLUTION;
 
 		data->render_passes.gen_brdf_lut.SetAttachment(data->ibl.brdf_lut->view, 0);
 
@@ -1147,14 +1148,12 @@ namespace Renderer
 		END_PASS(command_buffer, data->render_passes.gen_brdf_lut);
 
 		Vulkan::CmdTransitionImageLayout(command_buffer,
-			reserved_brdf_lut.resource->view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+			data->ibl.brdf_lut->view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
 		);
 		Vulkan::EndImmediateCommand(command_buffer);
 
-		for (auto& attachment_image_view : attachment_image_views)
-		{
-			Vulkan::DestroyImageView(attachment_image_view);
-		}
+		data->ibl.brdf_lut->descriptor = data->descriptor_buffer_sampled_image.Allocate();
+		data->ibl.brdf_lut->descriptor.WriteDescriptor(data->ibl.brdf_lut->view, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
 	}
 
 	void Init(::GLFWwindow* window)
@@ -1181,7 +1180,6 @@ namespace Renderer
 		CreateSyncObjects();
 
 		CreateUniformBuffers();
-
 		CreateInstanceBuffers();
 
 		CreateDefaultSamplers();
@@ -1496,23 +1494,17 @@ namespace Renderer
 		copy_region.dstOffset = { 0, 0, 0 };
 		copy_region.extent = { vk_inst.swapchain.extent.width, vk_inst.swapchain.extent.height, 1 };
 
-		// TODO: Fix this hack
-		Vulkan::Image swapchain_image;
-		Vulkan::ImageView swapchain_view;
-		swapchain_view.image = &swapchain_image;
-		swapchain_view.image->image = vk_inst.swapchain.images[vk_inst.swapchain.current_image];
-
 		std::vector<VkImageMemoryBarrier2> swapchain_copy_begin_transitions =
 		{
 			Vulkan::ImageMemoryBarrier(data->render_targets.sdr->view, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL),
-			Vulkan::ImageMemoryBarrier(swapchain_view, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+			Vulkan::ImageMemoryBarrier(vk_inst.swapchain.views[vk_inst.current_frame], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
 		};
 		Vulkan::CmdTransitionImageLayouts(command_buffer, swapchain_copy_begin_transitions);
 
 		vkCmdCopyImage(command_buffer, data->render_targets.sdr->image.image, data->render_targets.sdr->view.layout,
-			swapchain_view.image->image, swapchain_view.layout, 1, &copy_region);
+			vk_inst.swapchain.images[vk_inst.current_frame].image, vk_inst.swapchain.views[vk_inst.current_frame].layout, 1, &copy_region);
 
-		Vulkan::CmdTransitionImageLayout(command_buffer, swapchain_view, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+		Vulkan::CmdTransitionImageLayout(command_buffer, vk_inst.swapchain.views[vk_inst.current_frame], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
 		VkCheckResult(vkEndCommandBuffer(command_buffer));
 

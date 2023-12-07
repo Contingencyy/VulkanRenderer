@@ -49,7 +49,8 @@ const uint DEBUG_RENDER_MODE_CLEARCOAT_NORMAL = 5;
 const uint DEBUG_RENDER_MODE_CLEARCOAT_ROUGHNESS = 6;
 const uint DEBUG_RENDER_MODE_IBL_INDIRECT_DIFFUSE = 7;
 const uint DEBUG_RENDER_MODE_IBL_INDIRECT_SPECULAR = 8;
-const uint DEBUG_RENDER_MODE_NUM_MODES = 9;
+const uint DEBUG_RENDER_MODE_IBL_BRDF_LUT = 9;
+const uint DEBUG_RENDER_MODE_NUM_MODES = 10;
 
 #ifdef __cplusplus
 
@@ -60,7 +61,7 @@ const std::vector<const char*> DEBUG_RENDER_MODE_LABELS =
 	"None",
 	"Albedo", "Normal", "Metallic roughness",
 	"Clearcoat alpha", "Clearcoat normal", "Clearcoat roughness",
-	"IBL indirect diffuse", "IBL indirect specular"
+	"IBL indirect diffuse", "IBL indirect specular", "IBL BRDF LUT"
 };
 
 #endif

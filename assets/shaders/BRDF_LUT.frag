@@ -31,11 +31,11 @@ float GeometrySchlickGGX(float NdotV, float roughness)
     return nom / denom;
 }
 
-float G_SchlicksmithGGX(float dotNL, float dotNV, float roughness)
+float G_SchlicksmithGGX(float NoL, float NoV, float roughness)
 {
 	float k = (roughness * roughness) / 2.0;
-	float GL = dotNL / (dotNL * (1.0 - k) + k);
-	float GV = dotNV / (dotNV * (1.0 - k) + k);
+	float GL = NoL / (NoL * (1.0 - k) + k);
+	float GV = NoV / (NoV * (1.0 - k) + k);
 	return GL * GV;
 }
 
@@ -45,25 +45,25 @@ vec2 IntegrateBRDF(float NoV, float roughness)
 	roughness = roughness * roughness;
 
 	const vec3 N = vec3(0.0, 0.0, 1.0);
-	vec3 V = vec3(sqrt(1.0 - NoV * NoV), 0.0, NoV);
+	vec3 V = vec3(sqrt(1.0 - NoV*NoV), 0.0, NoV);
 
 	vec2 LUT = vec2(0.0);
-	for(uint i = 0u; i < push_consts.num_samples; i++)
+	for(uint i = 0u; i < push_consts.num_samples; ++i)
 	{
 		vec2 Xi = Hammersley2D(i, push_consts.num_samples);
-		vec3 H = ImportanceSampleGGX(Xi, N, roughness);
+		vec3 H = ImportanceSampleGGX(Xi, roughness, N);
 		vec3 L = 2.0 * dot(V, H) * H - V;
 
-		float NoL = max(dot(N, L), 0.0);
-		float NoV = max(dot(N, V), 0.0);
-		float VoH = max(dot(V, H), 0.0); 
-		float NoH = max(dot(H, N), 0.0);
+		float dotNL = max(dot(N, L), 0.0);
+		float dotNV = max(dot(N, V), 0.0);
+		float dotVH = max(dot(V, H), 0.0); 
+		float dotNH = max(dot(H, N), 0.0);
 
-		if (NoL > 0.0)
+		if (dotNL > 0.0)
 		{
-			float G = G_SchlicksmithGGX(NoL, NoV, roughness);
-			float G_Vis = (G * VoH) / (NoH * NoV);
-			float Fc = pow(1.0 - VoH, 5.0);
+			float G = G_SchlicksmithGGX(dotNL, dotNV, roughness);
+			float G_Vis = (G * dotVH) / (dotNH * dotNV);
+			float Fc = pow(1.0 - dotVH, 5.0);
 
 			LUT += vec2((1.0 - Fc) * G_Vis, Fc * G_Vis);
 		}
@@ -74,6 +74,6 @@ vec2 IntegrateBRDF(float NoV, float roughness)
 
 void main()
 {
-	vec2 integrated_brdf = IntegrateBRDF(tex_coord.x, tex_coord.y);
+	vec2 integrated_brdf = IntegrateBRDF(tex_coord.s, tex_coord.t);
 	out_color = integrated_brdf;
 }

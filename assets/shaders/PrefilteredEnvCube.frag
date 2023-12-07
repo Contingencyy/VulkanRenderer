@@ -38,7 +38,7 @@ void main()
 	for (uint i = 0; i < push_consts.num_samples; ++i)
 	{
 		vec2 Xi = Hammersley2D(i, push_consts.num_samples);
-		vec3 H = ImportanceSampleGGX(Xi, normal, roughness);
+		vec3 H = ImportanceSampleGGX(Xi, roughness, normal);
 		vec3 L = normalize(2.0 * dot(V, H) * H - V);
 
 		float NoL = clamp(dot(normal, L), 0.0, 1.0);
