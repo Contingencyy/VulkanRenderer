@@ -1178,6 +1178,14 @@ namespace Renderer
 		CreateDefaultTextures();
 		CreateUnitCubeBuffers();
 		GenerateBRDF_LUT();
+
+		// Set default render settings
+		data->settings.use_squared_roughness = true;
+
+		data->settings.exposure = 1.5f;
+		data->settings.gamma = 2.4f;
+
+		data->settings.debug_render_mode = DEBUG_RENDER_MODE_NONE;
 	}
 
 	void Exit()
@@ -1430,25 +1438,53 @@ namespace Renderer
 		ImGui::Text("Total triangle count: %u", data->stats.total_triangle_count);
 
 		ImGui::SetNextItemOpen(true, ImGuiCond_Once);
-		if (ImGui::CollapsingHeader("Debug"))
+		if (ImGui::CollapsingHeader("Settings"))
 		{
-			if (ImGui::BeginCombo("Debug render mode", DEBUG_RENDER_MODE_LABELS[data->settings.debug_render_mode]))
+			// ------------------------------------------------------------------------------------------------------
+			// PBR settings
+
+			if (ImGui::CollapsingHeader("PBR"))
 			{
-				for (uint32_t i = 0; i < DEBUG_RENDER_MODE_NUM_MODES; ++i)
+				ImGui::Checkbox("Use squared roughness (more linear perceptually)", &data->settings.use_squared_roughness);
+				if (ImGui::IsItemHovered())
 				{
-					bool is_selected = i == data->settings.debug_render_mode;
-					if (ImGui::Selectable(DEBUG_RENDER_MODE_LABELS[i], is_selected))
-					{
-						data->settings.debug_render_mode = i;
-					}
-
-					if (is_selected)
-					{
-						ImGui::SetItemDefaultFocus();
-					}
+					ImGui::SetTooltip("Squares the roughness before doing any lighting calculations, which makes it perceptually more linear");
 				}
+			}
 
-				ImGui::EndCombo();
+			// ------------------------------------------------------------------------------------------------------
+			// Post-processing settings
+
+			if (ImGui::CollapsingHeader("Post-processing"))
+			{
+				ImGui::SliderFloat("Exposure", &data->settings.exposure, 0.001f, 20.0f, "%.2f");
+				ImGui::SliderFloat("Gamma", &data->settings.gamma, 0.001f, 20.0f, "%.2f");
+			}
+
+			// ------------------------------------------------------------------------------------------------------
+			// Debug settings
+
+			ImGui::SetNextItemOpen(true, ImGuiCond_Once);
+			if (ImGui::CollapsingHeader("Debug"))
+			{
+				if (ImGui::BeginCombo("Debug render mode", DEBUG_RENDER_MODE_LABELS[data->settings.debug_render_mode]))
+				{
+					for (uint32_t i = 0; i < DEBUG_RENDER_MODE_NUM_MODES; ++i)
+					{
+						bool is_selected = i == data->settings.debug_render_mode;
+						if (ImGui::Selectable(DEBUG_RENDER_MODE_LABELS[i], is_selected))
+						{
+							data->settings.debug_render_mode = i;
+						}
+
+						if (is_selected)
+						{
+							ImGui::SetItemDefaultFocus();
+						}
+					}
+
+					ImGui::EndCombo();
+				}
 			}
 		}
 

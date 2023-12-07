@@ -50,7 +50,10 @@ vec3 RadianceAtFragment(vec3 V, vec3 N, vec3 world_pos,
 	vec3 albedo, float metallic, float roughness)
 {
 	// Remapping of roughness to be visually more linear
-	roughness = roughness * roughness;
+	if (settings.use_squared_roughness)
+	{
+		roughness = roughness * roughness;
+	}
 
 	vec3 f0 = mix(vec3(0.04), albedo, metallic);
 	vec3 Lo = vec3(0.0);
@@ -105,9 +108,12 @@ vec3 RadianceAtFragmentClearCoat(vec3 V, vec3 N, vec3 world_pos,
 	float coat_alpha, vec3 coat_normal, float coat_roughness)
 {
 	// Remapping of roughness to be visually more linear
-	roughness = roughness * roughness;
-	coat_roughness = clamp(coat_roughness, 0.089f, 1.0f);
-	coat_roughness = coat_roughness * coat_roughness;
+	if (settings.use_squared_roughness)
+	{
+		roughness = roughness * roughness;
+		coat_roughness = clamp(coat_roughness, 0.089f, 1.0f);
+		coat_roughness = coat_roughness * coat_roughness;
+	}
 
 	vec3 f0 = mix(vec3(0.04), albedo, metallic);
 	vec3 Lo = vec3(0.0);

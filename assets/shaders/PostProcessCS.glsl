@@ -69,9 +69,9 @@ void main()
 
 	if (settings.debug_render_mode == DEBUG_RENDER_MODE_NONE)
 	{
-		final_color = ApplyExposure(hdr_color.rgb, 1.5);
-		final_color = TonemapReinhardLumaWhite(hdr_color.rgb, 100.0);
-		final_color = LinearToSRGB(final_color, 2.4);
+		final_color = ApplyExposure(final_color.rgb, settings.exposure);
+		final_color = TonemapReinhardLumaWhite(final_color.rgb, 100.0);
+		final_color = LinearToSRGB(final_color, settings.gamma);
 	}
 
 	imageStore(g_outputs[push_constants.sdr_dst_index], texel_pos, vec4(final_color, hdr_color.a));

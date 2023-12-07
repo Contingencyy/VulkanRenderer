@@ -68,6 +68,11 @@ const std::vector<const char*> DEBUG_RENDER_MODE_LABELS =
 
 DECLARE_STRUCT(RenderSettings)
 {
+	bool use_squared_roughness;
+
+	float exposure;
+	float gamma;
+
 	uint debug_render_mode;
 };
 
