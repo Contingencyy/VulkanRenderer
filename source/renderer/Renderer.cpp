@@ -457,9 +457,9 @@ namespace Renderer
 			Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, &data->render_targets.hdr->image, data->render_targets.hdr->view);
 			data->reserved_storage_image_descriptors.WriteDescriptor(data->render_targets.hdr->view, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL, RESERVED_DESCRIPTOR_STORAGE_IMAGE_HDR);
 
-			data->render_passes.skybox.SetAttachment(data->render_targets.hdr->view, 0);
-			data->render_passes.lighting.SetAttachment(data->render_targets.hdr->view, 0);
-			data->render_passes.post_process.SetAttachment(data->render_targets.hdr->view, 0);
+			data->render_passes.skybox.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, data->render_targets.hdr->view);
+			data->render_passes.lighting.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, data->render_targets.hdr->view);
+			data->render_passes.post_process.SetAttachment(RenderPass::ATTACHMENT_SLOT_READ_ONLY0, data->render_targets.hdr->view);
 		}
 
 		// Create depth render target
@@ -481,8 +481,8 @@ namespace Renderer
 			);
 			Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_DEPTH_BIT, &data->render_targets.depth->image, data->render_targets.depth->view);
 
-			data->render_passes.skybox.SetAttachment(data->render_targets.depth->view, 1);
-			data->render_passes.lighting.SetAttachment(data->render_targets.depth->view, 1);
+			data->render_passes.skybox.SetAttachment(RenderPass::ATTACHMENT_SLOT_DEPTH_STENCIL, data->render_targets.depth->view);
+			data->render_passes.lighting.SetAttachment(RenderPass::ATTACHMENT_SLOT_DEPTH_STENCIL, data->render_targets.depth->view);
 		}
 
 		// Create SDR render target
@@ -505,9 +505,8 @@ namespace Renderer
 			Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, &data->render_targets.sdr->image, data->render_targets.sdr->view);
 			data->reserved_storage_image_descriptors.WriteDescriptor(data->render_targets.sdr->view, VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL, RESERVED_DESCRIPTOR_STORAGE_IMAGE_SDR);
 
-			data->render_passes.lighting.SetAttachment(data->render_targets.sdr->view, 2);
-			data->render_passes.post_process.SetAttachment(data->render_targets.sdr->view, 1);
-			data->imgui.render_pass.SetAttachment(data->render_targets.sdr->view, 0);
+			data->render_passes.post_process.SetAttachment(RenderPass::ATTACHMENT_SLOT_READ_WRITE0, data->render_targets.sdr->view);
+			data->imgui.render_pass.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, data->render_targets.sdr->view);
 		}
 	}
 
@@ -539,14 +538,14 @@ namespace Renderer
 		// Skybox raster pass
 		{
 			std::vector<RenderPass::AttachmentInfo> attachment_infos(2);
-			attachment_infos[0].attachment_type = RenderPass::ATTACHMENT_TYPE_COLOR;
+			attachment_infos[0].attachment_slot = RenderPass::ATTACHMENT_SLOT_COLOR0;
 			attachment_infos[0].format = VK_FORMAT_R16G16B16A16_SFLOAT;
 			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 			attachment_infos[0].load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
 			attachment_infos[0].store_op = VK_ATTACHMENT_STORE_OP_STORE;
 			attachment_infos[0].clear_value.color = { 0.0f, 0.0f, 0.0f, 1.0f };
 
-			attachment_infos[1].attachment_type = RenderPass::ATTACHMENT_TYPE_DEPTH_STENCIL;
+			attachment_infos[1].attachment_slot = RenderPass::ATTACHMENT_SLOT_DEPTH_STENCIL;
 			attachment_infos[1].format = VK_FORMAT_D32_SFLOAT;
 			attachment_infos[1].expected_layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
 			attachment_infos[1].load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
@@ -584,25 +583,18 @@ namespace Renderer
 
 		// Lighting raster pass
 		{
-			std::vector<RenderPass::AttachmentInfo> attachment_infos(3);
-			attachment_infos[0].attachment_type = RenderPass::ATTACHMENT_TYPE_COLOR;
+			std::vector<RenderPass::AttachmentInfo> attachment_infos(2);
+			attachment_infos[0].attachment_slot = RenderPass::ATTACHMENT_SLOT_COLOR0;
 			attachment_infos[0].format = VK_FORMAT_R16G16B16A16_SFLOAT;
 			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 			attachment_infos[0].load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
 			attachment_infos[0].store_op = VK_ATTACHMENT_STORE_OP_STORE;
 
-			attachment_infos[1].attachment_type = RenderPass::ATTACHMENT_TYPE_DEPTH_STENCIL;
+			attachment_infos[1].attachment_slot = RenderPass::ATTACHMENT_SLOT_DEPTH_STENCIL;
 			attachment_infos[1].format = VK_FORMAT_D32_SFLOAT;
 			attachment_infos[1].expected_layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
 			attachment_infos[1].load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
 			attachment_infos[1].store_op = VK_ATTACHMENT_STORE_OP_STORE;
-
-			attachment_infos[2].attachment_type = RenderPass::ATTACHMENT_TYPE_COLOR;
-			attachment_infos[2].format = vk_inst.swapchain.format;
-			attachment_infos[2].expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-			attachment_infos[2].load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
-			attachment_infos[2].store_op = VK_ATTACHMENT_STORE_OP_STORE;
-			attachment_infos[2].clear_value = { 0.0f, 0.0f, 0.0f, 1.0f };
 
 			data->render_passes.lighting.SetAttachmentInfos(attachment_infos);
 
@@ -628,11 +620,11 @@ namespace Renderer
 		// Post-processing compute pass
 		{
 			std::vector<RenderPass::AttachmentInfo> attachment_infos(2);
-			attachment_infos[0].attachment_type = RenderPass::ATTACHMENT_TYPE_READ_ONLY;
+			attachment_infos[0].attachment_slot = RenderPass::ATTACHMENT_SLOT_READ_ONLY0;
 			attachment_infos[0].format = VK_FORMAT_R16G16B16A16_SFLOAT;
 			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
 
-			attachment_infos[1].attachment_type = RenderPass::ATTACHMENT_TYPE_COLOR;
+			attachment_infos[1].attachment_slot = RenderPass::ATTACHMENT_SLOT_READ_WRITE0;
 			attachment_infos[1].format = vk_inst.swapchain.format;
 			attachment_infos[1].expected_layout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL;
 			attachment_infos[1].load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
@@ -655,7 +647,7 @@ namespace Renderer
 		// Dear ImGui render pass
 		{
 			std::vector<RenderPass::AttachmentInfo> attachment_infos(1);
-			attachment_infos[0].attachment_type = RenderPass::ATTACHMENT_TYPE_COLOR;
+			attachment_infos[0].attachment_slot = RenderPass::ATTACHMENT_SLOT_COLOR0;
 			attachment_infos[0].format = vk_inst.swapchain.format;
 			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 			attachment_infos[0].load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
@@ -667,7 +659,7 @@ namespace Renderer
 		// Generate Cubemap from Equirectangular Map pass
 		{
 			std::vector<RenderPass::AttachmentInfo> attachment_infos(1);
-			attachment_infos[0].attachment_type = RenderPass::ATTACHMENT_TYPE_COLOR;
+			attachment_infos[0].attachment_slot = RenderPass::ATTACHMENT_SLOT_COLOR0;
 			attachment_infos[0].format = VK_FORMAT_R16G16B16A16_SFLOAT;
 			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 			attachment_infos[0].load_op = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -703,7 +695,7 @@ namespace Renderer
 		// Generate Irradiance Cube pass
 		{
 			std::vector<RenderPass::AttachmentInfo> attachment_infos(1);
-			attachment_infos[0].attachment_type = RenderPass::ATTACHMENT_TYPE_COLOR;
+			attachment_infos[0].attachment_slot = RenderPass::ATTACHMENT_SLOT_COLOR0;
 			attachment_infos[0].format = VK_FORMAT_R16G16B16A16_SFLOAT;
 			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 			attachment_infos[0].load_op = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -740,7 +732,7 @@ namespace Renderer
 		// Generate Prefiltered Cube pass
 		{
 			std::vector<RenderPass::AttachmentInfo> attachment_infos(1);
-			attachment_infos[0].attachment_type = RenderPass::ATTACHMENT_TYPE_COLOR;
+			attachment_infos[0].attachment_slot = RenderPass::ATTACHMENT_SLOT_COLOR0;
 			attachment_infos[0].format = VK_FORMAT_R16G16B16A16_SFLOAT;
 			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 			attachment_infos[0].load_op = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -777,7 +769,7 @@ namespace Renderer
 		// Generate BRDF LUT pass
 		{
 			std::vector<RenderPass::AttachmentInfo> attachment_infos(1);
-			attachment_infos[0].attachment_type = RenderPass::ATTACHMENT_TYPE_COLOR;
+			attachment_infos[0].attachment_slot = RenderPass::ATTACHMENT_SLOT_COLOR0;
 			attachment_infos[0].format = VK_FORMAT_R16G16_SFLOAT;
 			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 			attachment_infos[0].load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
@@ -894,7 +886,7 @@ namespace Renderer
 
 				Vulkan::ImageView& attachment_view = attachment_image_views.emplace_back();
 				Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, &cubemap_image, attachment_view, mip, 1, face, 1);
-				data->render_passes.gen_cubemap.SetAttachment(attachment_view, 0);
+				data->render_passes.gen_cubemap.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, attachment_view);
 
 				BEGIN_PASS(command_buffer, data->render_passes.gen_cubemap, begin_info);
 				{
@@ -976,7 +968,7 @@ namespace Renderer
 			{
 				Vulkan::ImageView& attachment_view = attachment_image_views.emplace_back();
 				Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, &cubemap_image, attachment_view, mip, 1, face, 1);
-				data->render_passes.gen_irradiance_cube.SetAttachment(attachment_view, 0);
+				data->render_passes.gen_irradiance_cube.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, attachment_view);
 
 				BEGIN_PASS(command_buffer, data->render_passes.gen_irradiance_cube, begin_info);
 				{
@@ -1056,7 +1048,7 @@ namespace Renderer
 			{
 				Vulkan::ImageView& attachment_view = attachment_image_views.emplace_back();
 				Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, &cubemap_image, attachment_view, mip, 1, face, 1);
-				data->render_passes.gen_prefiltered_cube.SetAttachment(attachment_view, 0);
+				data->render_passes.gen_prefiltered_cube.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, attachment_view);
 
 				BEGIN_PASS(command_buffer, data->render_passes.gen_prefiltered_cube, begin_info);
 				{
@@ -1125,7 +1117,7 @@ namespace Renderer
 		begin_info.render_width = IBL_BRDF_LUT_RESOLUTION;
 		begin_info.render_height = IBL_BRDF_LUT_RESOLUTION;
 
-		data->render_passes.gen_brdf_lut.SetAttachment(data->ibl.brdf_lut->view, 0);
+		data->render_passes.gen_brdf_lut.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, data->ibl.brdf_lut->view);
 
 		BEGIN_PASS(command_buffer, data->render_passes.gen_brdf_lut, begin_info);
 		{

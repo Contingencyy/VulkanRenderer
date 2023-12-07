@@ -21,10 +21,11 @@ void RenderPass::Begin(VkCommandBuffer command_buffer, const BeginInfo& begin_in
 		std::vector<VkRenderingAttachmentInfo> color_attachment_infos;
 		VkRenderingAttachmentInfo depth_attachment_info = { VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
 
-		for (size_t i = 0; i < m_attachments.size(); ++i)
+		for (auto& attachment : m_attachments)
 		{
-			Attachment& attachment = m_attachments[i];
-			
+			if (attachment.info.attachment_slot == ATTACHMENT_SLOT_INVALID)
+				continue;
+
 			if (attachment.view.layout != attachment.info.expected_layout)
 			{
 				barriers.push_back(Vulkan::ImageMemoryBarrier(attachment.view, attachment.info.expected_layout));
@@ -34,12 +35,14 @@ void RenderPass::Begin(VkCommandBuffer command_buffer, const BeginInfo& begin_in
 		// Transition all attachments to their expected layout
 		Vulkan::CmdTransitionImageLayouts(command_buffer, barriers);
 
-		for (size_t i = 0; i < m_attachments.size(); ++i)
+		for (auto& attachment : m_attachments)
 		{
-			Attachment& attachment = m_attachments[i];
+			if (attachment.info.attachment_slot == ATTACHMENT_SLOT_INVALID)
+				continue;
+
 			VkRenderingAttachmentInfo* attachment_info = &depth_attachment_info;
 
-			if (attachment.info.attachment_type == ATTACHMENT_TYPE_COLOR)
+			if (IsColorAttachment(attachment.info.attachment_slot))
 			{
 				attachment_info = &color_attachment_infos.emplace_back();
 			}
@@ -114,9 +117,10 @@ void RenderPass::Begin(VkCommandBuffer command_buffer, const BeginInfo& begin_in
 		//	}
 		//}
 
-		for (size_t i = 0; i < m_attachments.size(); ++i)
+		for (auto& attachment : m_attachments)
 		{
-			Attachment& attachment = m_attachments[i];
+			if (attachment.info.attachment_slot == ATTACHMENT_SLOT_INVALID)
+				continue;
 
 			if (attachment.view.layout != attachment.info.expected_layout)
 			{
@@ -160,21 +164,18 @@ void RenderPass::End(VkCommandBuffer command_buffer)
 
 void RenderPass::SetAttachmentInfos(const std::vector<AttachmentInfo>& attachment_infos)
 {
-	m_attachments.resize(attachment_infos.size());
-	for (uint32_t i = 0; i < attachment_infos.size(); ++i)
+	for (const auto& info : attachment_infos)
 	{
-		m_attachments[i].info = attachment_infos[i];
+		m_attachments[info.attachment_slot].info = info;
 	}
 }
 
-void RenderPass::SetAttachment(const Vulkan::ImageView& attachment_view, uint32_t index)
+void RenderPass::SetAttachment(AttachmentSlot slot, const Vulkan::ImageView& attachment_view)
 {
-	if (index >= m_attachments.size())
-		VK_EXCEPT("RenderPass::SetAttachment", "Tried to set an attachment with an index larger than the total amount of attachments specified in the render pass")
-	if (attachment_view.image->format != m_attachments[index].info.format)
-		VK_EXCEPT("RenderPass::SetAttachment", "The format of the attachment does not match the format specified in the attachment info");
+	VK_ASSERT(attachment_view.image->format == m_attachments[slot].info.format && "The format of the attachment does not match the format specified in the attachment info");
+	VK_ASSERT(slot < m_attachments.size() && "Tried to set an attachment with an index larger than the total amount of attachments specified in the render pass");
 
-	m_attachments[index].view = attachment_view;
+	m_attachments[slot].view = attachment_view;
 }
 
 std::vector<VkFormat> RenderPass::GetColorAttachmentFormats()
@@ -183,7 +184,10 @@ std::vector<VkFormat> RenderPass::GetColorAttachmentFormats()
 
 	for (const auto& attachment : m_attachments)
 	{
-		if (attachment.info.attachment_type == ATTACHMENT_TYPE_COLOR)
+		if (attachment.info.attachment_slot == ATTACHMENT_SLOT_INVALID)
+			continue;
+
+		if (IsColorAttachment(attachment.info.attachment_slot))
 		{
 			formats.push_back(attachment.info.format);
 		}
@@ -196,7 +200,7 @@ VkFormat RenderPass::GetDepthStencilAttachmentFormat()
 {
 	for (const auto& attachment : m_attachments)
 	{
-		if (attachment.info.attachment_type == ATTACHMENT_TYPE_DEPTH_STENCIL)
+		if (IsDepthStencilAttachment(attachment.info.attachment_slot))
 		{
 			return attachment.info.format;
 		}
@@ -221,4 +225,14 @@ void RenderPass::Build(const std::vector<VkDescriptorSetLayout>& descriptor_set_
 
 	m_pipeline_layout = Vulkan::CreatePipelineLayout(descriptor_set_layouts, push_constant_ranges);
 	m_pipeline = Vulkan::CreateComputePipeline(compute_pipeline_info, m_pipeline_layout);
+}
+
+bool RenderPass::IsColorAttachment(AttachmentSlot slot)
+{
+	return (slot == ATTACHMENT_SLOT_COLOR0) || (slot == ATTACHMENT_SLOT_COLOR1);
+}
+
+bool RenderPass::IsDepthStencilAttachment(AttachmentSlot slot)
+{
+	return slot == ATTACHMENT_SLOT_DEPTH_STENCIL;
 }

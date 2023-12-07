@@ -1,6 +1,8 @@
 #pragma once
 #include "renderer/VulkanBackend.h"
 
+#include <array>
+
 struct TextureResource;
 
 enum RenderPassType
@@ -12,16 +14,30 @@ enum RenderPassType
 class RenderPass
 {
 public:
+	enum AttachmentSlot
+	{
+		// Attachment slots used by graphics passes
+		ATTACHMENT_SLOT_INVALID = 0xffffffff,
+		ATTACHMENT_SLOT_COLOR0,
+		ATTACHMENT_SLOT_COLOR1,
+		ATTACHMENT_SLOT_DEPTH_STENCIL,
+		// Attachment slots used by compute passes
+		ATTACHMENT_SLOT_READ_ONLY0 = ATTACHMENT_SLOT_COLOR0,
+		ATTACHMENT_SLOT_READ_WRITE0 = ATTACHMENT_SLOT_COLOR1,
+		ATTACHMENT_SLOT_MAX_SLOTS = 3
+	};
+
 	enum AttachmentType
 	{
 		ATTACHMENT_TYPE_COLOR,
 		ATTACHMENT_TYPE_DEPTH_STENCIL,
-		ATTACHMENT_TYPE_READ_ONLY
+		ATTACHMENT_TYPE_READ_ONLY,
+		ATTACHMENT_TYPE_READ_WRITE
 	};
 
 	struct AttachmentInfo
 	{
-		AttachmentType attachment_type = ATTACHMENT_TYPE_COLOR;
+		AttachmentSlot attachment_slot = ATTACHMENT_SLOT_INVALID;
 		VkFormat format;
 		VkAttachmentLoadOp load_op = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		VkAttachmentStoreOp store_op = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -51,7 +67,7 @@ public:
 	void End(VkCommandBuffer command_buffer);
 
 	void SetAttachmentInfos(const std::vector<AttachmentInfo>& attachment_infos);
-	void SetAttachment(const Vulkan::ImageView& attachment_view, uint32_t index);
+	void SetAttachment(AttachmentSlot slot, const Vulkan::ImageView& attachment_view);
 	std::vector<VkFormat> GetColorAttachmentFormats();
 	VkFormat GetDepthStencilAttachmentFormat();
 
@@ -61,11 +77,15 @@ public:
 		const std::vector<VkPushConstantRange>& push_constant_ranges, const Vulkan::ComputePipelineInfo& compute_pipeline_info);
 
 private:
+	bool IsColorAttachment(AttachmentSlot slot);
+	bool IsDepthStencilAttachment(AttachmentSlot slot);
+
+private:
 	RenderPassType m_type = RENDER_PASS_TYPE_GRAPHICS;
 
 	VkPipelineLayout m_pipeline_layout = VK_NULL_HANDLE;
 	VkPipeline m_pipeline = VK_NULL_HANDLE;
 
-	std::vector<Attachment> m_attachments;
+	std::array<Attachment, ATTACHMENT_SLOT_MAX_SLOTS> m_attachments;
 
 };
