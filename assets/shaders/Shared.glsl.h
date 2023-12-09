@@ -68,7 +68,9 @@ const std::vector<const char*> DEBUG_RENDER_MODE_LABELS =
 
 DECLARE_STRUCT(RenderSettings)
 {
-	bool use_squared_roughness;
+	uint use_squared_roughness;
+	uint use_clearcoat;
+	uint use_ibl;
 
 	float exposure;
 	float gamma;

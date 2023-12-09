@@ -50,7 +50,7 @@ vec3 RadianceAtFragment(vec3 V, vec3 N, vec3 world_pos,
 	vec3 albedo, float metallic, float roughness)
 {
 	// Remapping of roughness to be visually more linear
-	if (settings.use_squared_roughness)
+	if (settings.use_squared_roughness == 1)
 	{
 		roughness = roughness * roughness;
 	}
@@ -72,32 +72,44 @@ vec3 RadianceAtFragment(vec3 V, vec3 N, vec3 world_pos,
 	}
 	
 	// Evaluate indirect lighting from HDR environment
-	vec3 R = reflect(-V, N);
+	if (settings.use_ibl == 1)
+	{
+		vec3 R = reflect(-V, N);
 
-	vec2 env_brdf = SampleTexture(push_consts.brdf_lut_index, 0, vec2(max(dot(N, V), 0.0), roughness)).rg;
-	vec3 reflection = SampleTextureCubeLod(push_consts.prefiltered_cubemap_index, 0, R, roughness * push_consts.num_prefiltered_mips).rgb;
-	vec3 irradiance = SampleTextureCube(push_consts.irradiance_cubemap_index, 0, N).rgb;
+		vec2 env_brdf = SampleTexture(push_consts.brdf_lut_index, 0, vec2(max(dot(N, V), 0.0), roughness)).rg;
+		vec3 reflection = SampleTextureCubeLod(push_consts.prefiltered_cubemap_index, 0, R, roughness * push_consts.num_prefiltered_mips).rgb;
+		vec3 irradiance = SampleTextureCube(push_consts.irradiance_cubemap_index, 0, N).rgb;
 
-	vec3 diffuse = irradiance * albedo * INV_PI;
+		vec3 diffuse = irradiance * albedo * INV_PI;
 	
-	vec3 F = F_SchlickRoughness(max(dot(N, V), 0.0), f0, roughness);
-	vec3 specular = reflection * (F * env_brdf.x + env_brdf.y);
+		vec3 F = F_SchlickRoughness(max(dot(N, V), 0.0), f0, roughness);
+		vec3 specular = reflection * (F * env_brdf.x + env_brdf.y);
 	
-	vec3 kD = (1.0 - F) * (1.0 - metallic);
-	vec3 ambient = (kD * diffuse + specular);
-	Lo += ambient;
+		vec3 kD = (1.0 - F) * (1.0 - metallic);
+		vec3 ambient = (kD * diffuse + specular);
+		Lo += ambient;
 
-	if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_INDIRECT_DIFFUSE)
-	{
-		Lo = kD * diffuse;
+		if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_INDIRECT_DIFFUSE)
+		{
+			Lo = kD * diffuse;
+		}
+		else if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_INDIRECT_SPECULAR)
+		{
+			Lo = specular;
+		}
+		else if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_BRDF_LUT)
+		{
+			Lo = vec3(env_brdf, 0.0);
+		}
 	}
-	else if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_INDIRECT_SPECULAR)
+	else
 	{
-		Lo = specular;
-	}
-	else if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_BRDF_LUT)
-	{
-		Lo = vec3(env_brdf, 0.0);
+		if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_INDIRECT_DIFFUSE ||
+			settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_INDIRECT_SPECULAR ||
+			settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_BRDF_LUT)
+		{
+			Lo = vec3(0.0);
+		}
 	}
 
 	return Lo;
@@ -108,7 +120,7 @@ vec3 RadianceAtFragmentClearCoat(vec3 V, vec3 N, vec3 world_pos,
 	float coat_alpha, vec3 coat_normal, float coat_roughness)
 {
 	// Remapping of roughness to be visually more linear
-	if (settings.use_squared_roughness)
+	if (settings.use_squared_roughness == 1)
 	{
 		roughness = roughness * roughness;
 		coat_roughness = clamp(coat_roughness, 0.089f, 1.0f);
@@ -133,32 +145,44 @@ vec3 RadianceAtFragmentClearCoat(vec3 V, vec3 N, vec3 world_pos,
 	
 	// Evaluate indirect lighting from HDR environment
 	// TODO: This needs to be adjusted for the clearcoat implementation
-	vec3 R = reflect(-V, N);
+	if (settings.use_ibl == 1)
+	{
+		vec3 R = reflect(-V, N);
 
-	vec2 env_brdf = SampleTexture(push_consts.brdf_lut_index, 0, vec2(max(dot(N, V), 0.0), roughness)).rg;
-	vec3 reflection = SampleTextureCubeLod(push_consts.prefiltered_cubemap_index, 0, R, roughness * push_consts.num_prefiltered_mips).rgb;
-	vec3 irradiance = SampleTextureCube(push_consts.irradiance_cubemap_index, 0, N).rgb;
+		vec2 env_brdf = SampleTexture(push_consts.brdf_lut_index, 0, vec2(max(dot(N, V), 0.0), roughness)).rg;
+		vec3 reflection = SampleTextureCubeLod(push_consts.prefiltered_cubemap_index, 0, R, roughness * push_consts.num_prefiltered_mips).rgb;
+		vec3 irradiance = SampleTextureCube(push_consts.irradiance_cubemap_index, 0, N).rgb;
 
-	vec3 diffuse = irradiance * albedo * INV_PI;
+		vec3 diffuse = irradiance * albedo * INV_PI;
 
-	vec3 F = F_SchlickRoughness(max(dot(N, V), 0.0), f0, roughness);
-	vec3 specular = reflection * (F * env_brdf.x + env_brdf.y);
+		vec3 F = F_SchlickRoughness(max(dot(N, V), 0.0), f0, roughness);
+		vec3 specular = reflection * (F * env_brdf.x + env_brdf.y);
 	
-	vec3 kD = (1.0 - F) * (1.0 - metallic);
-	vec3 ambient = (kD * diffuse + specular);
-	Lo += ambient;
+		vec3 kD = (1.0 - F) * (1.0 - metallic);
+		vec3 ambient = (kD * diffuse + specular);
+		Lo += ambient;
 
-	if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_INDIRECT_DIFFUSE)
-	{
-		Lo = kD * diffuse;
+		if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_INDIRECT_DIFFUSE)
+		{
+			Lo = kD * diffuse;
+		}
+		else if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_INDIRECT_SPECULAR)
+		{
+			Lo = specular;
+		}
+		else if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_BRDF_LUT)
+		{
+			Lo = vec3(env_brdf, 0.0);
+		}
 	}
-	else if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_INDIRECT_SPECULAR)
+	else
 	{
-		Lo = specular;
-	}
-	else if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_BRDF_LUT)
-	{
-		Lo = vec3(env_brdf, 0.0);
+		if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_INDIRECT_DIFFUSE ||
+			settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_INDIRECT_SPECULAR ||
+			settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_BRDF_LUT)
+		{
+			Lo = vec3(0.0);
+		}
 	}
 
 	return Lo;
@@ -181,7 +205,7 @@ void main()
 
 	vec3 color = vec3(0.0);
 
-	if (material.has_clearcoat == 1)
+	if (material.has_clearcoat == 1 && settings.use_clearcoat == 1)
 	{
 		float clearcoat_alpha = SampleTexture(material.clearcoat_alpha_texture_index, material.sampler_index, frag_tex_coord).r * material.clearcoat_alpha_factor;
 		vec3 clearcoat_normal = SampleTexture(material.clearcoat_normal_texture_index, material.sampler_index, frag_tex_coord).rgb;

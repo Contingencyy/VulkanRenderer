@@ -1181,6 +1181,8 @@ namespace Renderer
 
 		// Set default render settings
 		data->settings.use_squared_roughness = true;
+		data->settings.use_clearcoat = true;
+		data->settings.use_ibl = true;
 
 		data->settings.exposure = 1.5f;
 		data->settings.gamma = 2.4f;
@@ -1440,26 +1442,7 @@ namespace Renderer
 		ImGui::SetNextItemOpen(true, ImGuiCond_Once);
 		if (ImGui::CollapsingHeader("Settings"))
 		{
-			// ------------------------------------------------------------------------------------------------------
-			// PBR settings
-
-			if (ImGui::CollapsingHeader("PBR"))
-			{
-				ImGui::Checkbox("Use squared roughness (more linear perceptually)", &data->settings.use_squared_roughness);
-				if (ImGui::IsItemHovered())
-				{
-					ImGui::SetTooltip("Squares the roughness before doing any lighting calculations, which makes it perceptually more linear");
-				}
-			}
-
-			// ------------------------------------------------------------------------------------------------------
-			// Post-processing settings
-
-			if (ImGui::CollapsingHeader("Post-processing"))
-			{
-				ImGui::SliderFloat("Exposure", &data->settings.exposure, 0.001f, 20.0f, "%.2f");
-				ImGui::SliderFloat("Gamma", &data->settings.gamma, 0.001f, 20.0f, "%.2f");
-			}
+			ImGui::Indent(10.0f);
 
 			// ------------------------------------------------------------------------------------------------------
 			// Debug settings
@@ -1467,6 +1450,8 @@ namespace Renderer
 			ImGui::SetNextItemOpen(true, ImGuiCond_Once);
 			if (ImGui::CollapsingHeader("Debug"))
 			{
+				ImGui::Indent(10.0f);
+
 				if (ImGui::BeginCombo("Debug render mode", DEBUG_RENDER_MODE_LABELS[data->settings.debug_render_mode]))
 				{
 					for (uint32_t i = 0; i < DEBUG_RENDER_MODE_NUM_MODES; ++i)
@@ -1485,7 +1470,45 @@ namespace Renderer
 
 					ImGui::EndCombo();
 				}
+
+				ImGui::Unindent(10.0f);
 			}
+
+			// ------------------------------------------------------------------------------------------------------
+			// PBR settings
+
+			ImGui::SetNextItemOpen(true, ImGuiCond_Once);
+			if (ImGui::CollapsingHeader("PBR"))
+			{
+				ImGui::Indent(10.0f);
+
+				ImGui::Checkbox("Use squared roughness (more linear perceptually)", (bool*)&data->settings.use_squared_roughness);
+				if (ImGui::IsItemHovered())
+				{
+					ImGui::SetTooltip("Squares the roughness before doing any lighting calculations, which makes it perceptually more linear");
+				}
+
+				ImGui::Checkbox("Use clearcoat", (bool*)&data->settings.use_clearcoat);
+				ImGui::Checkbox("Use image-based lighting", (bool*)&data->settings.use_ibl);
+
+				ImGui::Unindent(10.0f);
+			}
+
+			// ------------------------------------------------------------------------------------------------------
+			// Post-processing settings
+
+			ImGui::SetNextItemOpen(true, ImGuiCond_Once);
+			if (ImGui::CollapsingHeader("Post-processing"))
+			{
+				ImGui::Indent(10.0f);
+
+				ImGui::SliderFloat("Exposure", &data->settings.exposure, 0.001f, 20.0f, "%.2f");
+				ImGui::SliderFloat("Gamma", &data->settings.gamma, 0.001f, 20.0f, "%.2f");
+
+				ImGui::Unindent(10.0f);
+			}
+
+			ImGui::Unindent(10.0f);
 		}
 
 		ImGui::End();
