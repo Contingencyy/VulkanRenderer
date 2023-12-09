@@ -1180,6 +1180,7 @@ namespace Renderer
 		GenerateBRDF_LUT();
 
 		// Set default render settings
+		data->settings.use_direct_light = true;
 		data->settings.use_squared_roughness = true;
 		data->settings.use_clearcoat = true;
 		data->settings.use_ibl = true;
@@ -1483,6 +1484,7 @@ namespace Renderer
 			{
 				ImGui::Indent(10.0f);
 
+				ImGui::Checkbox("Use direct light", (bool*)&data->settings.use_direct_light);
 				ImGui::Checkbox("Use squared roughness (more linear perceptually)", (bool*)&data->settings.use_squared_roughness);
 				if (ImGui::IsItemHovered())
 				{
