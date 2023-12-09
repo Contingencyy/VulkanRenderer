@@ -120,7 +120,9 @@ namespace Application
 		//Assets::LoadTexture("assets/textures/hdr/Env_Plaza.hdr", "Env", TextureFormat_RGBA32_SFLOAT, true, true);
 		//Assets::LoadTexture("assets/textures/hdr/Env_Rocky_Hills.hdr", "Env", TextureFormat_RGBA32_SFLOAT, true, true);
 		Assets::LoadTexture("assets/textures/hdr/Env_Victorian_Hall.hdr", "Env", TextureFormat_RGBA32_SFLOAT, true, true);
-		Assets::LoadGLTF("assets/models/gltf/ClearCoatTest/ClearCoatTest.gltf", "model");
+		//Assets::LoadGLTF("assets/models/gltf/ClearCoatTest/ClearCoatTest.gltf", "model");
+		//Assets::LoadGLTF("assets/models/gltf/ClearCoatRing/ClearCoatRing.gltf", "model");
+		Assets::LoadGLTF("assets/models/gltf/ClearCoatSphere/ClearCoatSphere.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatCarPaint/ClearCoatCarPaint.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/MetalRoughSpheres/MetalRoughSpheres.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/ABeautifulGame/ABeautifulGame.gltf", "model");

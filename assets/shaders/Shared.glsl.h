@@ -71,6 +71,7 @@ DECLARE_STRUCT(RenderSettings)
 	uint use_squared_roughness;
 	uint use_clearcoat;
 	uint use_ibl;
+	uint use_clearcoat_specular_ibl;
 
 	float exposure;
 	float gamma;

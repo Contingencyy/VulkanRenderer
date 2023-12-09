@@ -157,6 +157,19 @@ vec3 RadianceAtFragmentClearCoat(vec3 V, vec3 N, vec3 world_pos,
 
 		vec3 F = F_SchlickRoughness(max(dot(N, V), 0.0), f0, roughness);
 		vec3 specular = reflection * (F * env_brdf.x + env_brdf.y);
+
+		// Take into account clearcoat layer for IBL
+		if (settings.use_clearcoat_specular_ibl == 1)
+		{
+			vec3 Fc = F_SchlickRoughness(max(dot(coat_normal, V), 0.0), f0, coat_roughness);
+			diffuse *= 1.0 - Fc;
+			specular *= pow(1.0 - Fc, vec3(2.0));
+
+			vec3 Rc = reflect(-V, coat_normal);
+			vec3 coat_reflection = SampleTextureCubeLod(push_consts.prefiltered_cubemap_index, 0, Rc, coat_roughness * push_consts.num_prefiltered_mips).rgb;
+			vec2 coat_env_brdf = SampleTexture(push_consts.brdf_lut_index, 0, vec2(max(dot(coat_normal, V), 0.0), coat_roughness)).rg;
+			specular *= coat_reflection * (Fc * coat_env_brdf.x + coat_env_brdf.y);
+		}
 	
 		vec3 kD = (1.0 - F) * (1.0 - metallic);
 		vec3 ambient = (kD * diffuse + specular);

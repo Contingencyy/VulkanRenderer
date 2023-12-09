@@ -1183,6 +1183,7 @@ namespace Renderer
 		data->settings.use_squared_roughness = true;
 		data->settings.use_clearcoat = true;
 		data->settings.use_ibl = true;
+		data->settings.use_clearcoat_specular_ibl = true;
 
 		data->settings.exposure = 1.5f;
 		data->settings.gamma = 2.4f;
@@ -1367,7 +1368,7 @@ namespace Renderer
 
 			push_consts.irradiance_cubemap_index = irradiance_cubemap->descriptor.GetIndex();
 			push_consts.prefiltered_cubemap_index = prefiltered_cubemap->descriptor.GetIndex();
-			push_consts.num_prefiltered_mips = prefiltered_cubemap->view.num_mips;
+			push_consts.num_prefiltered_mips = prefiltered_cubemap->view.num_mips - 1;
 			push_consts.brdf_lut_index = data->ibl.brdf_lut->descriptor.GetIndex();
 
 			data->render_passes.lighting.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 4 * sizeof(uint32_t), &push_consts);
@@ -1490,6 +1491,7 @@ namespace Renderer
 
 				ImGui::Checkbox("Use clearcoat", (bool*)&data->settings.use_clearcoat);
 				ImGui::Checkbox("Use image-based lighting", (bool*)&data->settings.use_ibl);
+				ImGui::Checkbox("Clearcoat specular IBL", (bool*)&data->settings.use_clearcoat_specular_ibl);
 
 				ImGui::Unindent(10.0f);
 			}
