@@ -89,20 +89,22 @@ DECLARE_STRUCT(CameraData)
 
 DECLARE_STRUCT(MaterialData)
 {
-	vec4 albedo_factor;
-	float metallic_factor;
-	float roughness_factor;
 	uint albedo_texture_index;
 	uint normal_texture_index;
 	uint metallic_roughness_texture_index;
+
 	uint sampler_index;
+	vec4 albedo_factor;
+	float metallic_factor;
+	float roughness_factor;
 
 	uint has_clearcoat;
-	float clearcoat_alpha_factor;
-	float clearcoat_roughness_factor;
 	uint clearcoat_alpha_texture_index;
 	uint clearcoat_normal_texture_index;
 	uint clearcoat_roughness_texture_index;
+
+	float clearcoat_alpha_factor;
+	float clearcoat_roughness_factor;
 };
 
 DECLARE_STRUCT(PointlightData)

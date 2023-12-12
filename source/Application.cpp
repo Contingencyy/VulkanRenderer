@@ -80,7 +80,7 @@ namespace Application
 	{
 		for (uint32_t i = 0; i < node.mesh_handles.size(); ++i)
 		{
-			data.active_scene.AddEntity<MeshObject>(node.mesh_handles[i], node.material_handles[i], node_transform, node.name);
+			data.active_scene.AddEntity<MeshObject>(node.mesh_handles[i], node.materials[i], node_transform, node.name);
 		}
 
 		for (uint32_t i = 0; i < node.children.size(); ++i)
@@ -123,10 +123,10 @@ namespace Application
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatToyCar/ToyCar.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatTest/ClearCoatTest.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatRing/ClearCoatRing.gltf", "model");
-		Assets::LoadGLTF("assets/models/gltf/ClearCoatSphere/ClearCoatSphere.gltf", "model");
+		//Assets::LoadGLTF("assets/models/gltf/ClearCoatSphere/ClearCoatSphere.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatCarPaint/ClearCoatCarPaint.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/MetalRoughSpheres/MetalRoughSpheres.gltf", "model");
-		//Assets::LoadGLTF("assets/models/gltf/ABeautifulGame/ABeautifulGame.gltf", "model");
+		Assets::LoadGLTF("assets/models/gltf/ABeautifulGame/ABeautifulGame.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/BMW_M6/scene.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/BMW_M8/scene.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/Lexus_Lc_500/scene.gltf", "model");

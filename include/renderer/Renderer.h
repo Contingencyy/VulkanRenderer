@@ -5,6 +5,11 @@
 
 struct GLFWwindow;
 
+namespace Assets
+{
+	struct Material;
+}
+
 namespace Renderer
 {
 
@@ -38,6 +43,7 @@ namespace Renderer
 
 	TextureHandle_t CreateTexture(const CreateTextureArgs& args);
 	void DestroyTexture(TextureHandle_t handle);
+	void ImGuiRenderTexture(TextureHandle_t handle);
 
 	struct CreateMeshArgs
 	{
@@ -48,27 +54,7 @@ namespace Renderer
 	MeshHandle_t CreateMesh(const CreateMeshArgs& args);
 	void DestroyMesh(MeshHandle_t handle);
 
-	struct CreateMaterialArgs
-	{
-		glm::vec4 base_color_factor;
-		TextureHandle_t base_color_texture_handle;
-		TextureHandle_t normal_texture_handle;
-		float metallic_factor;
-		float roughness_factor;
-		TextureHandle_t metallic_roughness_texture_handle;
-
-		bool has_clearcoat;
-		float clearcoat_alpha_factor;
-		float clearcoat_roughness_factor;
-		TextureHandle_t clearcoat_alpha_texture_handle;
-		TextureHandle_t clearcoat_normal_texture_handle;
-		TextureHandle_t clearcoat_roughness_texture_handle;
-	};
-
-	MaterialHandle_t CreateMaterial(const CreateMaterialArgs& args);
-	void DestroyMaterial(MaterialHandle_t handle);
-
-	void SubmitMesh(MeshHandle_t mesh_handle, MaterialHandle_t material_handle, const glm::mat4& transform);
+	void SubmitMesh(MeshHandle_t mesh_handle, const Assets::Material& material, const glm::mat4& transform);
 	
 	void SubmitPointlight(const glm::vec3& pos, const glm::vec3& color, float intensity);
 

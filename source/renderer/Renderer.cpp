@@ -5,6 +5,7 @@
 #include "renderer/RenderPass.h"
 #include "Common.h"
 #include "Shared.glsl.h"
+#include "Assets.h"
 
 #include "vulkan/vulkan.h"
 #include "vulkan/vk_enum_string_helper.h"
@@ -81,27 +82,30 @@ namespace Renderer
 	{
 		struct Entry
 		{
+			uint32_t index;
+
 			MeshHandle_t mesh_handle;
-			MaterialHandle_t material_handle;
+			MaterialData material_data;
 			glm::mat4 transform;
 		};
 
-		size_t current_entry = 0;
+		uint32_t next_free_entry = 0;
 		std::array<Entry, MAX_DRAW_LIST_ENTRIES> entries;
 
 		Entry& GetNextEntry()
 		{
-			VK_ASSERT(current_entry < MAX_DRAW_LIST_ENTRIES &&
+			VK_ASSERT(next_free_entry < MAX_DRAW_LIST_ENTRIES &&
 				"Exceeded the maximum amount of draw list entries");
 
-			Entry& entry = entries[current_entry];
-			current_entry++;
+			Entry& entry = entries[next_free_entry];
+			entry.index = next_free_entry;
+			next_free_entry++;
 			return entry;
 		}
 
 		void Reset()
 		{
-			current_entry = 0;
+			next_free_entry = 0;
 		}
 	};
 
@@ -112,7 +116,6 @@ namespace Renderer
 		// Resource slotmaps
 		ResourceSlotmap<TextureResource> texture_slotmap;
 		ResourceSlotmap<MeshResource> mesh_slotmap;
-		ResourceSlotmap<MaterialResource> material_slotmap;
 
 		// Command buffers and synchronization primitives
 		std::vector<VkCommandBuffer> command_buffers;
@@ -186,7 +189,10 @@ namespace Renderer
 
 		// Default resources
 		TextureHandle_t default_white_texture_handle;
+		TextureResource* default_white_texture;
 		TextureHandle_t default_normal_texture_handle;
+		TextureResource* default_normal_texture;
+
 		VkSampler default_sampler = VK_NULL_HANDLE;
 		Vulkan::Buffer unit_cube_vertex_buffer;
 		Vulkan::Buffer unit_cube_index_buffer;
@@ -352,12 +358,14 @@ namespace Renderer
 		texture_args.pixels = white_pixel;
 
 		data->default_white_texture_handle = CreateTexture(texture_args);
+		data->default_white_texture = data->texture_slotmap.Find(data->default_white_texture_handle);
 
 		// Default normal texture
 		std::vector<uint8_t> normal_pixel = { 127, 127, 255, 255 };
 		texture_args.pixels = normal_pixel;
 
 		data->default_normal_texture_handle = CreateTexture(texture_args);
+		data->default_normal_texture = data->texture_slotmap.Find(data->default_normal_texture_handle);
 	}
 
 	static void CreateUnitCubeBuffers()
@@ -803,11 +811,13 @@ namespace Renderer
 		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_DockingEnable;
 
 		// Create imgui descriptor pool
-		VkDescriptorPoolSize pool_size = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 };
+		// First descriptor is for the font, the other ones for descriptor sets for ImGui::Image calls
+		VkDescriptorPoolSize pool_size = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 + 1000 };
 		VkDescriptorPoolCreateInfo pool_info = {};
 		pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 		pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-		pool_info.maxSets = 1;
+		// First descriptor is for the font, the other ones for descriptor sets for ImGui::Image calls
+		pool_info.maxSets = 1 + 1000;
 		pool_info.poolSizeCount = 1;
 		pool_info.pPoolSizes = &pool_size;
 		VkCheckResult(vkCreateDescriptorPool(vk_inst.device, &pool_info, nullptr, &data->imgui.descriptor_pool));
@@ -1381,7 +1391,7 @@ namespace Renderer
 			// Instance buffer
 			const Vulkan::Buffer& instance_buffer = data->instance_buffers[vk_inst.current_frame];
 
-			for (uint32_t i = 0; i < data->draw_list.current_entry; ++i)
+			for (uint32_t i = 0; i < data->draw_list.next_free_entry; ++i)
 			{
 				const DrawList::Entry& entry = data->draw_list.entries[i];
 
@@ -1392,13 +1402,6 @@ namespace Renderer
 					mesh = data->mesh_slotmap.Find(entry.mesh_handle);
 				}
 				VK_ASSERT(mesh && "Tried to render a mesh with an invalid mesh handle");
-
-				// Check material handles for validity
-				VK_ASSERT(VK_RESOURCE_HANDLE_VALID(entry.material_handle));
-				MaterialResource* material = data->material_slotmap.Find(entry.material_handle);
-				VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->base_color_texture_handle));
-				VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->normal_texture_handle));
-				VK_ASSERT(VK_RESOURCE_HANDLE_VALID(material->metallic_roughness_texture_handle));
 
 				data->render_passes.lighting.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 16, sizeof(uint32_t), &i);
 
@@ -1649,6 +1652,12 @@ namespace Renderer
 		if (num_mips > 1)
 		{
 			Vulkan::GenerateMips(args.width, args.height, num_mips, TEXTURE_FORMAT_TO_VK_FORMAT[args.format], reserved.resource->image);
+			reserved.resource->view.layout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
+		}
+		else
+		{
+			// Generate Mips will already transition the image back to READ_ONLY_OPTIMAL, if we do not generate mips, we have to do it manually
+			Vulkan::TransitionImageLayoutImmediate(reserved.resource->view, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
 		}
 
 		// Allocate and update image descriptor
@@ -1701,6 +1710,9 @@ namespace Renderer
 			reserved_irradiance.resource->next = reserved_prefiltered.handle;
 		}
 
+		// Create ImGui descriptor set
+		reserved.resource->imgui_descriptor_set = ImGui_ImplVulkan_AddTexture(data->default_sampler, reserved.resource->view.view, reserved.resource->view.layout);
+
 		return reserved.handle;
 	}
 
@@ -1726,6 +1738,22 @@ namespace Renderer
 			{
 				texture = nullptr;
 			}
+		}
+	}
+
+	void ImGuiRenderTexture(TextureHandle_t handle)
+	{
+		VK_ASSERT(VK_RESOURCE_HANDLE_VALID(handle));
+		TextureResource* texture = data->texture_slotmap.Find(handle);
+		VK_ASSERT(texture);
+
+		if (texture)
+		{
+			ImVec2 size = ImVec2(
+				std::min((float)vk_inst.swapchain.extent.width / 8.0f, ImGui::GetWindowSize().x),
+				std::min((float)vk_inst.swapchain.extent.width / 8.0f, ImGui::GetWindowSize().y)
+			);
+			ImGui::Image(texture->imgui_descriptor_set, size);
 		}
 	}
 
@@ -1764,140 +1792,47 @@ namespace Renderer
 		data->mesh_slotmap.Delete(handle);
 	}
 
-	MaterialHandle_t CreateMaterial(const CreateMaterialArgs& args)
-	{
-		ResourceSlotmap<MaterialResource>::ReservedResource reserved = data->material_slotmap.Reserve();
-
-		// Base color factor and texture
-		reserved.resource->data.albedo_factor = args.base_color_factor;
-		if (VK_RESOURCE_HANDLE_VALID(args.base_color_texture_handle))
-		{
-			TextureResource* base_color_texture = data->texture_slotmap.Find(args.base_color_texture_handle);
-
-			reserved.resource->base_color_texture_handle = args.base_color_texture_handle;
-			reserved.resource->data.albedo_texture_index = base_color_texture->descriptor.GetIndex();
-		}
-		else
-		{
-			TextureResource* base_color_texture = data->texture_slotmap.Find(data->default_white_texture_handle);
-
-			reserved.resource->base_color_texture_handle = data->default_white_texture_handle;
-			reserved.resource->data.albedo_texture_index = base_color_texture->descriptor.GetIndex();
-		}
-
-		// Normal texture
-		if (VK_RESOURCE_HANDLE_VALID(args.normal_texture_handle))
-		{
-			TextureResource* normal_texture = data->texture_slotmap.Find(args.normal_texture_handle);
-
-			reserved.resource->normal_texture_handle = args.normal_texture_handle;
-			reserved.resource->data.normal_texture_index = normal_texture->descriptor.GetIndex();
-		}
-		else
-		{
-			TextureResource* normal_texture = data->texture_slotmap.Find(data->default_normal_texture_handle);
-
-			reserved.resource->normal_texture_handle = data->default_normal_texture_handle;
-			reserved.resource->data.normal_texture_index = normal_texture->descriptor.GetIndex();
-		}
-
-		// Metallic roughness factors and texture
-		reserved.resource->data.metallic_factor = args.metallic_factor;
-		reserved.resource->data.roughness_factor = args.roughness_factor;
-		if (VK_RESOURCE_HANDLE_VALID(args.metallic_roughness_texture_handle))
-		{
-			TextureResource* metallic_roughness_texture = data->texture_slotmap.Find(args.metallic_roughness_texture_handle);
-
-			reserved.resource->metallic_roughness_texture_handle = args.metallic_roughness_texture_handle;
-			reserved.resource->data.metallic_roughness_texture_index = metallic_roughness_texture->descriptor.GetIndex();
-		}
-		else
-		{
-			TextureResource* metallic_roughness_texture = data->texture_slotmap.Find(data->default_white_texture_handle);
-
-			reserved.resource->metallic_roughness_texture_handle = data->default_white_texture_handle;
-			reserved.resource->data.metallic_roughness_texture_index = metallic_roughness_texture->descriptor.GetIndex();
-		}
-
-		if (args.has_clearcoat)
-		{
-			reserved.resource->data.has_clearcoat = args.has_clearcoat;
-			reserved.resource->data.clearcoat_alpha_factor = args.clearcoat_alpha_factor;
-			reserved.resource->data.clearcoat_roughness_factor = args.clearcoat_roughness_factor;
-
-			if (VK_RESOURCE_HANDLE_VALID(args.clearcoat_alpha_texture_handle))
-			{
-				TextureResource* clearcoat_alpha_texture = data->texture_slotmap.Find(args.clearcoat_alpha_texture_handle);
-
-				reserved.resource->clearcoat_alpha_texture_handle = args.clearcoat_alpha_texture_handle;
-				reserved.resource->data.clearcoat_alpha_texture_index = clearcoat_alpha_texture->descriptor.GetIndex();
-			}
-			else
-			{
-				TextureResource* clearcoat_alpha_texture = data->texture_slotmap.Find(data->default_white_texture_handle);
-
-				reserved.resource->clearcoat_alpha_texture_handle = data->default_white_texture_handle;
-				reserved.resource->data.clearcoat_alpha_texture_index = clearcoat_alpha_texture->descriptor.GetIndex();
-			}
-
-			if (VK_RESOURCE_HANDLE_VALID(args.clearcoat_normal_texture_handle))
-			{
-				TextureResource* clearcoat_normal_texture = data->texture_slotmap.Find(args.clearcoat_normal_texture_handle);
-
-				reserved.resource->clearcoat_normal_texture_handle = args.clearcoat_normal_texture_handle;
-				reserved.resource->data.clearcoat_normal_texture_index = clearcoat_normal_texture->descriptor.GetIndex();
-			}
-			else
-			{
-				TextureResource* clearcoat_normal_texture = data->texture_slotmap.Find(data->default_normal_texture_handle);
-
-				reserved.resource->clearcoat_normal_texture_handle = data->default_normal_texture_handle;
-				reserved.resource->data.clearcoat_normal_texture_index = clearcoat_normal_texture->descriptor.GetIndex();
-			}
-
-			if (VK_RESOURCE_HANDLE_VALID(args.clearcoat_roughness_texture_handle))
-			{
-				TextureResource* clearcoat_roughness_texture = data->texture_slotmap.Find(args.clearcoat_roughness_texture_handle);
-
-				reserved.resource->clearcoat_roughness_texture_handle = args.clearcoat_roughness_texture_handle;
-				reserved.resource->data.clearcoat_roughness_texture_index = clearcoat_roughness_texture->descriptor.GetIndex();
-			}
-			else
-			{
-				TextureResource* clearcoat_roughness_texture = data->texture_slotmap.Find(data->default_white_texture_handle);
-
-				reserved.resource->clearcoat_roughness_texture_handle = data->default_white_texture_handle;
-				reserved.resource->data.clearcoat_roughness_texture_index = clearcoat_roughness_texture->descriptor.GetIndex();
-			}
-		}
-
-		// Samplers
-		// NOTE: Currently this is always the default sampler, ideally the model loading also creates samplers
-		reserved.resource->data.sampler_index = 0;
-
-		return reserved.handle;
-	}
-
-	void DestroyMaterial(MaterialHandle_t handle)
-	{
-		data->material_slotmap.Delete(handle);
-		// NOTE: We could update the material buffer entry here to be 0 or some invalid value,
-		// but it will be overwritten anyways when the slot is re-used
-	}
-
-	void SubmitMesh(MeshHandle_t mesh_handle, MaterialHandle_t material_handle, const glm::mat4& transform)
+	void SubmitMesh(MeshHandle_t mesh_handle, const Assets::Material& material, const glm::mat4& transform)
 	{
 		Vulkan::Buffer& instance_buffer = data->instance_buffers[vk_inst.current_frame];
-		memcpy((glm::mat4*)instance_buffer.ptr + data->draw_list.current_entry, &transform, sizeof(glm::mat4));
-
-		MaterialResource* material = data->material_slotmap.Find(material_handle);
-		VK_ASSERT(material);
-		memcpy((MaterialData*)data->ubos.material_buffers[vk_inst.current_frame].ptr + data->draw_list.current_entry, &material->data, sizeof(MaterialData));
 
 		DrawList::Entry& entry = data->draw_list.GetNextEntry();
 		entry.mesh_handle = mesh_handle;
-		entry.material_handle = material_handle;
 		entry.transform = transform;
+
+		memcpy((glm::mat4*)instance_buffer.ptr + entry.index, &entry.transform, sizeof(glm::mat4));
+
+		TextureResource* albedo_texture = data->texture_slotmap.Find(material.albedo_texture_handle);
+		entry.material_data.albedo_texture_index = albedo_texture ? albedo_texture->descriptor.GetIndex() : data->default_white_texture->descriptor.GetIndex();
+
+		TextureResource* normal_texture = data->texture_slotmap.Find(material.normal_texture_handle);
+		entry.material_data.normal_texture_index = normal_texture ? normal_texture->descriptor.GetIndex() : data->default_normal_texture->descriptor.GetIndex();
+
+		TextureResource* metallic_roughness_texture = data->texture_slotmap.Find(material.metallic_roughness_texture_handle);
+		entry.material_data.metallic_roughness_texture_index = metallic_roughness_texture ? metallic_roughness_texture->descriptor.GetIndex() : data->default_white_texture->descriptor.GetIndex();
+
+		entry.material_data.albedo_factor = material.albedo_factor;
+		entry.material_data.metallic_factor = material.metallic_factor;
+		entry.material_data.roughness_factor = material.roughness_factor;
+
+		entry.material_data.has_clearcoat = material.has_clearcoat ? 1 : 0;
+
+		TextureResource* clearcoat_alpha_texture = data->texture_slotmap.Find(material.clearcoat_alpha_texture_handle);
+		entry.material_data.clearcoat_alpha_texture_index = clearcoat_alpha_texture ? clearcoat_alpha_texture->descriptor.GetIndex() : data->default_white_texture->descriptor.GetIndex();
+
+		TextureResource* clearcoat_normal_texture = data->texture_slotmap.Find(material.clearcoat_normal_texture_handle);
+		entry.material_data.clearcoat_normal_texture_index = clearcoat_normal_texture ? clearcoat_normal_texture->descriptor.GetIndex() : data->default_normal_texture->descriptor.GetIndex();
+
+		TextureResource* clearcoat_roughness_texture = data->texture_slotmap.Find(material.clearcoat_roughness_texture_handle);
+		entry.material_data.clearcoat_roughness_texture_index = clearcoat_roughness_texture ? clearcoat_roughness_texture->descriptor.GetIndex() : data->default_white_texture->descriptor.GetIndex();
+
+		entry.material_data.clearcoat_alpha_factor = material.clearcoat_alpha_factor;
+		entry.material_data.clearcoat_roughness_factor = material.clearcoat_roughness_factor;
+
+		// Default sampler
+		entry.material_data.sampler_index = 0;
+
+		memcpy((MaterialData*)data->ubos.material_buffers[vk_inst.current_frame].ptr + entry.index, &entry.material_data, sizeof(MaterialData));
 	}
 
 	void SubmitPointlight(const glm::vec3& pos, const glm::vec3& color, float intensity)

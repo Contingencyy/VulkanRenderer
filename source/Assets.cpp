@@ -361,67 +361,64 @@ namespace Assets
 		}
 
 		// Create all materials
-		std::vector<MaterialHandle_t> material_handles(gltf_data->materials_count);
+		std::vector<Material> materials(gltf_data->materials_count);
 
 		for (size_t i = 0; i < gltf_data->materials_count; ++i)
 		{
 			cgltf_material& gltf_material = gltf_data->materials[i];
-			Renderer::CreateMaterialArgs material_args = {};
 			
-			memcpy(&material_args.base_color_factor, gltf_material.pbr_metallic_roughness.base_color_factor, sizeof(glm::vec4));
 			// GLTF 2.0 Spec states that:
 			// - Base color textures are encoded in SRGB
 			// - Normal textures are encoded in linear
 			// - Metallic roughness textures are encoded in linear
+			materials[i].albedo_factor = *(glm::vec4*)&gltf_material.pbr_metallic_roughness.base_color_factor;
 			if (gltf_material.pbr_metallic_roughness.base_color_texture.texture)
 			{
 				size_t texture_handle_index = CGLTFGetIndex<cgltf_image>(gltf_data->images,
 					gltf_material.pbr_metallic_roughness.base_color_texture.texture->image);
-				material_args.base_color_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TextureFormat_RGBA8_SRGB);
+				materials[i].albedo_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TextureFormat_RGBA8_SRGB);
 			}
 
 			if (gltf_material.normal_texture.texture)
 			{
 				size_t texture_handle_index = CGLTFGetIndex<cgltf_image>(gltf_data->images,
 					gltf_material.normal_texture.texture->image);
-				material_args.normal_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TextureFormat_RGBA8_UNORM);
+				materials[i].normal_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TextureFormat_RGBA8_UNORM);
 			}
 
-			material_args.metallic_factor = gltf_material.pbr_metallic_roughness.metallic_factor;
-			material_args.roughness_factor = gltf_material.pbr_metallic_roughness.roughness_factor;
+			materials[i].metallic_factor = gltf_material.pbr_metallic_roughness.metallic_factor;
+			materials[i].roughness_factor = gltf_material.pbr_metallic_roughness.roughness_factor;
 			if (gltf_material.pbr_metallic_roughness.metallic_roughness_texture.texture)
 			{
 				size_t texture_handle_index = CGLTFGetIndex<cgltf_image>(gltf_data->images,
 					gltf_material.pbr_metallic_roughness.metallic_roughness_texture.texture->image);
-				material_args.metallic_roughness_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TextureFormat_RGBA8_UNORM);
+				materials[i].metallic_roughness_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TextureFormat_RGBA8_UNORM);
 			}
 
 			if (gltf_material.has_clearcoat)
 			{
-				material_args.has_clearcoat = gltf_material.has_clearcoat;
-				material_args.clearcoat_alpha_factor = gltf_material.clearcoat.clearcoat_factor;
-				material_args.clearcoat_roughness_factor = gltf_material.clearcoat.clearcoat_roughness_factor;
+				materials[i].has_clearcoat = gltf_material.has_clearcoat;
+				materials[i].clearcoat_alpha_factor = gltf_material.clearcoat.clearcoat_factor;
+				materials[i].clearcoat_roughness_factor = gltf_material.clearcoat.clearcoat_roughness_factor;
 
 				if (gltf_material.clearcoat.clearcoat_texture.texture)
 				{
 					size_t texture_handle_index = CGLTFGetIndex<cgltf_image>(gltf_data->images, gltf_material.clearcoat.clearcoat_texture.texture->image);
-					material_args.clearcoat_alpha_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TextureFormat_RGBA8_UNORM);
+					materials[i].clearcoat_alpha_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TextureFormat_RGBA8_UNORM);
 				}
 
 				if (gltf_material.clearcoat.clearcoat_normal_texture.texture)
 				{
 					size_t texture_handle_index = CGLTFGetIndex<cgltf_image>(gltf_data->images, gltf_material.clearcoat.clearcoat_normal_texture.texture->image);
-					material_args.clearcoat_normal_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TextureFormat_RGBA8_UNORM);
+					materials[i].clearcoat_normal_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TextureFormat_RGBA8_UNORM);
 				}
 
 				if (gltf_material.clearcoat.clearcoat_roughness_texture.texture)
 				{
 					size_t texture_handle_index = CGLTFGetIndex<cgltf_image>(gltf_data->images, gltf_material.clearcoat.clearcoat_roughness_texture.texture->image);
-					material_args.clearcoat_roughness_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TextureFormat_RGBA8_UNORM);
+					materials[i].clearcoat_roughness_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TextureFormat_RGBA8_UNORM);
 				}
 			}
-
-			material_handles[i] = Renderer::CreateMaterial(material_args);
 		}
 
 		// Create all nodes
@@ -447,7 +444,7 @@ namespace Assets
 			if (gltf_node.mesh)
 			{
 				model_node.mesh_handles.resize(gltf_node.mesh->primitives_count);
-				model_node.material_handles.resize(gltf_node.mesh->primitives_count);
+				model_node.materials.resize(gltf_node.mesh->primitives_count);
 
 				for (size_t j = 0; j < gltf_node.mesh->primitives_count; ++j)
 				{
@@ -458,7 +455,7 @@ namespace Assets
 					model_node.mesh_handles[j] = mesh_handles[mesh_handle_index];
 
 					size_t material_handle_index = CGLTFGetIndex<cgltf_material>(gltf_data->materials, primitive.material);
-					model_node.material_handles[j] = material_handles[material_handle_index];
+					model_node.materials[j] = materials[material_handle_index];
 				}
 			}
 

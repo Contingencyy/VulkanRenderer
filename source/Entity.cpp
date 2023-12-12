@@ -8,8 +8,8 @@ Entity::Entity(const std::string& label)
 {
 }
 
-MeshObject::MeshObject(MeshHandle_t mesh_handle, MaterialHandle_t material_handle, const glm::mat4& transform, const std::string& label)
-	: Entity(label), m_mesh_handle(mesh_handle), m_material_handle(material_handle), m_transform(transform)
+MeshObject::MeshObject(MeshHandle_t mesh_handle, const Assets::Material& material, const glm::mat4& transform, const std::string& label)
+	: Entity(label), m_mesh_handle(mesh_handle), m_material(material), m_transform(transform)
 {
 	glm::vec3 skew(0.0f);
 	glm::vec4 perspective(0.0f);
@@ -26,38 +26,73 @@ void MeshObject::Update(float dt)
 
 void MeshObject::Render()
 {
-	Renderer::SubmitMesh(m_mesh_handle, m_material_handle, m_transform);
+	Renderer::SubmitMesh(m_mesh_handle, m_material, m_transform);
 }
 
 void MeshObject::RenderUI()
 {
 	if (ImGui::CollapsingHeader(m_label.c_str()))
 	{
-		bool transform_changed = false;
-
 		ImGui::PushID(m_label.c_str());
 		ImGui::Indent(10.0f);
 
-		if (ImGui::DragFloat3("Translation", &m_translation[0], 0.01f, -FLT_MAX, FLT_MAX, "%.2f"))
+		if (ImGui::CollapsingHeader("Transform"))
 		{
-			transform_changed = true;
-		}
-		if (ImGui::DragFloat3("Rotation", &m_rotation[0], 0.01f, -360.0f, 360.0f, "%.2f"))
-		{
-			transform_changed = true;
-		}
-		if (ImGui::DragFloat3("Scale", &m_scale[0], 0.01f, 0.001f, 10000.0f, "%.2f"))
-		{
-			transform_changed = true;
+			ImGui::Indent(10.0f);
+
+			bool transform_changed = false;
+			if (ImGui::DragFloat3("Translation", &m_translation[0], 0.01f, -FLT_MAX, FLT_MAX, "%.2f"))
+			{
+				transform_changed = true;
+			}
+			if (ImGui::DragFloat3("Rotation", &m_rotation[0], 0.01f, -360.0f, 360.0f, "%.2f"))
+			{
+				transform_changed = true;
+			}
+			if (ImGui::DragFloat3("Scale", &m_scale[0], 0.01f, 0.001f, 10000.0f, "%.2f"))
+			{
+				transform_changed = true;
+			}
+
+			if (transform_changed)
+			{
+				m_transform = glm::translate(glm::identity<glm::mat4>(), m_translation);
+				m_transform = glm::rotate(m_transform, glm::radians(m_rotation.x), glm::vec3(1.0f, 0.0f, 0.0f));
+				m_transform = glm::rotate(m_transform, glm::radians(m_rotation.y), glm::vec3(0.0f, 1.0f, 0.0f));
+				m_transform = glm::rotate(m_transform, glm::radians(m_rotation.z), glm::vec3(0.0f, 0.0f, 1.0f));
+				m_transform = glm::scale(m_transform, m_scale);
+			}
+
+			ImGui::Unindent(10.0f);
 		}
 
-		if (transform_changed)
+		if (ImGui::CollapsingHeader("Material"))
 		{
-			m_transform = glm::translate(glm::identity<glm::mat4>(), m_translation);
-			m_transform = glm::rotate(m_transform, glm::radians(m_rotation.x), glm::vec3(1.0f, 0.0f, 0.0f));
-			m_transform = glm::rotate(m_transform, glm::radians(m_rotation.y), glm::vec3(0.0f, 1.0f, 0.0f));
-			m_transform = glm::rotate(m_transform, glm::radians(m_rotation.z), glm::vec3(0.0f, 0.0f, 1.0f));
-			m_transform = glm::scale(m_transform, m_scale);
+			ImGui::Indent(10.0f);
+
+			if (VK_RESOURCE_HANDLE_VALID(m_material.albedo_texture_handle))
+				Renderer::ImGuiRenderTexture(m_material.albedo_texture_handle);
+			ImGui::ColorEdit3("Albedo factor", &m_material.albedo_factor.x, ImGuiColorEditFlags_DisplayRGB);
+
+			if (VK_RESOURCE_HANDLE_VALID(m_material.normal_texture_handle))
+				Renderer::ImGuiRenderTexture(m_material.normal_texture_handle);
+
+			if (VK_RESOURCE_HANDLE_VALID(m_material.metallic_roughness_texture_handle))
+				Renderer::ImGuiRenderTexture(m_material.metallic_roughness_texture_handle);
+			ImGui::DragFloat("Metallic factor", &m_material.metallic_factor, 0.001f, 0.0f, 1.0f);
+			ImGui::DragFloat("Roughness factor", &m_material.roughness_factor, 0.001f, 0.0f, 1.0f);
+
+			ImGui::Checkbox("Clearcoat", &m_material.has_clearcoat);
+			if (VK_RESOURCE_HANDLE_VALID(m_material.clearcoat_alpha_texture_handle))
+				Renderer::ImGuiRenderTexture(m_material.clearcoat_alpha_texture_handle);
+			ImGui::DragFloat("Clearcoat alpha factor", &m_material.clearcoat_alpha_factor, 0.001f, 0.0f, 1.0f);
+			if (VK_RESOURCE_HANDLE_VALID(m_material.clearcoat_normal_texture_handle))
+				Renderer::ImGuiRenderTexture(m_material.clearcoat_normal_texture_handle);
+			if (VK_RESOURCE_HANDLE_VALID(m_material.clearcoat_roughness_texture_handle))
+				Renderer::ImGuiRenderTexture(m_material.clearcoat_roughness_texture_handle);
+			ImGui::DragFloat("Clearcoat roughness factor", &m_material.clearcoat_roughness_factor, 0.001f, 0.0f, 1.0f);
+
+			ImGui::Unindent(10.0f);
 		}
 
 		ImGui::Unindent(10.0f);

@@ -57,6 +57,9 @@ struct TextureResource
 
 	SamplerHandle_t sampler;
 
+	// We need this descriptor set to render any texture to ImGui menus
+	VkDescriptorSet imgui_descriptor_set;
+
 	// TODO: Find a better solution for this, for now this is used for hdr environment maps and points to the
 	// irradiance map made from this hdr environment map
 	TextureHandle_t next;
