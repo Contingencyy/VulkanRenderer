@@ -463,11 +463,11 @@ namespace Renderer
 				data->render_targets.hdr->image
 			);
 			Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, &data->render_targets.hdr->image, data->render_targets.hdr->view);
-			data->reserved_storage_image_descriptors.WriteDescriptor(data->render_targets.hdr->view, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL, RESERVED_DESCRIPTOR_STORAGE_IMAGE_HDR);
+			data->reserved_storage_image_descriptors.WriteDescriptor(data->render_targets.hdr->view, VK_IMAGE_LAYOUT_GENERAL, RESERVED_DESCRIPTOR_STORAGE_IMAGE_HDR);
 
-			data->render_passes.skybox.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, data->render_targets.hdr->view);
-			data->render_passes.lighting.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, data->render_targets.hdr->view);
-			data->render_passes.post_process.SetAttachment(RenderPass::ATTACHMENT_SLOT_READ_ONLY0, data->render_targets.hdr->view);
+			data->render_passes.skybox.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, &data->render_targets.hdr->view);
+			data->render_passes.lighting.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, &data->render_targets.hdr->view);
+			data->render_passes.post_process.SetAttachment(RenderPass::ATTACHMENT_SLOT_READ_ONLY0, &data->render_targets.hdr->view);
 		}
 
 		// Create depth render target
@@ -489,8 +489,8 @@ namespace Renderer
 			);
 			Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_DEPTH_BIT, &data->render_targets.depth->image, data->render_targets.depth->view);
 
-			data->render_passes.skybox.SetAttachment(RenderPass::ATTACHMENT_SLOT_DEPTH_STENCIL, data->render_targets.depth->view);
-			data->render_passes.lighting.SetAttachment(RenderPass::ATTACHMENT_SLOT_DEPTH_STENCIL, data->render_targets.depth->view);
+			data->render_passes.skybox.SetAttachment(RenderPass::ATTACHMENT_SLOT_DEPTH_STENCIL, &data->render_targets.depth->view);
+			data->render_passes.lighting.SetAttachment(RenderPass::ATTACHMENT_SLOT_DEPTH_STENCIL, &data->render_targets.depth->view);
 		}
 
 		// Create SDR render target
@@ -511,10 +511,10 @@ namespace Renderer
 				data->render_targets.sdr->image
 			);
 			Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, &data->render_targets.sdr->image, data->render_targets.sdr->view);
-			data->reserved_storage_image_descriptors.WriteDescriptor(data->render_targets.sdr->view, VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL, RESERVED_DESCRIPTOR_STORAGE_IMAGE_SDR);
+			data->reserved_storage_image_descriptors.WriteDescriptor(data->render_targets.sdr->view, VK_IMAGE_LAYOUT_GENERAL, RESERVED_DESCRIPTOR_STORAGE_IMAGE_SDR);
 
-			data->render_passes.post_process.SetAttachment(RenderPass::ATTACHMENT_SLOT_READ_WRITE0, data->render_targets.sdr->view);
-			data->imgui.render_pass.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, data->render_targets.sdr->view);
+			data->render_passes.post_process.SetAttachment(RenderPass::ATTACHMENT_SLOT_READ_WRITE0, &data->render_targets.sdr->view);
+			data->imgui.render_pass.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, &data->render_targets.sdr->view);
 		}
 	}
 
@@ -630,11 +630,11 @@ namespace Renderer
 			std::vector<RenderPass::AttachmentInfo> attachment_infos(2);
 			attachment_infos[0].attachment_slot = RenderPass::ATTACHMENT_SLOT_READ_ONLY0;
 			attachment_infos[0].format = VK_FORMAT_R16G16B16A16_SFLOAT;
-			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
+			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_GENERAL;
 
 			attachment_infos[1].attachment_slot = RenderPass::ATTACHMENT_SLOT_READ_WRITE0;
 			attachment_infos[1].format = vk_inst.swapchain.format;
-			attachment_infos[1].expected_layout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL;
+			attachment_infos[1].expected_layout = VK_IMAGE_LAYOUT_GENERAL;
 			attachment_infos[1].load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
 			attachment_infos[1].store_op = VK_ATTACHMENT_STORE_OP_STORE;
 			attachment_infos[1].clear_value.color = { 0.0f, 0.0f, 0.0f, 1.0f };
@@ -896,7 +896,7 @@ namespace Renderer
 
 				Vulkan::ImageView& attachment_view = attachment_image_views.emplace_back();
 				Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, &cubemap_image, attachment_view, mip, 1, face, 1);
-				data->render_passes.gen_cubemap.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, attachment_view);
+				data->render_passes.gen_cubemap.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, &attachment_view);
 
 				BEGIN_PASS(command_buffer, data->render_passes.gen_cubemap, begin_info);
 				{
@@ -978,7 +978,7 @@ namespace Renderer
 			{
 				Vulkan::ImageView& attachment_view = attachment_image_views.emplace_back();
 				Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, &cubemap_image, attachment_view, mip, 1, face, 1);
-				data->render_passes.gen_irradiance_cube.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, attachment_view);
+				data->render_passes.gen_irradiance_cube.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, &attachment_view);
 
 				BEGIN_PASS(command_buffer, data->render_passes.gen_irradiance_cube, begin_info);
 				{
@@ -1058,7 +1058,7 @@ namespace Renderer
 			{
 				Vulkan::ImageView& attachment_view = attachment_image_views.emplace_back();
 				Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, &cubemap_image, attachment_view, mip, 1, face, 1);
-				data->render_passes.gen_prefiltered_cube.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, attachment_view);
+				data->render_passes.gen_prefiltered_cube.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, &attachment_view);
 
 				BEGIN_PASS(command_buffer, data->render_passes.gen_prefiltered_cube, begin_info);
 				{
@@ -1127,7 +1127,7 @@ namespace Renderer
 		begin_info.render_width = IBL_BRDF_LUT_RESOLUTION;
 		begin_info.render_height = IBL_BRDF_LUT_RESOLUTION;
 
-		data->render_passes.gen_brdf_lut.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, data->ibl.brdf_lut->view);
+		data->render_passes.gen_brdf_lut.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, &data->ibl.brdf_lut->view);
 
 		BEGIN_PASS(command_buffer, data->render_passes.gen_brdf_lut, begin_info);
 		{
@@ -1534,6 +1534,8 @@ namespace Renderer
 		{
 			ImGui::Render();
 			ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer, nullptr);
+
+			ImGui::EndFrame();
 		}
 		END_PASS(command_buffer, data->imgui.render_pass);
 
@@ -1569,6 +1571,7 @@ namespace Renderer
 		vk_inst.swapchain.layouts[vk_inst.swapchain.current_image] = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 		vkCmdCopyImage(command_buffer, data->render_targets.sdr->image.image, data->render_targets.sdr->view.layout,
 			vk_inst.swapchain.images[vk_inst.swapchain.current_image], vk_inst.swapchain.layouts[vk_inst.swapchain.current_image], 1, &copy_region);
+
 		Vulkan::CmdTransitionImageLayout(command_buffer, swapchain_view, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 		vk_inst.swapchain.layouts[vk_inst.swapchain.current_image] = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
@@ -1579,7 +1582,7 @@ namespace Renderer
 		submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
 		VkSemaphore wait_semaphores[] = { vk_inst.swapchain.image_available_semaphores[vk_inst.current_frame] };
-		VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+		VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT };
 		submit_info.waitSemaphoreCount = 1;
 		submit_info.pWaitSemaphores = wait_semaphores;
 		submit_info.pWaitDstStageMask = wait_stages;
@@ -1591,8 +1594,6 @@ namespace Renderer
 		submit_info.pSignalSemaphores = signal_semaphores.data();
 
 		VkCheckResult(vkQueueSubmit(vk_inst.queues.graphics, 1, &submit_info, data->in_flight_fences[vk_inst.current_frame]));
-
-		ImGui::EndFrame();
 
 		// Present
 		VkResult result = Vulkan::SwapChainPresent(signal_semaphores);

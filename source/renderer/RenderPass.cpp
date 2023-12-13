@@ -26,9 +26,9 @@ void RenderPass::Begin(VkCommandBuffer command_buffer, const BeginInfo& begin_in
 			if (attachment.info.attachment_slot == ATTACHMENT_SLOT_INVALID)
 				continue;
 
-			if (attachment.view.layout != attachment.info.expected_layout)
+			if (attachment.view->layout != attachment.info.expected_layout)
 			{
-				barriers.push_back(Vulkan::ImageMemoryBarrier(attachment.view, attachment.info.expected_layout));
+				barriers.push_back(Vulkan::ImageMemoryBarrier(*attachment.view, attachment.info.expected_layout));
 			}
 		}
 
@@ -48,8 +48,8 @@ void RenderPass::Begin(VkCommandBuffer command_buffer, const BeginInfo& begin_in
 			}
 
 			attachment_info->sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-			attachment_info->imageView = attachment.view.view;
-			attachment_info->imageLayout = attachment.view.layout;
+			attachment_info->imageView = attachment.view->view;
+			attachment_info->imageLayout = attachment.view->layout;
 			attachment_info->loadOp = attachment.info.load_op;
 			attachment_info->storeOp = attachment.info.store_op;
 			attachment_info->clearValue = attachment.info.clear_value;
@@ -122,9 +122,9 @@ void RenderPass::Begin(VkCommandBuffer command_buffer, const BeginInfo& begin_in
 			if (attachment.info.attachment_slot == ATTACHMENT_SLOT_INVALID)
 				continue;
 
-			if (attachment.view.layout != attachment.info.expected_layout)
+			if (attachment.view->layout != attachment.info.expected_layout)
 			{
-				barriers.push_back(Vulkan::ImageMemoryBarrier(attachment.view, attachment.info.expected_layout));
+				barriers.push_back(Vulkan::ImageMemoryBarrier(*attachment.view, attachment.info.expected_layout));
 			}
 		}
 
@@ -170,9 +170,9 @@ void RenderPass::SetAttachmentInfos(const std::vector<AttachmentInfo>& attachmen
 	}
 }
 
-void RenderPass::SetAttachment(AttachmentSlot slot, const Vulkan::ImageView& attachment_view)
+void RenderPass::SetAttachment(AttachmentSlot slot, Vulkan::ImageView* attachment_view)
 {
-	VK_ASSERT(attachment_view.image->format == m_attachments[slot].info.format && "The format of the attachment does not match the format specified in the attachment info");
+	VK_ASSERT(attachment_view->image->format == m_attachments[slot].info.format && "The format of the attachment does not match the format specified in the attachment info");
 	VK_ASSERT(slot < m_attachments.size() && "Tried to set an attachment with an index larger than the total amount of attachments specified in the render pass");
 
 	m_attachments[slot].view = attachment_view;

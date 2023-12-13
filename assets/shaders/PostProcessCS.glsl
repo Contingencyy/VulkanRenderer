@@ -15,12 +15,14 @@ layout(std140, push_constant) uniform constants
 {
 	layout(offset = 0) uint hdr_src_index;
 	layout(offset = 4) uint sdr_dst_index;
-} push_constants;
+} push_consts;
 
-layout(set = DESCRIPTOR_SET_STORAGE_IMAGE, binding = 0, rgba16) uniform readonly image2D g_inputs[];
-layout(set = DESCRIPTOR_SET_STORAGE_IMAGE, binding = 0, rgba8) uniform writeonly image2D g_outputs[];
+layout(set = DESCRIPTOR_SET_STORAGE_IMAGE, binding = 0, rgba16f) uniform readonly image2D g_inputs[];
+// Format qualifiers are used for read operations, so images that are declared "writeonly" do not need a format qualifier
+// https://www.khronos.org/opengl/wiki/Image_Load_Store#Format_qualifiers
+layout(set = DESCRIPTOR_SET_STORAGE_IMAGE, binding = 0) uniform writeonly image2D g_outputs[];
 
-layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+layout (local_size_x = 8, local_size_y = 8) in;
 
 vec3 ApplyExposure(vec3 color, float exposure)
 {
@@ -64,7 +66,7 @@ vec3 LinearToSRGB(vec3 linear, float gamma)
 void main()
 {
 	ivec2 texel_pos = ivec2(gl_GlobalInvocationID.xy);
-	vec4 hdr_color = imageLoad(g_inputs[push_constants.hdr_src_index], ivec2(texel_pos));
+	vec4 hdr_color = imageLoad(g_inputs[push_consts.hdr_src_index], texel_pos);
 	vec3 final_color = hdr_color.xyz;
 
 	if (settings.debug_render_mode == DEBUG_RENDER_MODE_NONE)
@@ -74,5 +76,5 @@ void main()
 		final_color = LinearToSRGB(final_color, settings.gamma);
 	}
 
-	imageStore(g_outputs[push_constants.sdr_dst_index], texel_pos, vec4(final_color, hdr_color.a));
+	imageStore(g_outputs[push_consts.sdr_dst_index], texel_pos, vec4(final_color, hdr_color.a));
 }
