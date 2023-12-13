@@ -134,7 +134,7 @@ struct VulkanInstance
 {
 	static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
 #ifdef _DEBUG
-	static constexpr bool ENABLE_VALIDATION_LAYERS = true;
+	static constexpr bool ENABLE_VALIDATION_LAYERS = false;
 #else
 	static constexpr bool ENABLE_VALIDATION_LAYERS = false;
 #endif

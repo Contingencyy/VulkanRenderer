@@ -1,4 +1,3 @@
-#pragma once
 #include "Common.glsl"
 
 float D_GGX(float NoH, float a)

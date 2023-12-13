@@ -735,10 +735,14 @@ namespace Vulkan
 		shaderc::CompileOptions compile_options = {};
 #ifdef _DEBUG
 		compile_options.SetOptimizationLevel(shaderc_optimization_level_zero);
+		compile_options.SetGenerateDebugInfo();
+		compile_options.SetWarningsAsErrors();
 #else
 		compile_options.SetOptimizationLevel(shaderc_optimization_level_performance);
 #endif
 		compile_options.SetIncluder(std::make_unique<ShadercIncluder>());
+		compile_options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_3);
+		compile_options.SetTargetSpirv(shaderc_spirv_version_1_6);
 
 		shaderc::SpvCompilationResult shader_compile_result = data->shader_compiler.compiler.CompileGlslToSpv(
 			shader_text.data(), shader_text.size(), shader_type, filepath, "main", compile_options);

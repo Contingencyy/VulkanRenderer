@@ -1,4 +1,3 @@
-#pragma once
 #include "Shared.glsl.h"
 
 #extension GL_EXT_samplerless_texture_functions : enable

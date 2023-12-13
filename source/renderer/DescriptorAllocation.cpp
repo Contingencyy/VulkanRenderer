@@ -69,15 +69,18 @@ void DescriptorAllocation::WriteDescriptor(const Vulkan::ImageView& view, VkImag
 	{
 		descriptor_info.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
 		descriptor_info.data.pStorageImage = &image_info;
+
+		vk_inst.pFunc.get_descriptor_ext(vk_inst.device, &descriptor_info,
+			vk_inst.descriptor_sizes.storage_image, GetDescriptor(offset));
 	}
 	else if (m_descriptor_type == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
 	{
 		descriptor_info.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
 		descriptor_info.data.pSampledImage = &image_info;
-	}
 
-	vk_inst.pFunc.get_descriptor_ext(vk_inst.device, &descriptor_info,
-		vk_inst.descriptor_sizes.sampled_image, GetDescriptor(offset));
+		vk_inst.pFunc.get_descriptor_ext(vk_inst.device, &descriptor_info,
+			vk_inst.descriptor_sizes.sampled_image, GetDescriptor(offset));
+	}
 }
 
 void DescriptorAllocation::WriteDescriptor(const VkSampler sampler, uint32_t offset)

@@ -1,6 +1,5 @@
-#pragma once
-
 #ifdef __cplusplus
+#pragma once
 
 #define DECLARE_STRUCT(x) struct alignas(16) x
 

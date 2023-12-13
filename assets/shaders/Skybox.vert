@@ -1,6 +1,5 @@
 #version 450
 
-#extension GL_KHR_vulkan_glsl : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 
 #include "Shared.glsl.h"

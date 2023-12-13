@@ -1,7 +1,5 @@
 #version 450
-#pragma once
 
-#extension GL_KHR_vulkan_glsl : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 
 #include "Shared.glsl.h"
@@ -11,18 +9,16 @@ layout(set = DESCRIPTOR_SET_UBO, binding = RESERVED_DESCRIPTOR_UBO_SETTINGS) uni
 	RenderSettings settings;
 };
 
+layout(set = DESCRIPTOR_SET_STORAGE_IMAGE, binding = 0, rgba16) uniform restrict readonly image2D g_inputs[];
+layout(set = DESCRIPTOR_SET_STORAGE_IMAGE, binding = 0, rgba8) uniform restrict writeonly image2D g_outputs[];
+
 layout(std140, push_constant) uniform constants
 {
 	layout(offset = 0) uint hdr_src_index;
 	layout(offset = 4) uint sdr_dst_index;
 } push_consts;
 
-layout(set = DESCRIPTOR_SET_STORAGE_IMAGE, binding = 0, rgba16f) uniform readonly image2D g_inputs[];
-// Format qualifiers are used for read operations, so images that are declared "writeonly" do not need a format qualifier
-// https://www.khronos.org/opengl/wiki/Image_Load_Store#Format_qualifiers
-layout(set = DESCRIPTOR_SET_STORAGE_IMAGE, binding = 0) uniform writeonly image2D g_outputs[];
-
-layout (local_size_x = 8, local_size_y = 8) in;
+layout(local_size_x = 8, local_size_y = 8) in;
 
 vec3 ApplyExposure(vec3 color, float exposure)
 {
@@ -65,7 +61,7 @@ vec3 LinearToSRGB(vec3 linear, float gamma)
 
 void main()
 {
-	ivec2 texel_pos = ivec2(gl_GlobalInvocationID.xy);
+	const ivec2 texel_pos = ivec2(gl_GlobalInvocationID.xy);
 	vec4 hdr_color = imageLoad(g_inputs[push_consts.hdr_src_index], texel_pos);
 	vec3 final_color = hdr_color.xyz;
 
@@ -76,5 +72,7 @@ void main()
 		final_color = LinearToSRGB(final_color, settings.gamma);
 	}
 
+	// Image store always takes in a vec4, but if the destination texture is e.g. format RG16,
+	// then only the RG components will be written and the others ignored
 	imageStore(g_outputs[push_consts.sdr_dst_index], texel_pos, vec4(final_color, hdr_color.a));
 }
