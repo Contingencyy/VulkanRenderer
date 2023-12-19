@@ -3,8 +3,6 @@
 
 #include <array>
 
-struct TextureResource;
-
 enum RenderPassType
 {
 	RENDER_PASS_TYPE_GRAPHICS,

@@ -3,6 +3,8 @@
 #include "renderer/DescriptorBuffer.h"
 #include "renderer/ResourceSlotmap.h"
 #include "renderer/RenderPass.h"
+#include "renderer/Texture.h"
+#include "renderer/Buffer.h"
 #include "Common.h"
 #include "Shared.glsl.h"
 #include "Assets.h"
@@ -109,13 +111,19 @@ namespace Renderer
 		}
 	};
 
+	struct Mesh
+	{
+		Buffer vertex_buffer;
+		Buffer index_buffer;
+	};
+
 	struct Data
 	{
 		::GLFWwindow* window = nullptr;
 
 		// Resource slotmaps
-		ResourceSlotmap<TextureResource> texture_slotmap;
-		ResourceSlotmap<MeshResource> mesh_slotmap;
+		ResourceSlotmap<Texture> texture_slotmap;
+		ResourceSlotmap<Mesh> mesh_slotmap;
 
 		// Command buffers and synchronization primitives
 		std::vector<VkCommandBuffer> command_buffers;
@@ -151,17 +159,17 @@ namespace Renderer
 		struct RenderTargets
 		{
 			TextureHandle_t hdr_handle;
-			TextureResource* hdr = nullptr;
+			Texture* hdr = nullptr;
 			TextureHandle_t depth_handle;
-			TextureResource* depth = nullptr;
+			Texture* depth = nullptr;
 			TextureHandle_t sdr_handle;
-			TextureResource* sdr = nullptr;
+			Texture* sdr = nullptr;
 		} render_targets;
 
 		struct IBL
 		{
 			TextureHandle_t brdf_lut_handle;
-			TextureResource* brdf_lut = nullptr;
+			Texture* brdf_lut = nullptr;
 		} ibl;
 
 		struct UBOs
@@ -194,8 +202,8 @@ namespace Renderer
 		TextureResource* default_normal_texture;
 
 		VkSampler default_sampler = VK_NULL_HANDLE;
-		Vulkan::Buffer unit_cube_vertex_buffer;
-		Vulkan::Buffer unit_cube_index_buffer;
+		Buffer unit_cube_vb;
+		Buffer unit_cube_ib;
 
 		TextureHandle_t skybox_texture_handle;
 		// TODO: Free reserved descriptors on Exit()

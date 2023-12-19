@@ -1,4 +1,5 @@
 #include "renderer/VulkanBackend.h"
+#include "renderer/VulkanResourceTracker.h"
 #include "Common.h"
 
 #include "shaderc/shaderc.hpp"
@@ -848,101 +849,84 @@ namespace Vulkan
 		CreateSwapChain();
 	}
 
-	void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags mem_flags, Buffer& buffer)
+	void DebugNameObject(uint64_t object, VkDebugReportObjectTypeEXT object_type, const char* debug_name)
 	{
-		VkBufferCreateInfo buffer_info = {};
-		buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+		VkDebugMarkerObjectNameInfoEXT debug_name_info = { VK_STRUCTURE_TYPE_DEBUG_MARKER_OBJECT_NAME_INFO_EXT };
+		debug_name_info.objectType = object_type;
+		debug_name_info.object = object;
+		debug_name_info.pObjectName = debug_name;
+
+		vkDebugMarkerSetObjectNameEXT(vk_inst.device, &debug_name_info);
+	}
+
+	VkDeviceMemory AllocateDeviceMemory(VkBuffer buffer, VkMemoryPropertyFlags mem_flags)
+	{
+		VkMemoryRequirements mem_req = {};
+		vkGetBufferMemoryRequirements(vk_inst.device, buffer, &mem_req);
+
+		VkMemoryAllocateInfo alloc_info = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
+		alloc_info.allocationSize = mem_req.size;
+		alloc_info.memoryTypeIndex = FindMemoryType(mem_req.memoryTypeBits, mem_flags);
+
+		VkDeviceMemory device_memory = VK_NULL_HANDLE;
+		VkCheckResult(vkAllocateMemory(vk_inst.device, &alloc_info, nullptr, &device_memory));
+		VkCheckResult(vkBindBufferMemory(vk_inst.device, buffer, device_memory, 0));
+
+		return device_memory;
+	}
+
+	VkDeviceMemory AllocateDeviceMemory(VkImage image, VkMemoryPropertyFlags mem_flags)
+	{
+		VkMemoryRequirements mem_req = {};
+		vkGetImageMemoryRequirements(vk_inst.device, image, &mem_req);
+
+		VkMemoryAllocateInfo alloc_info = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
+		alloc_info.allocationSize = mem_req.size;
+		alloc_info.memoryTypeIndex = FindMemoryType(mem_req.memoryTypeBits, mem_flags);
+
+		VkDeviceMemory device_memory = VK_NULL_HANDLE;
+		VkCheckResult(vkAllocateMemory(vk_inst.device, &alloc_info, nullptr, &device_memory));
+		VkCheckResult(vkBindImageMemory(vk_inst.device, image, device_memory, 0));
+
+		return device_memory;
+	}
+
+	void FreeDeviceMemory(VkDeviceMemory device_memory)
+	{
+		vkFreeMemory(vk_inst.device, device_memory, nullptr);
+	}
+
+	uint8_t* MapMemory(VkDeviceMemory device_memory, VkDeviceSize size, VkDeviceSize offset)
+	{
+		uint8_t* mapped_ptr = nullptr;
+		VkCheckResult(vkMapMemory(vk_inst.device, device_memory, offset, size, 0, reinterpret_cast<void**>(&mapped_ptr)));
+
+		return mapped_ptr;
+	}
+
+	VkBuffer CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage_flags)
+	{
+		VkBufferCreateInfo buffer_info = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
 		buffer_info.size = size;
-		buffer_info.usage = usage;
+		buffer_info.usage = usage_flags;
 		buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-		buffer = {};
-		VkCheckResult(vkCreateBuffer(vk_inst.device, &buffer_info, nullptr, &buffer.buffer));
+		VkBuffer buffer = VK_NULL_HANDLE;
+		VkCheckResult(vkCreateBuffer(vk_inst.device, &buffer_info, nullptr, &buffer));
 
-		VkMemoryRequirements mem_requirements = {};
-		vkGetBufferMemoryRequirements(vk_inst.device, buffer.buffer, &mem_requirements);
-
-		VkMemoryAllocateInfo alloc_info = {};
-		alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-		alloc_info.allocationSize = mem_requirements.size;
-		alloc_info.memoryTypeIndex = FindMemoryType(mem_requirements.memoryTypeBits, mem_flags);
-
-		VkCheckResult(vkAllocateMemory(vk_inst.device, &alloc_info, nullptr, &buffer.memory));
-		VkCheckResult(vkBindBufferMemory(vk_inst.device, buffer.buffer, buffer.memory, 0));
-
-		// TODO: Offset will be used later when we sub-allocate from large buffers
-		buffer.size = size;
-		buffer.offset = 0;
+		VulkanResourceTracker::TrackBuffer(buffer);
+		return buffer;
 	}
 
-	void CreateStagingBuffer(VkDeviceSize size, Buffer& buffer)
+	void DestroyBuffer(VkBuffer buffer)
 	{
-		CreateBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, buffer);
-		VkCheckResult(vkMapMemory(vk_inst.device, buffer.memory, 0, size, 0, (void**)&buffer.ptr));
+		vkDestroyBuffer(vk_inst.device, buffer, nullptr);
 	}
 
-	void CreateUniformBuffer(VkDeviceSize size, Buffer& buffer)
+	VkImage CreateImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,
+		VkImageUsageFlags usage, uint32_t num_mips, uint32_t array_layers, VkImageCreateFlags create_flags)
 	{
-		CreateBuffer(size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, buffer);
-		VkCheckResult(vkMapMemory(vk_inst.device, buffer.memory, 0, size, 0, (void**)&buffer.ptr));
-	}
-
-	void CreateDescriptorBuffer(VkDeviceSize size, Buffer& buffer)
-	{
-		CreateBuffer(size, VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, buffer);
-		VkCheckResult(vkMapMemory(vk_inst.device, buffer.memory, 0, size, 0, (void**)&buffer.ptr));
-	}
-
-	void CreateVertexBuffer(VkDeviceSize size, Buffer& buffer)
-	{
-		CreateBuffer(size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffer);
-	}
-
-	void CreateIndexBuffer(VkDeviceSize size, Buffer& buffer)
-	{
-		CreateBuffer(size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffer);
-	}
-
-	void DestroyBuffer(const Buffer& buffer)
-	{
-		if (buffer.ptr)
-		{
-			vkUnmapMemory(vk_inst.device, buffer.memory);
-		}
-		vkDestroyBuffer(vk_inst.device, buffer.buffer, nullptr);
-		vkFreeMemory(vk_inst.device, buffer.memory, nullptr);
-	}
-
-	void WriteBuffer(void* dst_ptr, void* src_ptr, VkDeviceSize size)
-	{
-		// NOTE: The driver may or may not have immediately copied this over to buffer memory (e.g. caching)
-		// or writes to the buffer are not visible in the mapped memory yet.
-		// To deal with this problem, you either have to use a memory heap that is host coherent (VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
-		// or call vkFlushMappedMemoryRanges after writing to the mapped memory and then calling vkInvalidateMappedMemoryRanges before reading from it
-		// The transfer of data to the GPU happens in the background and the specification states it is guaranteed to be complete as of the next call to vkQueueSubmit
-		memcpy(dst_ptr, src_ptr, size);
-	}
-
-	void CopyBuffer(const Buffer& src_buffer, const Buffer& dst_buffer, VkDeviceSize size, VkDeviceSize src_offset, VkDeviceSize dst_offset)
-	{
-		VkCommandBuffer command_buffer = Vulkan::BeginImmediateCommand();
-
-		VkBufferCopy copy_region = {};
-		copy_region.srcOffset = src_offset;
-		copy_region.dstOffset = dst_offset;
-		copy_region.size = size;
-		vkCmdCopyBuffer(command_buffer, src_buffer.buffer, dst_buffer.buffer, 1, &copy_region);
-
-		Vulkan::EndImmediateCommand(command_buffer);
-	}
-
-	void CreateImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,
-		VkImageUsageFlags usage, VkMemoryPropertyFlags memory_flags, Image& image, uint32_t num_mips, uint32_t array_layers, VkImageCreateFlags create_flags)
-	{
-		VkImageCreateInfo image_info = {};
-		image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+		VkImageCreateInfo image_info = { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
 		image_info.imageType = VK_IMAGE_TYPE_2D;
 		image_info.extent.width = width;
 		image_info.extent.height = height;
@@ -953,56 +937,23 @@ namespace Vulkan
 		image_info.tiling = tiling;
 		image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		image_info.usage = usage;
-		image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 		image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+		image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 		image_info.flags = create_flags;
 
-		image = {};
-		image.format = format;
-		VkCheckResult(vkCreateImage(vk_inst.device, &image_info, nullptr, &image.image));
+		VkImage image = VK_NULL_HANDLE;
+		VkCheckResult(vkCreateImage(vk_inst.device, &image_info, nullptr, &image));
 
-		VkMemoryRequirements mem_requirements = {};
-		vkGetImageMemoryRequirements(vk_inst.device, image.image, &mem_requirements);
-
-		VkMemoryAllocateInfo alloc_info = {};
-		alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-		alloc_info.allocationSize = mem_requirements.size;
-		alloc_info.memoryTypeIndex = FindMemoryType(mem_requirements.memoryTypeBits, memory_flags);
-
-		VkCheckResult(vkAllocateMemory(vk_inst.device, &alloc_info, nullptr, &image.memory));
-		VkCheckResult(vkBindImageMemory(vk_inst.device, image.image, image.memory, 0));
+		VulkanResourceTracker::TrackImage(image, image_info.initialLayout);
+		return image;
 	}
 
-	void CreateImageCube(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags memory_flags, Image& image, uint32_t num_mips)
+	void DestroyImage(VkImage image)
 	{
-		CreateImage(width, height, format, tiling, usage, memory_flags, image, num_mips, 6, VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT);
+		vkDestroyImage(vk_inst.device, image, nullptr);
 	}
 
-	void CreateImageView(VkImageViewType view_type, VkImageAspectFlags aspect_flags, Image* image, ImageView& view,
-		uint32_t base_mip, uint32_t num_mips, uint32_t base_layer, uint32_t num_layers)
-	{
-		VkImageViewCreateInfo view_info = {};
-		view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-		view_info.image = image->image;
-		view_info.viewType = view_type;
-		view_info.format = image->format;
-		view_info.subresourceRange.aspectMask = aspect_flags;
-		view_info.subresourceRange.baseMipLevel = base_mip;
-		view_info.subresourceRange.levelCount = num_mips;
-		view_info.subresourceRange.baseArrayLayer = base_layer;
-		view_info.subresourceRange.layerCount = num_layers;
-
-		view.image = image;
-		view.view_type = view_type;
-		view.base_mip = base_mip;
-		view.num_mips = num_mips;
-		view.base_layer = base_layer;
-		view.num_layers = num_layers;
-		view.layout = VK_IMAGE_LAYOUT_UNDEFINED;
-		VkCheckResult(vkCreateImageView(vk_inst.device, &view_info, nullptr, &view.view));
-	}
-
-	void GenerateMips(uint32_t width, uint32_t height, uint32_t num_mips, VkFormat format, Image& image)
+	void GenerateMips(VkImage image, VkFormat format, uint32_t width, uint32_t height, uint32_t num_mips)
 	{
 		VkFormatProperties format_properties;
 		vkGetPhysicalDeviceFormatProperties(vk_inst.physical_device, format, &format_properties);
@@ -1016,7 +967,7 @@ namespace Vulkan
 
 		VkImageMemoryBarrier barrier = {};
 		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		barrier.image = image.image;
+		barrier.image = image;
 		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -1057,8 +1008,8 @@ namespace Vulkan
 			blit.dstSubresource.layerCount = 1;
 
 			vkCmdBlitImage(command_buffer,
-				image.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-				image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+				image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 				1, &blit,
 				VK_FILTER_LINEAR
 			);
@@ -1095,35 +1046,45 @@ namespace Vulkan
 		EndImmediateCommand(command_buffer);
 	}
 
-	void DestroyImage(const Image& image)
+	VkImageView CreateImageView(VkImage image, VkImageViewType view_type, VkFormat format, uint32_t base_mip, uint32_t num_mips, uint32_t base_layer, uint32_t num_layers)
 	{
-		vkDestroyImage(vk_inst.device, image.image, nullptr);
-		vkFreeMemory(vk_inst.device, image.memory, nullptr);
+		VkImageViewCreateInfo view_info = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+		view_info.image = image;
+		view_info.viewType = view_type;
+		view_info.format = format;
+		//view_info.components.r = VK_COMPONENT_SWIZZLE_R;
+		//view_info.components.g = VK_COMPONENT_SWIZZLE_G;
+		//view_info.components.b = VK_COMPONENT_SWIZZLE_B;
+		//view_info.components.a = VK_COMPONENT_SWIZZLE_A;
+		view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		view_info.subresourceRange.baseMipLevel = base_mip;
+		view_info.subresourceRange.levelCount = num_mips;
+		view_info.subresourceRange.baseArrayLayer = base_layer;
+		view_info.subresourceRange.layerCount = num_layers;
+		view_info.flags = 0;
+
+		VkImageView image_view = VK_NULL_HANDLE;
+		VkCheckResult(vkCreateImageView(vk_inst.device, &view_info, nullptr, &image_view));
+
+		return image_view;
 	}
 
-	void DestroyImageView(const ImageView& view)
+	void DestroyImageView(VkImageView image_view)
 	{
-		vkDestroyImageView(vk_inst.device, view.view, nullptr);
+		vkDestroyImageView(vk_inst.device, image_view, nullptr);
 	}
 
-	void CopyBufferToImage(const Buffer& src_buffer, const Image& dst_image, uint32_t width, uint32_t height, VkDeviceSize src_offset)
+	VkSampler CreateSampler(const VkSamplerCreateInfo& sampler_info)
 	{
-		VkCommandBuffer command_buffer = Vulkan::BeginImmediateCommand();
+		VkSampler sampler = VK_NULL_HANDLE;
+		VkCheckResult(vkCreateSampler(vk_inst.device, &sampler_info, nullptr, &sampler));
 
-		VkBufferImageCopy region = {};
-		region.bufferOffset = src_offset;
-		region.bufferRowLength = 0;
-		region.bufferImageHeight = 0;
-		region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		region.imageSubresource.mipLevel = 0;
-		region.imageSubresource.baseArrayLayer = 0;
-		region.imageSubresource.layerCount = 1;
-		region.imageOffset = { 0, 0, 0 };
-		region.imageExtent = { width, height, 1 };
+		return sampler;
+	}
 
-		vkCmdCopyBufferToImage(command_buffer, src_buffer.buffer, dst_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-
-		Vulkan::EndImmediateCommand(command_buffer);
+	void DestroySampler(VkSampler sampler)
+	{
+		vkDestroySampler(vk_inst.device, sampler, nullptr);
 	}
 
 	VkFormat FindDepthFormat()
@@ -1186,68 +1147,22 @@ namespace Vulkan
 		vkFreeCommandBuffers(vk_inst.device, vk_inst.cmd_pools.graphics, 1, &command_buffer);
 	}
 
-	VkBufferMemoryBarrier2 BufferMemoryBarrier(Buffer& buffer, VkAccessFlags2 src_access, VkPipelineStageFlags2 src_stage, VkAccessFlags2 dst_access, VkPipelineStageFlags2 dst_stage)
-	{
-		VkBufferMemoryBarrier2 buffer_memory_barrier = {};
-		buffer_memory_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
-		buffer_memory_barrier.buffer = buffer.buffer;
-		buffer_memory_barrier.size = buffer.size;
-		buffer_memory_barrier.offset = buffer.offset;
-		buffer_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		buffer_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		buffer_memory_barrier.srcAccessMask = src_access;
-		buffer_memory_barrier.srcStageMask = src_stage;
-		buffer_memory_barrier.dstAccessMask = dst_access;
-		buffer_memory_barrier.dstStageMask = dst_stage;
-
-		return buffer_memory_barrier;
-	}
-
-	void CmdBufferMemoryBarrier(VkCommandBuffer command_buffer, Buffer& buffer, VkAccessFlags2 src_access, VkPipelineStageFlags2 src_stage, VkAccessFlags2 dst_access, VkPipelineStageFlags2 dst_stage)
-	{
-		VkBufferMemoryBarrier2 barrier = BufferMemoryBarrier(buffer, src_access, src_stage, dst_access, dst_stage);
-
-		VkDependencyInfo dependency_info = {};
-		dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-		dependency_info.bufferMemoryBarrierCount = 1;
-		dependency_info.pBufferMemoryBarriers = &barrier;
-		dependency_info.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
-
-		vkCmdPipelineBarrier2(command_buffer, &dependency_info);
-	}
-
-	void CmdBufferMemoryBarriers(VkCommandBuffer command_buffer, const std::vector<VkBufferMemoryBarrier2>& buffer_barriers)
-	{
-		VkDependencyInfo dependency_info = {};
-		dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-		dependency_info.bufferMemoryBarrierCount = (uint32_t)buffer_barriers.size();
-		dependency_info.pBufferMemoryBarriers = buffer_barriers.data();
-		dependency_info.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
-
-		vkCmdPipelineBarrier2(command_buffer, &dependency_info);
-	}
-
-	void BufferMemoryBarrierImmediate(Buffer& buffer, VkAccessFlags2 src_access, VkPipelineStageFlags2 src_stage, VkAccessFlags2 dst_access, VkPipelineStageFlags2 dst_stage)
-	{
-		VkCommandBuffer command_buffer = BeginImmediateCommand();
-		CmdBufferMemoryBarrier(command_buffer, buffer, src_access, src_stage, dst_access, dst_stage);
-		EndImmediateCommand(command_buffer);
-	}
-
-	VkImageMemoryBarrier2 ImageMemoryBarrier(ImageView& view, VkImageLayout new_layout,
+	VkImageMemoryBarrier2 ImageMemoryBarrier(VkImage image, VkImageLayout new_layout,
 		uint32_t base_mip_level, uint32_t num_mips, uint32_t base_array_layer, uint32_t layer_count)
 	{
 		VkImageMemoryBarrier2 image_memory_barrier = {};
 		image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-		image_memory_barrier.image = view.image->image;
-		image_memory_barrier.oldLayout = view.layout;
+		image_memory_barrier.image = image;
+		image_memory_barrier.oldLayout = VulkanResourceTracker::GetImageLayout(image);
 		image_memory_barrier.newLayout = new_layout;
 
 		image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 
-		GetImageLayoutAccessAndStageFlags(view.layout, image_memory_barrier.srcAccessMask, image_memory_barrier.srcStageMask);
-		GetImageLayoutAccessAndStageFlags(new_layout, image_memory_barrier.dstAccessMask, image_memory_barrier.dstStageMask);
+		VulkanResourceTracker::GetSrcAccessAndStageMasks();
+		VulkanResourceTracker::GetDstAccessAndStageMasks();
+		/*GetImageLayoutAccessAndStageFlags(view.layout, image_memory_barrier.srcAccessMask, image_memory_barrier.srcStageMask);
+		GetImageLayoutAccessAndStageFlags(new_layout, image_memory_barrier.dstAccessMask, image_memory_barrier.dstStageMask);*/
 
 		if (new_layout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL || new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
 		{
@@ -1273,90 +1188,21 @@ namespace Vulkan
 		return image_memory_barrier;
 	}
 
-	void CmdTransitionImageLayout(VkCommandBuffer command_buffer, ImageView& view, VkImageLayout new_layout)
+	void CmdImageMemoryBarrier(VkCommandBuffer command_buffer, uint32_t num_barriers, const VkImageMemoryBarrier2* image_barriers)
 	{
-		VkImageMemoryBarrier2 barrier = ImageMemoryBarrier(view, new_layout, view.base_mip, view.num_mips, view.base_layer, view.num_layers);
-
-		VkDependencyInfo dependency_info = {};
-		dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-		dependency_info.imageMemoryBarrierCount = 1;
-		dependency_info.pImageMemoryBarriers = &barrier;
+		VkDependencyInfo dependency_info = { VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
+		dependency_info.imageMemoryBarrierCount = num_barriers;
+		dependency_info.pImageMemoryBarriers = image_barriers;
 		dependency_info.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
 		vkCmdPipelineBarrier2(command_buffer, &dependency_info);
 	}
 
-	void CmdTransitionImageLayouts(VkCommandBuffer command_buffer, const std::vector<VkImageMemoryBarrier2>& image_barriers)
-	{
-		if (image_barriers.size() == 0)
-			return;
-
-		VkDependencyInfo dependency_info = {};
-		dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-		dependency_info.imageMemoryBarrierCount = (uint32_t)image_barriers.size();
-		dependency_info.pImageMemoryBarriers = image_barriers.data();
-		dependency_info.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
-
-		vkCmdPipelineBarrier2(command_buffer, &dependency_info);
-	}
-
-	void TransitionImageLayoutImmediate(ImageView& view, VkImageLayout new_layout, uint32_t num_mips)
+	void ImageMemoryBarrierImmediate(uint32_t num_barriers, const VkImageMemoryBarrier2* image_barriers)
 	{
 		VkCommandBuffer command_buffer = BeginImmediateCommand();
-		CmdTransitionImageLayout(command_buffer, view, new_layout);
+		CmdImageMemoryBarrier(command_buffer, num_barriers, image_barriers);
 		EndImmediateCommand(command_buffer);
-	}
-	
-	VkMemoryBarrier2 MemoryBarrier(VkAccessFlags2 src_access, VkPipelineStageFlags2 src_stage, VkAccessFlags2 dst_access, VkPipelineStageFlags2 dst_stage)
-	{
-		VkMemoryBarrier2 memory_barrier = {};
-		memory_barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-		memory_barrier.srcAccessMask = src_access;
-		memory_barrier.srcStageMask = src_stage;
-		memory_barrier.dstAccessMask = dst_access;
-		memory_barrier.dstStageMask = dst_stage;
-
-		return memory_barrier;
-	}
-
-	void CmdMemoryBarrier(VkCommandBuffer command_buffer, const VkMemoryBarrier2& memory_barrier)
-	{
-		VkDependencyInfo dependency_info = {};
-		dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-		dependency_info.memoryBarrierCount = 1;
-		dependency_info.pMemoryBarriers = &memory_barrier;
-
-		vkCmdPipelineBarrier2(command_buffer, &dependency_info);
-	}
-
-	void CmdMemoryBarriers(VkCommandBuffer command_buffer, const std::vector<VkMemoryBarrier2>& memory_barriers)
-	{
-		VkDependencyInfo dependency_info = {};
-		dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-		dependency_info.memoryBarrierCount = (uint32_t)memory_barriers.size();
-		dependency_info.pMemoryBarriers = memory_barriers.data();
-
-		vkCmdPipelineBarrier2(command_buffer, &dependency_info);
-	}
-
-	VkMemoryBarrier2 ExecutionBarrier(VkPipelineStageFlags2 src_stage, VkPipelineStageFlags2 dst_stage)
-	{
-		VkMemoryBarrier2 execution_barrier = {};
-		execution_barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-		execution_barrier.srcStageMask = src_stage;
-		execution_barrier.dstStageMask = dst_stage;
-
-		return execution_barrier;
-	}
-
-	void CmdExecutionBarrier(VkCommandBuffer command_buffer, const VkMemoryBarrier2& memory_barrier)
-	{
-		VkDependencyInfo dependency_info = {};
-		dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-		dependency_info.memoryBarrierCount = 1;
-		dependency_info.pMemoryBarriers = &memory_barrier;
-
-		vkCmdPipelineBarrier2(command_buffer, &dependency_info);
 	}
 
 	VkPipelineLayout CreatePipelineLayout(const std::vector<VkDescriptorSetLayout>& descriptor_set_layouts, const std::vector<VkPushConstantRange>& push_constant_ranges)
