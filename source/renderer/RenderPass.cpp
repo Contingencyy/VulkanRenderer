@@ -27,22 +27,9 @@ void RenderPass::Begin(VkCommandBuffer command_buffer, const BeginInfo& begin_in
 			if (attachment.info.slot == ATTACHMENT_SLOT_INVALID)
 				continue;
 
-			if (attachment.view->layout != attachment.info.expected_layout)
-			{
-				barriers.push_back(Vulkan::ImageMemoryBarrier(*attachment.view, attachment.info.expected_layout));
-			}
-		}
-
-		// Transition all attachments to their expected layout
-		Vulkan::CmdTransitionImageLayouts(command_buffer, barriers);
-
-		for (auto& attachment : m_attachments)
-		{
-			if (attachment.info.slot == ATTACHMENT_SLOT_INVALID)
-				continue;
+			attachment.view->TransitionLayout(command_buffer, attachment.info.expected_layout);
 
 			VkRenderingAttachmentInfo* attachment_info = &depth_attachment_info;
-
 			if (IsColorAttachment(attachment.info.slot))
 			{
 				attachment_info = &color_attachment_infos.emplace_back();
@@ -50,7 +37,7 @@ void RenderPass::Begin(VkCommandBuffer command_buffer, const BeginInfo& begin_in
 
 			attachment_info->sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
 			attachment_info->imageView = attachment.view->view;
-			attachment_info->imageLayout = attachment.view->layout;
+			attachment_info->imageLayout = attachment.view->GetLayout();
 			attachment_info->loadOp = attachment.info.load_op;
 			attachment_info->storeOp = attachment.info.store_op;
 			attachment_info->clearValue = attachment.info.clear_value;
@@ -123,14 +110,8 @@ void RenderPass::Begin(VkCommandBuffer command_buffer, const BeginInfo& begin_in
 			if (attachment.info.slot == ATTACHMENT_SLOT_INVALID)
 				continue;
 
-			if (attachment.view->layout != attachment.info.expected_layout)
-			{
-				barriers.push_back(Vulkan::ImageMemoryBarrier(*attachment.view, attachment.info.expected_layout));
-			}
+			attachment.view->TransitionLayout(command_buffer, attachment.info.expected_layout);
 		}
-
-		// Transition all attachments to their expected layout
-		Vulkan::CmdTransitionImageLayouts(command_buffer, barriers);
 
 		if (m_pipeline)
 		{
@@ -181,6 +162,7 @@ void RenderPass::SetAttachment(AttachmentSlot slot, TextureView* attachment_view
 
 std::vector<VkFormat> RenderPass::GetColorAttachmentFormats()
 {
+	VK_ASSERT(m_type == RENDER_PASS_TYPE_GRAPHICS);
 	std::vector<VkFormat> formats;
 
 	for (const auto& attachment : m_attachments)
@@ -199,6 +181,8 @@ std::vector<VkFormat> RenderPass::GetColorAttachmentFormats()
 
 VkFormat RenderPass::GetDepthStencilAttachmentFormat()
 {
+	VK_ASSERT(m_type == RENDER_PASS_TYPE_GRAPHICS);
+
 	for (const auto& attachment : m_attachments)
 	{
 		if (IsDepthStencilAttachment(attachment.info.slot))

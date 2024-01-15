@@ -29,7 +29,7 @@ namespace Vulkan
 	uint8_t* MapMemory(VkDeviceMemory device_memory, VkDeviceSize size, VkDeviceSize offset = 0);
 	void UnmapMemory(VkDeviceMemory device_memory);
 
-	DescriptorAllocation AllocateDescriptors(VkDescriptorType type, uint32_t num_descriptors = 1);
+	DescriptorAllocation AllocateDescriptors(VkDescriptorType type, uint32_t num_descriptors = 1, uint32_t align = 0);
 	void FreeDescriptors(const DescriptorAllocation& descriptors);
 	std::vector<VkDescriptorSetLayout> GetDescriptorBufferLayouts();
 	std::vector<VkDescriptorBufferBindingInfoEXT> GetDescriptorBufferBindingInfos();
@@ -39,7 +39,7 @@ namespace Vulkan
 	void DestroyBuffer(VkBuffer buffer);
 
 	VkImage CreateImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,
-		VkImageUsageFlags usage, uint32_t num_mips, uint32_t array_layers, VkImageCreateFlags create_flags);
+		VkImageUsageFlags usage, uint32_t num_mips, uint32_t num_layers, VkImageCreateFlags create_flags);
 	void DestroyImage(VkImage image);
 	void GenerateMips(VkImage image, VkFormat format, uint32_t width, uint32_t height, uint32_t num_mips);
 
@@ -166,15 +166,6 @@ struct VulkanInstance
 		//VkCommandPool transfer = VK_NULL_HANDLE;
 	} cmd_pools;
 
-	struct DescriptorBuffers
-	{
-		DescriptorBuffer uniform{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, RESERVED_DESCRIPTOR_UBO_COUNT * VulkanInstance::MAX_FRAMES_IN_FLIGHT };
-		DescriptorBuffer storage_buffer{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER };
-		DescriptorBuffer storage_image{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE };
-		DescriptorBuffer sampled_image{ VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE };
-		DescriptorBuffer sampler{ VK_DESCRIPTOR_TYPE_SAMPLER };
-	} descriptor_buffers;
-
 	struct Debug
 	{
 		std::vector<const char*> validation_layers = { "VK_LAYER_KHRONOS_validation" };
@@ -188,6 +179,7 @@ struct VulkanInstance
 		PFN_vkGetDescriptorSetLayoutBindingOffsetEXT get_descriptor_set_layout_binding_offset_ext;
 		PFN_vkCmdSetDescriptorBufferOffsetsEXT cmd_set_descriptor_buffer_offsets_ext;
 		PFN_vkCmdBindDescriptorBuffersEXT cmd_bind_descriptor_buffers_ext;
+		PFN_vkDebugMarkerSetObjectNameEXT debug_marker_set_object_name_ext;
 	} pFunc;
 };
 

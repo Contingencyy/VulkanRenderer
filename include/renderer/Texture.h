@@ -42,23 +42,24 @@ struct std::hash<TextureViewCreateInfo>
 
 struct TextureView
 {
+	Texture* texture = nullptr;
+
 	VkImageView view = VK_NULL_HANDLE;
 	VkFormat format = VK_FORMAT_UNDEFINED;
-	VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
 	DescriptorAllocation descriptor;
 
 	TextureViewCreateInfo create_info;
 
-	void WriteDescriptorInfo(VkDescriptorType type, uint32_t descriptor_offset = 0);
+	void WriteDescriptorInfo(VkDescriptorType type, VkImageLayout layout, uint32_t descriptor_offset = 0);
+	void TransitionLayout(VkCommandBuffer command_buffer, VkImageLayout new_layout) const;
+	void TransitionLayoutImmediate(VkImageLayout new_layout) const;
+	VkImageLayout GetLayout() const;
 };
 
 class Texture
 {
 public:
-	static Texture* Create(const TextureCreateInfo& create_info);
-	static void Destroy(const Texture* texture);
-
-private:
+	Texture() = default;
 	Texture(const TextureCreateInfo& create_info);
 	~Texture();
 
@@ -71,7 +72,7 @@ public:
 	void TransitionLayoutImmediate(VkImageLayout new_layout,
 		uint32_t base_mip = 0, uint32_t num_mips = UINT32_MAX, uint32_t base_layer = 0, uint32_t num_layers = UINT32_MAX) const;
 
-	void AppendToChain(const Texture* texture);
+	void AppendToChain(Texture* texture);
 	Texture* GetChainned(uint32_t index = 0);
 
 	TextureView* GetView(const TextureViewCreateInfo& view_info = {});
@@ -83,8 +84,8 @@ private:
 	VkDeviceMemory m_vk_device_memory = VK_NULL_HANDLE;
 
 	TextureCreateInfo m_create_info;
-	std::unordered_map<TextureViewCreateInfo, TextureView> m_views;
 
+	std::unordered_map<TextureViewCreateInfo, TextureView> m_views;
 	std::vector<Texture*> m_chainned_textures;
 
 };

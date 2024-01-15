@@ -1,6 +1,7 @@
 #include "renderer/VulkanResourceTracker.h"
 
 #include <unordered_map>
+#include <functional>
 
 namespace VulkanResourceTracker
 {
@@ -18,6 +19,8 @@ namespace VulkanResourceTracker
 
 		uint32_t num_mips = 1;
 		uint32_t num_layers = 1;
+
+		std::vector<VkImageLayout> subresource_layouts;
 	};
 
 	struct Data
@@ -48,44 +51,34 @@ namespace VulkanResourceTracker
 
 	void RemoveBuffer(VkBuffer buffer)
 	{
-		if (data->tracked_buffers.find(buffer) == data->tracked_buffers.end())
-		{
-			VK_EXCEPT("VulkanResourceTracker::RemoveBuffer", "Tried to remove a buffer from being tracked that was already not tracked");
-			return;
-		}
+		VK_ASSERT(data->tracked_buffers.find(buffer) != data->tracked_buffers.end() &&
+			"Tried to remove a buffer from being tracked that was already not tracked");
 
 		data->tracked_buffers.erase(buffer);
 	}
 
-	void TrackImage(VkImage vk_image, VkImageLayout layout, uint32_t num_mips, uint32_t num_layers)
+	void TrackImage(VkImage image, VkImageLayout layout, uint32_t num_mips, uint32_t num_layers)
 	{
-		auto tracked = data->tracked_images.find(vk_image);
+		auto tracked = data->tracked_images.find(image);
 		VK_ASSERT(tracked == data->tracked_images.end() && "Tracked an image that was already being tracked");
 
 		if (tracked == data->tracked_images.end())
 		{
-			data->tracked_images.emplace(vk_image, TrackedImage {
-					.image = vk_image,
+			data->tracked_images.emplace(image, TrackedImage{
+					.image = image,
 					.layout = layout,
-					.last_pipeline_stage_used = VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT
+					.last_pipeline_stage_used = VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT,
+					.num_mips = num_mips,
+					.num_layers = num_layers
 				}
 			);
 		}
 	}
 
-	void TrackSubresource(VkImage image, VkImageLayout layout, uint32_t base_mip, uint32_t num_mips, uint32_t base_layer, uint32_t num_layers)
-	{
-		VK_EXCEPT("VulkanResourceTracker::TrackSubresource", "NOT IMPLEMENTED");
-	}
-
 	void RemoveImage(VkImage image)
 	{
-		if (data->tracked_images.find(image) == data->tracked_images.end())
-		{
-			VK_EXCEPT("VulkanResourceTracker::RemoveImage", "Tried to remove an image from being tracked that was already not tracked");
-			return;
-		}
-
+		VK_ASSERT(data->tracked_images.find(image) != data->tracked_images.end() &&
+			"Tried to remove an image from being tracked that was already not tracked");
 		data->tracked_images.erase(image);
 	}
 
@@ -174,14 +167,16 @@ namespace VulkanResourceTracker
 	}
 
 	VkImageMemoryBarrier2 ImageMemoryBarrier(VkImage image, VkImageLayout new_layout,
-		uint32_t base_mip_level, uint32_t num_mips, uint32_t base_array_layer, uint32_t layer_count)
+		uint32_t base_mip_level, uint32_t num_mips, uint32_t base_layer, uint32_t num_layers)
 	{
-		if (data->tracked_images.find(image) == data->tracked_images.end())
-		{
-			VK_EXCEPT("VulkanResourceTracker::ImageMemoryBarrier", "Tried to create an image memory barrier for an image that has not been tracked");
-		}
+		VK_ASSERT(data->tracked_images.find(image) != data->tracked_images.end() && "Tried to create an image memory barrier for an image that has not been tracked");
 
 		auto& tracked_image = data->tracked_images.at(image);
+
+		if (num_mips == UINT32_MAX)
+			num_mips = tracked_image.num_mips;
+		if (num_layers == UINT32_MAX)
+			num_layers = tracked_image.num_layers;
 
 		VkImageMemoryBarrier2 image_memory_barrier = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
 		image_memory_barrier.image = tracked_image.image;
@@ -211,33 +206,83 @@ namespace VulkanResourceTracker
 
 		image_memory_barrier.subresourceRange.baseMipLevel = base_mip_level;
 		image_memory_barrier.subresourceRange.levelCount = num_mips;
-		image_memory_barrier.subresourceRange.baseArrayLayer = base_array_layer;
-		image_memory_barrier.subresourceRange.layerCount = layer_count;
+		image_memory_barrier.subresourceRange.baseArrayLayer = base_layer;
+		image_memory_barrier.subresourceRange.layerCount = num_layers;
 
 		return image_memory_barrier;
 	}
 
-	void UpdateImageLayout(VkImage image, VkImageLayout new_layout)
+	void UpdateImageLayout(VkImage image, VkImageLayout new_layout, uint32_t base_mip, uint32_t num_mips, uint32_t base_layer, uint32_t num_layers)
 	{
-		if (data->tracked_images.find(image) == data->tracked_images.end())
-		{
-			VK_EXCEPT("VulkanResourceTracker::UpdateImageLayoutAndPipeline", "Tried to transition the image layout for an image that has not been tracked");
-			return;
-		}
+		auto tracked = data->tracked_images.find(image);
+		VK_ASSERT(tracked != data->tracked_images.end() && "Tried to transition the image layout for an image that has not been tracked");
 
-		auto& tracked_image = data->tracked_images.at(image);
-		tracked_image.layout = new_layout;
-		tracked_image.last_pipeline_stage_used = GetImageLayoutStageFlags(new_layout);
+		if (num_mips == UINT32_MAX)
+			num_mips = tracked->second.num_mips;
+		if (num_layers == UINT32_MAX)
+			num_layers = tracked->second.num_layers;
+
+		tracked->second.last_pipeline_stage_used = GetImageLayoutStageFlags(new_layout);
+
+		if (base_mip != 0 || base_layer != 0 || num_mips != tracked->second.num_mips || num_layers != tracked->second.num_layers)
+		{
+			// NOTE: For most images, we do not need fine grained image layouts for individual mips and/or layers, so we only do this when we explicitly
+			// start tracking a subresource within an already tracked image
+			if (tracked->second.subresource_layouts.size() == 0)
+				tracked->second.subresource_layouts.resize(tracked->second.num_mips * tracked->second.num_layers);
+
+			for (uint32_t mip = base_mip; mip < base_mip + num_mips; ++mip)
+			{
+				for (uint32_t layer = base_layer; layer < base_layer + num_layers; ++layer)
+				{
+					uint32_t subresource_index = tracked->second.num_mips * layer + mip;
+					tracked->second.subresource_layouts[subresource_index] = new_layout;
+				}
+			}
+
+			tracked->second.layout = VK_IMAGE_LAYOUT_UNDEFINED;
+		}
+		else
+		{
+			tracked->second.layout = new_layout;
+		}
 	}
 
-	VkImageLayout GetImageLayout(VkImage image)
+	VkImageLayout GetImageLayout(VkImage image, uint32_t base_mip, uint32_t num_mips, uint32_t base_layer, uint32_t num_layers)
 	{
-		if (data->tracked_images.find(image) == data->tracked_images.end())
+		auto tracked = data->tracked_images.find(image);
+		VK_ASSERT(tracked != data->tracked_images.end() && "Tried to retrieve the image layout for an image that has not been tracked");
+		
+		if (num_mips == UINT32_MAX)
+			num_mips = tracked->second.num_mips;
+		if (num_layers == UINT32_MAX)
+			num_layers = tracked->second.num_layers;
+
+		if (base_mip != 0 || base_layer != 0 || num_mips != tracked->second.num_mips || num_layers != tracked->second.num_layers)
 		{
-			VK_EXCEPT("VulkanResourceTracker::GetImageLayout", "Tried to retrieve the image layout for an image that has not been tracked");
+			uint32_t subresource_index = base_layer * tracked->second.num_mips + base_mip;
+			VkImageLayout layout = tracked->second.subresource_layouts[subresource_index];
+			bool layout_changes_in_range = false;
+			
+			for (uint32_t mip = base_mip; mip < base_mip + num_mips; ++mip)
+			{
+				for (uint32_t layer = base_layer; layer < base_layer + num_layers; ++layer)
+				{
+					uint32_t subresource_index = tracked->second.num_mips * layer + mip;
+
+					if (layout != tracked->second.subresource_layouts[subresource_index])
+					{
+						layout_changes_in_range = true;
+						break;
+					}
+				}
+			}
+
+			VK_ASSERT(!layout_changes_in_range && "Tried to get the image layout for a specific subresource range, but the subresource range specified is in multiple layouts");
+			return layout;
 		}
 
-		return data->tracked_images.at(image).layout;
+		return tracked->second.layout;
 	}
 
 }

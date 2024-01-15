@@ -271,24 +271,26 @@ namespace Vulkan
 				swapchain_suitable = !swapchain_support.formats.empty() && !swapchain_support.present_modes.empty();
 			}
 
-			VkPhysicalDeviceDescriptorBufferPropertiesEXT descriptor_buffer_properties = {};
-			descriptor_buffer_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_PROPERTIES_EXT;
+			// Request Physical Device Properties
+			VkPhysicalDeviceDescriptorBufferPropertiesEXT descriptor_buffer_properties = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_PROPERTIES_EXT };
 
-			VkPhysicalDeviceProperties2 device_properties2 = {};
-			device_properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+			VkPhysicalDeviceProperties2 device_properties2 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
 			device_properties2.pNext = &descriptor_buffer_properties;
 			vkGetPhysicalDeviceProperties2(device, &device_properties2);
 
-			VkPhysicalDeviceDescriptorBufferFeaturesEXT descriptor_buffer_features = {};
-			descriptor_buffer_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT;
+			// Enable device features
+			VkPhysicalDeviceDescriptorBufferFeaturesEXT descriptor_buffer_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT };
 
-			VkPhysicalDeviceMaintenance4Features maintenance4_features = {};
-			maintenance4_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_4_FEATURES;
+			VkPhysicalDeviceMaintenance4Features maintenance4_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_4_FEATURES };
 			descriptor_buffer_features.pNext = &maintenance4_features;
 
-			VkPhysicalDeviceDynamicRenderingFeatures dynamic_rendering_features = {};
-			dynamic_rendering_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES;
+			VkPhysicalDeviceDynamicRenderingFeatures dynamic_rendering_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES };
 			maintenance4_features.pNext = &dynamic_rendering_features;
+
+			VkPhysicalDeviceBufferDeviceAddressFeatures buffer_device_address_features = {};
+			buffer_device_address_features.bufferDeviceAddress = VK_TRUE;
+			buffer_device_address_features.bufferDeviceAddressCaptureReplay = VK_TRUE;
+			dynamic_rendering_features.pNext = &buffer_device_address_features;
 
 			VkPhysicalDeviceFeatures2 device_features2 = {};
 			device_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
@@ -300,7 +302,9 @@ namespace Vulkan
 				required_extensions.empty() && swapchain_suitable &&
 				device_features2.features.samplerAnisotropy &&
 				descriptor_buffer_features.descriptorBuffer &&
-				maintenance4_features.maintenance4)
+				maintenance4_features.maintenance4 &&
+				buffer_device_address_features.bufferDeviceAddress &&
+				buffer_device_address_features.bufferDeviceAddressCaptureReplay)
 			{
 				vk_inst.physical_device = device;
 
@@ -348,27 +352,23 @@ namespace Vulkan
 		device_create_info.enabledExtensionCount = (uint32_t)vk_inst.extensions.size();
 
 		// Request additional features to be enabled
-		VkPhysicalDeviceDescriptorIndexingFeatures descriptor_indexing_features = {};
-		descriptor_indexing_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
+		VkPhysicalDeviceDescriptorIndexingFeatures descriptor_indexing_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES };
 
-		VkPhysicalDeviceDescriptorBufferFeaturesEXT descriptor_buffer_features = {};
-		descriptor_buffer_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT;
+		VkPhysicalDeviceDescriptorBufferFeaturesEXT descriptor_buffer_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT };
 		descriptor_indexing_features.pNext = &descriptor_buffer_features;
 
-		VkPhysicalDeviceBufferDeviceAddressFeaturesEXT buffer_device_address_features = {};
-		buffer_device_address_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES_EXT;
+		VkPhysicalDeviceBufferDeviceAddressFeaturesEXT buffer_device_address_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES_EXT };
+		buffer_device_address_features.bufferDeviceAddress = VK_TRUE;
+		buffer_device_address_features.bufferDeviceAddressCaptureReplay = VK_TRUE;
 		descriptor_buffer_features.pNext = &buffer_device_address_features;
 
-		VkPhysicalDeviceSynchronization2Features sync_2_features = {};
-		sync_2_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES;
+		VkPhysicalDeviceSynchronization2Features sync_2_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES };
 		buffer_device_address_features.pNext = &sync_2_features;
 
-		VkPhysicalDeviceMaintenance4Features maintenance4_features = {};
-		maintenance4_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_4_FEATURES;
+		VkPhysicalDeviceMaintenance4Features maintenance4_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_4_FEATURES };
 		sync_2_features.pNext = &maintenance4_features;
 
-		VkPhysicalDeviceDynamicRenderingFeatures dynamic_rendering_features = {};
-		dynamic_rendering_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES;
+		VkPhysicalDeviceDynamicRenderingFeatures dynamic_rendering_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES };
 		maintenance4_features.pNext = &dynamic_rendering_features;
 
 		VkPhysicalDeviceFeatures2 device_features2 = {};
@@ -400,6 +400,10 @@ namespace Vulkan
 		LoadVulkanFunction<PFN_vkGetDescriptorSetLayoutBindingOffsetEXT>("vkGetDescriptorSetLayoutBindingOffsetEXT", vk_inst.pFunc.get_descriptor_set_layout_binding_offset_ext);
 		LoadVulkanFunction<PFN_vkCmdSetDescriptorBufferOffsetsEXT>("vkCmdSetDescriptorBufferOffsetsEXT", vk_inst.pFunc.cmd_set_descriptor_buffer_offsets_ext);
 		LoadVulkanFunction<PFN_vkCmdBindDescriptorBuffersEXT>("vkCmdBindDescriptorBuffersEXT", vk_inst.pFunc.cmd_bind_descriptor_buffers_ext);
+
+#ifdef _DEBUG
+		LoadVulkanFunction<PFN_vkDebugMarkerSetObjectNameEXT>("vkSetDebugUtilsObjectNameEXT", vk_inst.pFunc.debug_marker_set_object_name_ext);
+#endif
 	}
 
 	static void CreateCommandPool()
@@ -531,7 +535,7 @@ namespace Vulkan
 		for (size_t i = 0; i < vk_inst.swapchain.image_available_semaphores.size(); ++i)
 		{
 			VkCheckResult(vkCreateSemaphore(vk_inst.device, &semaphore_info, nullptr, &vk_inst.swapchain.image_available_semaphores[i]));
-			VulkanResourceTracker::TrackImage(vk_inst.swapchain.images[i], VK_IMAGE_LAYOUT_GENERAL);
+			VulkanResourceTracker::TrackImage(vk_inst.swapchain.images[i], VK_IMAGE_LAYOUT_UNDEFINED);
 		}
 	}
 
@@ -653,6 +657,15 @@ namespace Vulkan
 			shaderc::Compiler compiler;
 			ShadercIncluder includer;
 		} shader_compiler;
+
+		struct DescriptorBuffers
+		{
+			DescriptorBuffer uniform{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, RESERVED_DESCRIPTOR_UBO_COUNT * VulkanInstance::MAX_FRAMES_IN_FLIGHT };
+			DescriptorBuffer storage_buffer{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER };
+			DescriptorBuffer storage_image{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE };
+			DescriptorBuffer sampled_image{ VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE };
+			DescriptorBuffer sampler{ VK_DESCRIPTOR_TYPE_SAMPLER };
+		} descriptor_buffers;
 	} static* data;
 
 	static std::vector<uint32_t> CompileShader(const char* filepath, shaderc_shader_kind shader_type)
@@ -697,7 +710,6 @@ namespace Vulkan
 
 	void Init(::GLFWwindow* window)
 	{
-		data = new Data();
 		vk_inst.window = window;
 
 		VulkanResourceTracker::Init();
@@ -711,13 +723,13 @@ namespace Vulkan
 
 		CreateCommandPool();
 		CreateSwapChain();
+
+		data = new Data();
 	}
 
 	void Exit()
 	{
 		delete data;
-
-		VulkanResourceTracker::Exit();
 
 		vkDestroyCommandPool(vk_inst.device, vk_inst.cmd_pools.graphics, nullptr);
 		
@@ -737,6 +749,8 @@ namespace Vulkan
 
 		vkDestroyDevice(vk_inst.device, nullptr);
 		vkDestroyInstance(vk_inst.instance, nullptr);
+
+		VulkanResourceTracker::Exit();
 	}
 
 	VkResult SwapChainAcquireNextImage()
@@ -782,38 +796,43 @@ namespace Vulkan
 	void CopyToSwapchain(VkCommandBuffer command_buffer, VkImage src_image)
 	{
 		// Copy final result to swapchain image
-		VkImageCopy copy_region = {};
-		copy_region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		copy_region.srcSubresource.mipLevel = 0;
-		copy_region.srcSubresource.baseArrayLayer = 0;
-		copy_region.srcSubresource.layerCount = 1;
-		copy_region.srcOffset = { 0, 0, 0 };
-
-		copy_region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		copy_region.dstSubresource.mipLevel = 0;
-		copy_region.dstSubresource.baseArrayLayer = 0;
-		copy_region.dstSubresource.layerCount = 1;
-		copy_region.dstOffset = { 0, 0, 0 };
-		copy_region.extent = { vk_inst.swapchain.extent.width, vk_inst.swapchain.extent.height, 1 };
-
+		// We use vkCmdBlitImage here to have format conversions done automatically for us
+		// E.g. R8G8B8A8 to B8G8R8A8
 		VkImage swapchain_image = vk_inst.swapchain.images[vk_inst.swapchain.current_image];
 
-		vkCmdCopyImage(
+		VkImageBlit blit_region = {};
+		blit_region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		blit_region.srcSubresource.mipLevel = 0;
+		blit_region.srcSubresource.baseArrayLayer = 0;
+		blit_region.srcSubresource.layerCount = 1;
+		blit_region.srcOffsets[0] = { 0, 0, 0 };
+		blit_region.srcOffsets[1] = { (int32_t)vk_inst.swapchain.extent.width, (int32_t)vk_inst.swapchain.extent.height, 1 };
+
+		blit_region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		blit_region.dstSubresource.mipLevel = 0;
+		blit_region.dstSubresource.baseArrayLayer = 0;
+		blit_region.dstSubresource.layerCount = 1;
+		blit_region.dstOffsets[0] = { 0, 0, 0 };
+		blit_region.dstOffsets[1] = { (int32_t)vk_inst.swapchain.extent.width, (int32_t)vk_inst.swapchain.extent.height, 1 };
+
+		vkCmdBlitImage(
 			command_buffer,
 			src_image, VulkanResourceTracker::GetImageLayout(src_image),
 			swapchain_image, VulkanResourceTracker::GetImageLayout(swapchain_image),
-			1, &copy_region
+			1, &blit_region, VK_FILTER_NEAREST
 		);
 	}
 
 	void DebugNameObject(uint64_t object, VkDebugReportObjectTypeEXT object_type, const char* debug_name)
 	{
-		VkDebugMarkerObjectNameInfoEXT debug_name_info = { VK_STRUCTURE_TYPE_DEBUG_MARKER_OBJECT_NAME_INFO_EXT };
+#ifdef _DEBUG
+		VkDebugMarkerObjectNameInfoEXT debug_name_info = { VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT };
 		debug_name_info.objectType = object_type;
 		debug_name_info.object = object;
 		debug_name_info.pObjectName = debug_name;
 
-		vkDebugMarkerSetObjectNameEXT(vk_inst.device, &debug_name_info);
+		vk_inst.pFunc.debug_marker_set_object_name_ext(vk_inst.device, &debug_name_info);
+#endif
 	}
 
 	VkDeviceMemory AllocateDeviceMemory(VkBuffer buffer, VkMemoryPropertyFlags mem_flags)
@@ -824,7 +843,7 @@ namespace Vulkan
 		VkMemoryAllocateInfo alloc_info = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
 		alloc_info.allocationSize = mem_req.size;
 		alloc_info.memoryTypeIndex = FindMemoryType(mem_req.memoryTypeBits, mem_flags);
-
+		
 		VkDeviceMemory device_memory = VK_NULL_HANDLE;
 		VkCheckResult(vkAllocateMemory(vk_inst.device, &alloc_info, nullptr, &device_memory));
 		VkCheckResult(vkBindBufferMemory(vk_inst.device, buffer, device_memory, 0));
@@ -866,20 +885,20 @@ namespace Vulkan
 		vkUnmapMemory(vk_inst.device, device_memory);
 	}
 
-	DescriptorAllocation AllocateDescriptors(VkDescriptorType type, uint32_t num_descriptors)
+	DescriptorAllocation AllocateDescriptors(VkDescriptorType type, uint32_t num_descriptors, uint32_t align)
 	{
 		switch (type)
 		{
 		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
-			return vk_inst.descriptor_buffers.uniform.Allocate(num_descriptors);
+			return data->descriptor_buffers.uniform.Allocate(num_descriptors, align);
 		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
-			return vk_inst.descriptor_buffers.storage_buffer.Allocate(num_descriptors);
+			return data->descriptor_buffers.storage_buffer.Allocate(num_descriptors, align);
 		case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
-			return vk_inst.descriptor_buffers.storage_image.Allocate(num_descriptors);
+			return data->descriptor_buffers.storage_image.Allocate(num_descriptors, align);
 		case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
-			return vk_inst.descriptor_buffers.sampled_image.Allocate(num_descriptors);
+			return data->descriptor_buffers.sampled_image.Allocate(num_descriptors, align);
 		case VK_DESCRIPTOR_TYPE_SAMPLER:
-			return vk_inst.descriptor_buffers.sampler.Allocate(num_descriptors);
+			return data->descriptor_buffers.sampler.Allocate(num_descriptors, align);
 		default:
 			VK_EXCEPT("Vulkan::AllocateDescriptors", "Tried to allocate descriptors for a descriptor type that is not supported");
 		}
@@ -887,18 +906,21 @@ namespace Vulkan
 
 	void FreeDescriptors(const DescriptorAllocation& descriptors)
 	{
+		if (descriptors.IsNull())
+			return;
+
 		switch (descriptors.GetType())
 		{
 		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
-			return vk_inst.descriptor_buffers.uniform.Free(descriptors);
+			return data->descriptor_buffers.uniform.Free(descriptors);
 		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
-			return vk_inst.descriptor_buffers.storage_buffer.Free(descriptors);
+			return data->descriptor_buffers.storage_buffer.Free(descriptors);
 		case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
-			return vk_inst.descriptor_buffers.storage_image.Free(descriptors);
+			return data->descriptor_buffers.storage_image.Free(descriptors);
 		case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
-			return vk_inst.descriptor_buffers.sampled_image.Free(descriptors);
+			return data->descriptor_buffers.sampled_image.Free(descriptors);
 		case VK_DESCRIPTOR_TYPE_SAMPLER:
-			return vk_inst.descriptor_buffers.sampler.Free(descriptors);
+			return data->descriptor_buffers.sampler.Free(descriptors);
 		default:
 			VK_EXCEPT("Vulkan::AllocateDescriptors", "Tried to allocate descriptors for a descriptor type that is not supported");
 		}
@@ -908,11 +930,11 @@ namespace Vulkan
 	{
 		return std::vector<VkDescriptorSetLayout>
 		{
-			vk_inst.descriptor_buffers.uniform.GetDescriptorSetLayout(),
-			vk_inst.descriptor_buffers.storage_buffer.GetDescriptorSetLayout(),
-			vk_inst.descriptor_buffers.storage_image.GetDescriptorSetLayout(),
-			vk_inst.descriptor_buffers.sampled_image.GetDescriptorSetLayout(),
-			vk_inst.descriptor_buffers.sampler.GetDescriptorSetLayout()
+			data->descriptor_buffers.uniform.GetDescriptorSetLayout(),
+			data->descriptor_buffers.storage_buffer.GetDescriptorSetLayout(),
+			data->descriptor_buffers.storage_image.GetDescriptorSetLayout(),
+			data->descriptor_buffers.sampled_image.GetDescriptorSetLayout(),
+			data->descriptor_buffers.sampler.GetDescriptorSetLayout()
 		};
 	}
 
@@ -920,11 +942,11 @@ namespace Vulkan
 	{
 		return std::vector<VkDescriptorBufferBindingInfoEXT>
 		{
-			vk_inst.descriptor_buffers.uniform.GetBindingInfo(),
-				vk_inst.descriptor_buffers.storage_buffer.GetBindingInfo(),
-				vk_inst.descriptor_buffers.storage_image.GetBindingInfo(),
-				vk_inst.descriptor_buffers.sampled_image.GetBindingInfo(),
-				vk_inst.descriptor_buffers.sampler.GetBindingInfo()
+			data->descriptor_buffers.uniform.GetBindingInfo(),
+			data->descriptor_buffers.storage_buffer.GetBindingInfo(),
+			data->descriptor_buffers.storage_image.GetBindingInfo(),
+			data->descriptor_buffers.sampled_image.GetBindingInfo(),
+			data->descriptor_buffers.sampler.GetBindingInfo()
 		};
 	}
 
@@ -968,7 +990,7 @@ namespace Vulkan
 	}
 
 	VkImage CreateImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,
-		VkImageUsageFlags usage, uint32_t num_mips, uint32_t array_layers, VkImageCreateFlags create_flags)
+		VkImageUsageFlags usage, uint32_t num_mips, uint32_t num_layers, VkImageCreateFlags create_flags)
 	{
 		VkImageCreateInfo image_info = { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
 		image_info.imageType = VK_IMAGE_TYPE_2D;
@@ -976,7 +998,7 @@ namespace Vulkan
 		image_info.extent.height = height;
 		image_info.extent.depth = 1;
 		image_info.mipLevels = num_mips;
-		image_info.arrayLayers = array_layers;
+		image_info.arrayLayers = num_layers;
 		image_info.format = format;
 		image_info.tiling = tiling;
 		image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -988,7 +1010,7 @@ namespace Vulkan
 		VkImage image = VK_NULL_HANDLE;
 		VkCheckResult(vkCreateImage(vk_inst.device, &image_info, nullptr, &image));
 
-		VulkanResourceTracker::TrackImage(image, image_info.initialLayout);
+		VulkanResourceTracker::TrackImage(image, image_info.initialLayout, num_mips, num_layers);
 		return image;
 	}
 
@@ -1101,7 +1123,10 @@ namespace Vulkan
 		//view_info.components.g = VK_COMPONENT_SWIZZLE_G;
 		//view_info.components.b = VK_COMPONENT_SWIZZLE_B;
 		//view_info.components.a = VK_COMPONENT_SWIZZLE_A;
-		view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		if (format == VK_FORMAT_D32_SFLOAT)
+			view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+		else
+			view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		view_info.subresourceRange.baseMipLevel = base_mip;
 		view_info.subresourceRange.levelCount = num_mips;
 		view_info.subresourceRange.baseArrayLayer = base_layer;
@@ -1203,7 +1228,9 @@ namespace Vulkan
 
 		for (uint32_t i = 0; i < num_barriers; ++i)
 		{
-			VulkanResourceTracker::UpdateImageLayout(image_barriers[i].image, image_barriers[i].newLayout);
+			VulkanResourceTracker::UpdateImageLayout(image_barriers[i].image, image_barriers[i].newLayout,
+				image_barriers[i].subresourceRange.baseMipLevel, image_barriers[i].subresourceRange.levelCount,
+				image_barriers[i].subresourceRange.baseArrayLayer, image_barriers[i].subresourceRange.layerCount);
 		}
 	}
 
@@ -1212,11 +1239,6 @@ namespace Vulkan
 		VkCommandBuffer command_buffer = BeginImmediateCommand();
 		CmdImageMemoryBarrier(command_buffer, num_barriers, image_barriers);
 		EndImmediateCommand(command_buffer);
-
-		for (uint32_t i = 0; i < num_barriers; ++i)
-		{
-			VulkanResourceTracker::UpdateImageLayout(image_barriers[i].image, image_barriers[i].newLayout);
-		}
 	}
 
 	VkPipelineLayout CreatePipelineLayout(const std::vector<VkDescriptorSetLayout>& descriptor_set_layouts, const std::vector<VkPushConstantRange>& push_constant_ranges)

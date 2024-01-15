@@ -106,7 +106,9 @@ enum BufferUsageFlags
 	BUFFER_USAGE_VERTEX = (1 << 2),
 	BUFFER_USAGE_INDEX = (1 << 3),
 	BUFFER_USAGE_READ_ONLY = (1 << 4),
-	BUFFER_USAGE_READ_WRITE = (1 << 5)
+	BUFFER_USAGE_READ_WRITE = (1 << 5),
+	BUFFER_USAGE_COPY_SRC = (1 << 6),
+	BUFFER_USAGE_COPY_DST = (1 << 7)
 };
 
 struct BufferCreateInfo

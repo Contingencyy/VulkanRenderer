@@ -6,7 +6,7 @@
 
 #include <vector>
 
-void TextureView::WriteDescriptorInfo(VkDescriptorType type, uint32_t descriptor_offset)
+void TextureView::WriteDescriptorInfo(VkDescriptorType type, VkImageLayout layout, uint32_t descriptor_offset)
 {
 	// Allocate a descriptor first before writing to it, if descriptor allocation is null
 	if (descriptor.IsNull())
@@ -34,14 +34,26 @@ void TextureView::WriteDescriptorInfo(VkDescriptorType type, uint32_t descriptor
 	descriptor.WriteDescriptor(descriptor_info, descriptor_offset);
 }
 
-Texture* Texture::Create(const TextureCreateInfo& create_info)
+void TextureView::TransitionLayout(VkCommandBuffer command_buffer, VkImageLayout new_layout) const
 {
-	return new Texture(create_info);
+	VkImageMemoryBarrier2 barrier = VulkanResourceTracker::ImageMemoryBarrier(texture->GetVkImage(), new_layout,
+		create_info.base_mip, create_info.num_mips, create_info.base_layer, create_info.num_layers);
+
+	Vulkan::CmdImageMemoryBarrier(command_buffer, 1, &barrier);
 }
 
-void Texture::Destroy(const Texture* texture)
+void TextureView::TransitionLayoutImmediate(VkImageLayout new_layout) const
 {
-	delete texture;
+	VkImageMemoryBarrier2 barrier = VulkanResourceTracker::ImageMemoryBarrier(texture->GetVkImage(), new_layout,
+		create_info.base_mip, create_info.num_mips, create_info.base_layer, create_info.num_layers);
+
+	Vulkan::ImageMemoryBarrierImmediate(1, &barrier);
+}
+
+VkImageLayout TextureView::GetLayout() const
+{
+	return VulkanResourceTracker::GetImageLayout(texture->GetVkImage(),
+		create_info.base_mip, create_info.num_mips, create_info.base_layer, create_info.num_layers);
 }
 
 static VkFormat ToVkFormat(TextureFormat format)
@@ -117,22 +129,22 @@ Texture::Texture(const TextureCreateInfo& create_info)
 		create_info.num_mips, create_info.num_layers, create_info.dimension == TEXTURE_DIMENSION_CUBE ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0);
 	m_vk_device_memory = Vulkan::AllocateDeviceMemory(m_vk_image, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-#ifdef _DEBUG
 	Vulkan::DebugNameObject((uint64_t)m_vk_image, VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_EXT, create_info.name.c_str());
 	Vulkan::DebugNameObject((uint64_t)m_vk_device_memory, VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_MEMORY_EXT, create_info.name.c_str());
-#endif
 }
 
 Texture::~Texture()
 {
 	for (auto& chainned_texture : m_chainned_textures)
 	{
-		Texture::Destroy(chainned_texture);
+		delete chainned_texture;
 	}
 
 	for (auto& view : m_views)
 	{
-		Vulkan::FreeDescriptors(view.second.descriptor);
+		if (!view.second.descriptor.IsNull())
+			Vulkan::FreeDescriptors(view.second.descriptor);
+
 		Vulkan::DestroyImageView(view.second.view);
 	}
 
@@ -195,9 +207,9 @@ void Texture::TransitionLayoutImmediate(VkImageLayout new_layout, uint32_t base_
 	Vulkan::EndImmediateCommand(command_buffer);
 }
 
-void Texture::AppendToChain(const Texture* texture)
+void Texture::AppendToChain(Texture* texture)
 {
-	m_chainned_textures.emplace_back(texture);
+	m_chainned_textures.push_back(texture);
 }
 
 Texture* Texture::GetChainned(uint32_t index)
@@ -233,11 +245,11 @@ TextureView* Texture::GetView(const TextureViewCreateInfo& view_info)
 		// This view does not exist, so we need to create it first
 		m_views.emplace(
 			view_info_key,
-			TextureView {
+			TextureView{
+				.texture = this,
 				.view = Vulkan::CreateImageView(m_vk_image, view_info_key.type, ToVkFormat(m_create_info.format),
 					view_info_key.base_mip, view_info_key.num_mips, view_info_key.base_layer, view_info_key.num_layers),
 				.format = ToVkFormat(m_create_info.format),
-				.layout = VulkanResourceTracker::GetImageLayout(m_vk_image),
 				.create_info = view_info_key
 			}
 		);

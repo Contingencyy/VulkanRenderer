@@ -31,10 +31,10 @@ namespace Renderer
 
 	struct CreateTextureArgs
 	{
+		TextureFormat format;
 		uint32_t width;
 		uint32_t height;
 		uint32_t src_stride;
-		TextureFormat format;
 		std::vector<uint8_t> pixels;
 
 		bool generate_mips;
@@ -57,7 +57,6 @@ namespace Renderer
 
 	MeshHandle_t CreateMesh(const CreateMeshArgs& args);
 	void DestroyMesh(MeshHandle_t handle);
-
 	void SubmitMesh(MeshHandle_t mesh_handle, const Assets::Material& material, const glm::mat4& transform);
 	
 	void SubmitPointlight(const glm::vec3& pos, const glm::vec3& color, float intensity);

@@ -1,14 +1,9 @@
 #include "renderer/Buffer.h"
 
-Buffer* Buffer::Create(const BufferCreateInfo& create_info)
-{
-	return new Buffer(create_info);
-}
-
 Buffer* Buffer::CreateStaging(size_t size_in_bytes, const std::string& name)
 {
 	BufferCreateInfo buffer_info = {};
-	buffer_info.usage_flags = BUFFER_USAGE_STAGING;
+	buffer_info.usage_flags = BUFFER_USAGE_STAGING | BUFFER_USAGE_COPY_SRC;
 	buffer_info.memory_flags = GPU_MEMORY_HOST_VISIBLE | GPU_MEMORY_HOST_COHERENT;
 	buffer_info.size_in_bytes = size_in_bytes;
 	buffer_info.name = name;
@@ -30,7 +25,7 @@ Buffer* Buffer::CreateUniform(size_t size_in_bytes, const std::string& name)
 Buffer* Buffer::CreateVertex(size_t size_in_bytes, const std::string& name)
 {
 	BufferCreateInfo buffer_info = {};
-	buffer_info.usage_flags = BUFFER_USAGE_VERTEX;
+	buffer_info.usage_flags = BUFFER_USAGE_VERTEX | BUFFER_USAGE_COPY_DST;
 	buffer_info.memory_flags = GPU_MEMORY_DEVICE_LOCAL;
 	buffer_info.size_in_bytes = size_in_bytes;
 	buffer_info.name = name;
@@ -41,17 +36,12 @@ Buffer* Buffer::CreateVertex(size_t size_in_bytes, const std::string& name)
 Buffer* Buffer::CreateIndex(size_t size_in_bytes, const std::string& name)
 {
 	BufferCreateInfo buffer_info = {};
-	buffer_info.usage_flags = BUFFER_USAGE_INDEX;
+	buffer_info.usage_flags = BUFFER_USAGE_INDEX | BUFFER_USAGE_COPY_DST;
 	buffer_info.memory_flags = GPU_MEMORY_DEVICE_LOCAL;
 	buffer_info.size_in_bytes = size_in_bytes;
 	buffer_info.name = name;
 
 	return new Buffer(buffer_info);
-}
-
-void Buffer::Destroy(const Buffer* buffer)
-{
-	delete buffer;
 }
 
 static VkBufferUsageFlags ToVkBufferUsageFlags(Flags usage_flags)
@@ -68,6 +58,10 @@ static VkBufferUsageFlags ToVkBufferUsageFlags(Flags usage_flags)
 		vk_usage_flags |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
 	if ((usage_flags & BUFFER_USAGE_READ_ONLY) || (usage_flags & BUFFER_USAGE_READ_WRITE))
 		vk_usage_flags |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+	if (usage_flags & BUFFER_USAGE_COPY_SRC)
+		vk_usage_flags |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+	if (usage_flags & BUFFER_USAGE_COPY_DST)
+		vk_usage_flags |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 
 	if (usage_flags & BUFFER_USAGE_UNIFORM)
 		vk_usage_flags |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
@@ -95,47 +89,18 @@ Buffer::Buffer(const BufferCreateInfo& create_info)
 	m_vk_buffer = Vulkan::CreateBuffer(create_info.size_in_bytes, ToVkBufferUsageFlags(create_info.usage_flags));
 	m_vk_device_memory = Vulkan::AllocateDeviceMemory(m_vk_buffer, ToVkMemoryPropertyFlags(create_info.memory_flags));
 
-	if ((create_info.usage_flags & BUFFER_USAGE_STAGING) || (create_info.usage_flags & BUFFER_USAGE_UNIFORM))
+	if (create_info.memory_flags & GPU_MEMORY_HOST_VISIBLE)
 		m_mapped_ptr = Vulkan::MapMemory(m_vk_device_memory, m_create_info.size_in_bytes);
 
-	// Allocate and write descriptor
-	m_descriptor = Vulkan::AllocateDescriptors(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-
-	VkBufferDeviceAddressInfo buffer_address_info = { VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO };
-	buffer_address_info.buffer = m_vk_buffer;
-
-	VkDescriptorAddressInfoEXT descriptor_address_info = { VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT };
-	descriptor_address_info.address = vkGetBufferDeviceAddress(vk_inst.device, &buffer_address_info);
-	descriptor_address_info.format = VK_FORMAT_UNDEFINED;
-	descriptor_address_info.range = m_create_info.size_in_bytes;
-
-	VkDescriptorGetInfoEXT descriptor_info = { VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT };
-	descriptor_info.type = m_descriptor.GetType();
-
-	if (descriptor_info.type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
-	{
-		VK_ASSERT((m_create_info.usage_flags & BUFFER_USAGE_UNIFORM) == 1 &&
-			"Tried to get descriptor info for a buffer for descriptor type UNIFORM, but buffer was created without uniform buffer usage flag");
-		descriptor_info.data.pUniformBuffer = &descriptor_address_info;
-	}
-	else if (descriptor_info.type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-	{
-		VK_ASSERT(((m_create_info.usage_flags & BUFFER_USAGE_READ_ONLY) == 1 || (m_create_info.usage_flags & BUFFER_USAGE_READ_WRITE) == 1) &&
-			"Tried to get descriptor info for a buffer for descriptor type STORAGE, but buffer was created without storage buffer usage flag");
-		descriptor_info.data.pStorageBuffer = &descriptor_address_info;
-	}
-
-	m_descriptor.WriteDescriptor(descriptor_info);
-
-#ifdef _DEBUG
 	Vulkan::DebugNameObject((uint64_t)m_vk_buffer, VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_EXT, create_info.name.c_str());
 	Vulkan::DebugNameObject((uint64_t)m_vk_device_memory, VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_MEMORY_EXT, create_info.name.c_str());
-#endif
 }
 
 Buffer::~Buffer()
 {
-	Vulkan::FreeDescriptors(m_descriptor);
+	if (!m_descriptor.IsNull())
+		Vulkan::FreeDescriptors(m_descriptor);
+
 	Vulkan::FreeDeviceMemory(m_vk_device_memory);
 	Vulkan::DestroyBuffer(m_vk_buffer);
 }
@@ -168,4 +133,45 @@ void Buffer::CopyFromImmediate(const Buffer& src_buffer,
 	VkCommandBuffer command_buffer = Vulkan::BeginImmediateCommand();
 	CopyFrom(command_buffer, src_buffer, size, src_offset, dst_offset);
 	Vulkan::EndImmediateCommand(command_buffer);
+}
+
+void Buffer::WriteDescriptorInfo(uint32_t descriptor_align)
+{
+	VK_ASSERT((m_create_info.usage_flags & BUFFER_USAGE_UNIFORM) || (m_create_info.usage_flags & BUFFER_USAGE_READ_ONLY) || (m_create_info.usage_flags & BUFFER_USAGE_READ_WRITE) &&
+		"Tried to write a descriptor for a buffer that has no usage flag for UNIFORM or STORAGE type descriptors");
+
+	// Allocate and write descriptor
+	if (m_create_info.usage_flags & BUFFER_USAGE_UNIFORM)
+		m_descriptor = Vulkan::AllocateDescriptors(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, descriptor_align);
+	else if ((m_create_info.usage_flags & BUFFER_USAGE_READ_ONLY) || (m_create_info.usage_flags & BUFFER_USAGE_READ_WRITE))
+		m_descriptor = Vulkan::AllocateDescriptors(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+
+	if (!m_descriptor.IsNull())
+	{
+		VkBufferDeviceAddressInfo buffer_address_info = { VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO };
+		buffer_address_info.buffer = m_vk_buffer;
+
+		VkDescriptorAddressInfoEXT descriptor_address_info = { VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT };
+		descriptor_address_info.address = vkGetBufferDeviceAddress(vk_inst.device, &buffer_address_info);
+		descriptor_address_info.format = VK_FORMAT_UNDEFINED;
+		descriptor_address_info.range = m_create_info.size_in_bytes;
+
+		VkDescriptorGetInfoEXT descriptor_info = { VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT };
+		descriptor_info.type = m_descriptor.GetType();
+
+		if (descriptor_info.type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+		{
+			VK_ASSERT((m_create_info.usage_flags & BUFFER_USAGE_UNIFORM) &&
+				"Tried to get descriptor info for a buffer for descriptor type UNIFORM, but buffer was created without uniform buffer usage flag");
+			descriptor_info.data.pUniformBuffer = &descriptor_address_info;
+		}
+		else if (descriptor_info.type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+		{
+			VK_ASSERT(((m_create_info.usage_flags & BUFFER_USAGE_READ_ONLY) || (m_create_info.usage_flags & BUFFER_USAGE_READ_WRITE)) &&
+				"Tried to get descriptor info for a buffer for descriptor type STORAGE, but buffer was created without storage buffer usage flag");
+			descriptor_info.data.pStorageBuffer = &descriptor_address_info;
+		}
+
+		m_descriptor.WriteDescriptor(descriptor_info);
+	}
 }

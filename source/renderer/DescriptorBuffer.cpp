@@ -53,16 +53,12 @@ DescriptorBuffer::DescriptorBuffer(VkDescriptorType type, uint32_t num_descripto
 	vk_inst.pFunc.get_descriptor_set_layout_size_ext(vk_inst.device, m_layout, &buffer_size);
 	
 	if (m_descriptor_type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
-	{
 		buffer_size *= VulkanInstance::MAX_FRAMES_IN_FLIGHT;
-	}
 
-	m_buffer = Vulkan::CreateBuffer(buffer_size,
-		VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
-		VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT |
-		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
-	);
-	m_buffer_memory = Vulkan::AllocateDeviceMemory(m_buffer, buffer_size);
+	VkBufferUsageFlags buffer_flags = VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+
+	m_buffer = Vulkan::CreateBuffer(buffer_size, buffer_flags);
+	m_buffer_memory = Vulkan::AllocateDeviceMemory(m_buffer, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 	m_current_ptr = Vulkan::MapMemory(m_buffer_memory, buffer_size, 0);
 
 #ifdef _DEBUG
@@ -89,15 +85,17 @@ DescriptorAllocation DescriptorBuffer::Allocate(uint32_t num_descriptors, uint32
 	{
 		alloc_ptr = (uint8_t*)VK_ALIGN_POW2(m_current_ptr, align);
 	}
-	m_current_ptr = alloc_ptr + num_descriptors * m_descriptor_size;
 
+	m_current_ptr = alloc_ptr + num_descriptors * m_descriptor_size;
 	DescriptorAllocation allocation(m_descriptor_type, m_current_descriptor_offset, num_descriptors, m_descriptor_size, alloc_ptr);
 	m_current_descriptor_offset += num_descriptors;
+
 	return allocation;
 }
 
 void DescriptorBuffer::Free(const DescriptorAllocation& allocation)
 {
+	LOG_WARN("DescriptorBuffer::Free", "TODO: Implement");
 	// TODO: Freeing descriptor allocations
 	// TODO: Descriptor blocks with varying sizes inside of each DescriptorRange to allocate from freed descriptors again
 }
