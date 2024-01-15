@@ -1,6 +1,48 @@
 #include "renderer/Texture.h"
+#include "renderer/Buffer.h"
+#include "renderer/VulkanResourceTracker.h"
+
+#include "imgui/imgui_impl_vulkan.h"
 
 #include <vector>
+
+void TextureView::WriteDescriptorInfo(VkDescriptorType type, uint32_t descriptor_offset)
+{
+	// Allocate a descriptor first before writing to it, if descriptor allocation is null
+	if (descriptor.IsNull())
+	{
+		descriptor = Vulkan::AllocateDescriptors(type);
+	}
+
+	VkDescriptorGetInfoEXT descriptor_info = { VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT };
+	descriptor_info.type = descriptor.GetType();
+
+	VkDescriptorImageInfo image_descriptor_info = {};
+	image_descriptor_info.imageView = view;
+	image_descriptor_info.imageLayout = layout;
+	image_descriptor_info.sampler = VK_NULL_HANDLE;
+
+	if (descriptor_info.type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+	{
+		descriptor_info.data.pStorageImage = &image_descriptor_info;
+	}
+	else if (descriptor_info.type == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
+	{
+		descriptor_info.data.pSampledImage = &image_descriptor_info;
+	}
+
+	descriptor.WriteDescriptor(descriptor_info, descriptor_offset);
+}
+
+Texture* Texture::Create(const TextureCreateInfo& create_info)
+{
+	return new Texture(create_info);
+}
+
+void Texture::Destroy(const Texture* texture)
+{
+	delete texture;
+}
 
 static VkFormat ToVkFormat(TextureFormat format)
 {
@@ -16,23 +58,14 @@ static VkFormat ToVkFormat(TextureFormat format)
 		return VK_FORMAT_R16G16B16A16_SFLOAT;
 	case TEXTURE_FORMAT_RGBA32_SFLOAT:
 		return VK_FORMAT_R32G32B32A32_SFLOAT;
+	case TEXTURE_FORMAT_RG16_SFLOAT:
+		return VK_FORMAT_R16G16_SFLOAT;
+	case TEXTURE_FORMAT_D32_SFLOAT:
+		return VK_FORMAT_D32_SFLOAT;
 	}
 }
 
-static bool IsHDRFormat(TextureFormat format)
-{
-	switch (format)
-	{
-	case TEXTURE_FORMAT_RGBA8_UNORM:
-	case TEXTURE_FORMAT_RGBA8_SRGB:
-		return false;
-	case TEXTURE_FORMAT_RGBA16_SFLOAT:
-	case TEXTURE_FORMAT_RGBA32_SFLOAT:
-		return true;
-	}
-}
-
-static VkImageUsageFlags ToVkImageUsageFlags(TextureUsageFlags usage_flags)
+static VkImageUsageFlags ToVkImageUsageFlags(Flags usage_flags)
 {
 	VkImageUsageFlags vk_usage_flags = 0;
 
@@ -44,8 +77,36 @@ static VkImageUsageFlags ToVkImageUsageFlags(TextureUsageFlags usage_flags)
 		vk_usage_flags |= VK_IMAGE_USAGE_SAMPLED_BIT;
 	if ((usage_flags & TEXTURE_USAGE_READ_ONLY) || (usage_flags & TEXTURE_USAGE_READ_WRITE))
 		vk_usage_flags |= VK_IMAGE_USAGE_STORAGE_BIT;
+	if (usage_flags & TEXTURE_USAGE_COPY_SRC)
+		vk_usage_flags |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+	if (usage_flags & TEXTURE_USAGE_COPY_DST)
+		vk_usage_flags |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
 	return vk_usage_flags;
+}
+
+static VkImageViewType ToVkViewType(Flags dimension, uint32_t num_layers = 1)
+{
+	if (num_layers == 1)
+	{
+		switch (dimension)
+		{
+		case TEXTURE_DIMENSION_2D:
+			return VK_IMAGE_VIEW_TYPE_2D;
+		case TEXTURE_DIMENSION_CUBE:
+			return VK_IMAGE_VIEW_TYPE_CUBE;
+		}
+	}
+	else
+	{
+		switch (dimension)
+		{
+		case TEXTURE_DIMENSION_2D:
+			return VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+		case TEXTURE_DIMENSION_CUBE:
+			return VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
+		}
+	}
 }
 
 Texture::Texture(const TextureCreateInfo& create_info)
@@ -64,39 +125,123 @@ Texture::Texture(const TextureCreateInfo& create_info)
 
 Texture::~Texture()
 {
+	for (auto& chainned_texture : m_chainned_textures)
+	{
+		Texture::Destroy(chainned_texture);
+	}
+
+	for (auto& view : m_views)
+	{
+		Vulkan::FreeDescriptors(view.second.descriptor);
+		Vulkan::DestroyImageView(view.second.view);
+	}
+
 	Vulkan::FreeDeviceMemory(m_vk_device_memory);
 	Vulkan::DestroyImage(m_vk_image);
 }
 
+void Texture::CopyFromBuffer(VkCommandBuffer command_buffer, const Buffer& src_buffer, VkDeviceSize src_offset) const
+{
+	VkBufferImageCopy2 buffer_image_copy = { VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2 };
+	buffer_image_copy.bufferOffset = src_offset;
+	buffer_image_copy.bufferImageHeight = 0;
+	buffer_image_copy.bufferRowLength = 0;
 
-//void CreateImageCube(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags memory_flags, Image& image, uint32_t num_mips)
-//{
-//	CreateImage(width, height, format, tiling, usage, memory_flags, image, num_mips, 6, VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT);
-//}
-//
-//void CreateImageView(VkImageViewType view_type, VkImageAspectFlags aspect_flags, Image* image, ImageView& view,
-//	uint32_t base_mip, uint32_t num_mips, uint32_t base_layer, uint32_t num_layers)
-//{
-//	VkImageViewCreateInfo view_info = {};
-//	view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-//	view_info.image = image->image;
-//	view_info.viewType = view_type;
-//	view_info.format = image->format;
-//	view_info.subresourceRange.aspectMask = aspect_flags;
-//	view_info.subresourceRange.baseMipLevel = base_mip;
-//	view_info.subresourceRange.levelCount = num_mips;
-//	view_info.subresourceRange.baseArrayLayer = base_layer;
-//	view_info.subresourceRange.layerCount = num_layers;
-//
-//	view.image = image;
-//	view.view_type = view_type;
-//	view.base_mip = base_mip;
-//	view.num_mips = num_mips;
-//	view.base_layer = base_layer;
-//	view.num_layers = num_layers;
-//	view.layout = VK_IMAGE_LAYOUT_UNDEFINED;
-//	VkCheckResult(vkCreateImageView(vk_inst.device, &view_info, nullptr, &view.view));
-//}
+	buffer_image_copy.imageExtent = { m_create_info.width, m_create_info.height, 1 };
+	buffer_image_copy.imageOffset = { 0, 0, 0 };
 
+	buffer_image_copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	buffer_image_copy.imageSubresource.mipLevel = 0;
+	buffer_image_copy.imageSubresource.baseArrayLayer = 0;
+	buffer_image_copy.imageSubresource.layerCount = 1;
 
-//void CopyBufferToImage(const Buffer& src_buffer, const Image& dst_image, uint32_t width, uint32_t height, VkDeviceSize src_offset = 0);
+	VkCopyBufferToImageInfo2 copy_buffer_image_info = { VK_STRUCTURE_TYPE_COPY_BUFFER_TO_IMAGE_INFO_2 };
+	copy_buffer_image_info.srcBuffer = src_buffer.GetVkBuffer();
+	copy_buffer_image_info.dstImage = m_vk_image;
+	copy_buffer_image_info.dstImageLayout = VulkanResourceTracker::GetImageLayout(m_vk_image);
+	copy_buffer_image_info.regionCount = 1;
+	copy_buffer_image_info.pRegions = &buffer_image_copy;
+
+	vkCmdCopyBufferToImage2(command_buffer, &copy_buffer_image_info);
+}
+
+void Texture::CopyFromBufferImmediate(const Buffer& src_buffer, VkDeviceSize src_offset) const
+{
+	VkCommandBuffer command_buffer = Vulkan::BeginImmediateCommand();
+	CopyFromBuffer(command_buffer, src_buffer, src_offset);
+	Vulkan::EndImmediateCommand(command_buffer);
+}
+
+void Texture::TransitionLayout(VkCommandBuffer command_buffer, VkImageLayout new_layout,
+	uint32_t base_mip, uint32_t num_mips, uint32_t base_layer, uint32_t num_layers) const
+{
+	if (num_mips == UINT32_MAX)
+		num_mips = m_create_info.num_mips;
+	if (num_layers == UINT32_MAX)
+		num_layers = m_create_info.num_layers;
+
+	VkImageMemoryBarrier2 image_memory_barrier = VulkanResourceTracker::ImageMemoryBarrier(
+		m_vk_image, new_layout,
+		base_mip, num_mips, base_layer, num_layers
+	);
+
+	Vulkan::CmdImageMemoryBarrier(command_buffer, 1, &image_memory_barrier);
+}
+
+void Texture::TransitionLayoutImmediate(VkImageLayout new_layout, uint32_t base_mip, uint32_t num_mips, uint32_t base_layer, uint32_t num_layers) const
+{
+	VkCommandBuffer command_buffer = Vulkan::BeginImmediateCommand();
+	TransitionLayout(command_buffer, new_layout, base_mip, num_mips, base_layer, num_layers);
+	Vulkan::EndImmediateCommand(command_buffer);
+}
+
+void Texture::AppendToChain(const Texture* texture)
+{
+	m_chainned_textures.emplace_back(texture);
+}
+
+Texture* Texture::GetChainned(uint32_t index)
+{
+	VK_ASSERT(index < m_chainned_textures.size());
+	return m_chainned_textures[index];
+}
+
+VkFormat Texture::GetVkFormat() const
+{
+	return ToVkFormat(m_create_info.format);
+}
+
+TextureView* Texture::GetView(const TextureViewCreateInfo& view_info)
+{
+	TextureViewCreateInfo view_info_key = view_info;
+
+	if (view_info.type == VK_IMAGE_VIEW_TYPE_MAX_ENUM)
+	{
+		view_info_key.type = ToVkViewType(m_create_info.dimension);
+	}
+	if (view_info.num_mips == UINT32_MAX)
+	{
+		view_info_key.num_mips = m_create_info.num_mips;
+	}
+	if (view_info.num_layers == UINT32_MAX)
+	{
+		view_info_key.num_layers = m_create_info.num_layers;
+	}
+
+	if (m_views.find(view_info_key) == m_views.end())
+	{
+		// This view does not exist, so we need to create it first
+		m_views.emplace(
+			view_info_key,
+			TextureView {
+				.view = Vulkan::CreateImageView(m_vk_image, view_info_key.type, ToVkFormat(m_create_info.format),
+					view_info_key.base_mip, view_info_key.num_mips, view_info_key.base_layer, view_info_key.num_layers),
+				.format = ToVkFormat(m_create_info.format),
+				.layout = VulkanResourceTracker::GetImageLayout(m_vk_image),
+				.create_info = view_info_key
+			}
+		);
+	}
+	
+	return &m_views.at(view_info_key);
+}

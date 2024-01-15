@@ -117,9 +117,9 @@ namespace Application
 		Renderer::Init(data.window);
 
 		Assets::Init();
-		//Assets::LoadTexture("assets/textures/hdr/Env_Plaza.hdr", "Env", TextureFormat_RGBA32_SFLOAT, true, true);
-		//Assets::LoadTexture("assets/textures/hdr/Env_Rocky_Hills.hdr", "Env", TextureFormat_RGBA32_SFLOAT, true, true);
-		Assets::LoadTexture("assets/textures/hdr/Env_Victorian_Hall.hdr", "Env", TextureFormat_RGBA32_SFLOAT, true, true);
+		//Assets::LoadTexture("assets/textures/hdr/Env_Plaza.hdr", "Env", TEXTURE_FORMAT_RGBA32_SFLOAT, true, true);
+		//Assets::LoadTexture("assets/textures/hdr/Env_Rocky_Hills.hdr", "Env", TEXTURE_FORMAT_RGBA32_SFLOAT, true, true);
+		Assets::LoadTexture("assets/textures/hdr/Env_Victorian_Hall.hdr", "Env", TEXTURE_FORMAT_RGBA32_SFLOAT, true, true);
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatToyCar/ToyCar.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatTest/ClearCoatTest.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatRing/ClearCoatRing.gltf", "model");
@@ -134,8 +134,8 @@ namespace Application
 		glm::mat4 transform = glm::scale(glm::identity<glm::mat4>(), glm::vec3(10.0f));
 		SpawnModelEntity("model", transform);
 
-		data.active_scene.AddEntity<Pointlight>(vec3(50.0f, 50.0f, -50.0f), vec3(1.0f), 25.0f, "Pointlight1");
-		data.active_scene.AddEntity<Pointlight>(vec3(-50.0f, 50.0f, 50.0f), vec3(1.0f), 25.0f, "Pointlight2");
+		data.active_scene.AddEntity<Pointlight>(glm::vec3(50.0f, 50.0f, -50.0f), glm::vec3(1.0f), 25.0f, "Pointlight1");
+		data.active_scene.AddEntity<Pointlight>(glm::vec3(-50.0f, 50.0f, 50.0f), glm::vec3(1.0f), 25.0f, "Pointlight2");
 
 		data.is_running = true;
 	}

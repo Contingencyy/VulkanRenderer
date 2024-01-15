@@ -1,5 +1,6 @@
 #include "renderer/VulkanBackend.h"
 #include "renderer/VulkanResourceTracker.h"
+#include "renderer/DescriptorBuffer.h"
 #include "Common.h"
 
 #include "shaderc/shaderc.hpp"
@@ -518,8 +519,6 @@ namespace Vulkan
 		VkCheckResult(vkGetSwapchainImagesKHR(vk_inst.device, vk_inst.swapchain.swapchain, &image_count, nullptr));
 
 		vk_inst.swapchain.images.resize(image_count);
-		vk_inst.swapchain.layouts.clear();
-		vk_inst.swapchain.layouts.resize(image_count);
 		VkCheckResult(vkGetSwapchainImagesKHR(vk_inst.device, vk_inst.swapchain.swapchain, &image_count, vk_inst.swapchain.images.data()));
 
 		vk_inst.swapchain.extent = extent;
@@ -532,6 +531,7 @@ namespace Vulkan
 		for (size_t i = 0; i < vk_inst.swapchain.image_available_semaphores.size(); ++i)
 		{
 			VkCheckResult(vkCreateSemaphore(vk_inst.device, &semaphore_info, nullptr, &vk_inst.swapchain.image_available_semaphores[i]));
+			VulkanResourceTracker::TrackImage(vk_inst.swapchain.images[i], VK_IMAGE_LAYOUT_GENERAL);
 		}
 	}
 
@@ -539,6 +539,7 @@ namespace Vulkan
 	{
 		for (size_t i = 0; i < vk_inst.swapchain.image_available_semaphores.size(); ++i)
 		{
+			VulkanResourceTracker::RemoveImage(vk_inst.swapchain.images[i]);
 			vkDestroySemaphore(vk_inst.device, vk_inst.swapchain.image_available_semaphores[i], nullptr);
 		}
 
@@ -573,81 +574,6 @@ namespace Vulkan
 	static inline bool HasImageLayoutBitSet(VkImageLayout layout, VkImageLayout check)
 	{
 		return (layout & check) == 1;
-	}
-
-	static void GetImageLayoutAccessAndStageFlags(VkImageLayout layout, VkAccessFlags2& access_flags, VkPipelineStageFlags2& stage_flags)
-	{
-		// Access mask
-		switch (layout)
-		{
-		case VK_IMAGE_LAYOUT_UNDEFINED:
-		case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
-			access_flags = VK_ACCESS_2_NONE;
-			break;
-		case VK_IMAGE_LAYOUT_GENERAL:
-			access_flags = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
-			break;
-		case VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL:
-		case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
-			access_flags = VK_ACCESS_2_SHADER_READ_BIT;
-			break;
-		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
-			access_flags = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
-			break;
-		case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
-		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-			access_flags = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-			break;
-		case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
-			access_flags = VK_ACCESS_2_TRANSFER_READ_BIT;
-			break;
-		case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-			access_flags = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-			break;
-		case VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL:
-			access_flags = VK_ACCESS_2_SHADER_WRITE_BIT;
-			break;
-		case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-			access_flags = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-			break;
-		default:
-			VK_EXCEPT("Vulkan", "No VkAccessFlags2 found for layout");
-			break;
-		}
-
-		// Pipeline stage flag
-		switch (layout)
-		{
-		case VK_IMAGE_LAYOUT_UNDEFINED:
-			stage_flags = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
-			break;
-		case VK_IMAGE_LAYOUT_GENERAL:
-			stage_flags = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-			break;
-		case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
-			stage_flags = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
-			break;
-		case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
-		case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-			stage_flags = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-			break;
-		case VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL:
-		case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
-		case VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL:
-			stage_flags = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-			break;
-		case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
-		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
-		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-			stage_flags = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
-			break;
-		case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-			stage_flags = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-			break;
-		default:
-			VK_EXCEPT("Vulkan", "No VkPipelineStageFlags2 found for layout");
-			break;
-		}
 	}
 
 	static std::vector<char> ReadFile(const char* filepath)
@@ -774,6 +700,8 @@ namespace Vulkan
 		data = new Data();
 		vk_inst.window = window;
 
+		VulkanResourceTracker::Init();
+
 		CreateInstance();
 		EnableValidationLayers();
 
@@ -788,6 +716,8 @@ namespace Vulkan
 	void Exit()
 	{
 		delete data;
+
+		VulkanResourceTracker::Exit();
 
 		vkDestroyCommandPool(vk_inst.device, vk_inst.cmd_pools.graphics, nullptr);
 		
@@ -849,6 +779,33 @@ namespace Vulkan
 		CreateSwapChain();
 	}
 
+	void CopyToSwapchain(VkCommandBuffer command_buffer, VkImage src_image)
+	{
+		// Copy final result to swapchain image
+		VkImageCopy copy_region = {};
+		copy_region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		copy_region.srcSubresource.mipLevel = 0;
+		copy_region.srcSubresource.baseArrayLayer = 0;
+		copy_region.srcSubresource.layerCount = 1;
+		copy_region.srcOffset = { 0, 0, 0 };
+
+		copy_region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		copy_region.dstSubresource.mipLevel = 0;
+		copy_region.dstSubresource.baseArrayLayer = 0;
+		copy_region.dstSubresource.layerCount = 1;
+		copy_region.dstOffset = { 0, 0, 0 };
+		copy_region.extent = { vk_inst.swapchain.extent.width, vk_inst.swapchain.extent.height, 1 };
+
+		VkImage swapchain_image = vk_inst.swapchain.images[vk_inst.swapchain.current_image];
+
+		vkCmdCopyImage(
+			command_buffer,
+			src_image, VulkanResourceTracker::GetImageLayout(src_image),
+			swapchain_image, VulkanResourceTracker::GetImageLayout(swapchain_image),
+			1, &copy_region
+		);
+	}
+
 	void DebugNameObject(uint64_t object, VkDebugReportObjectTypeEXT object_type, const char* debug_name)
 	{
 		VkDebugMarkerObjectNameInfoEXT debug_name_info = { VK_STRUCTURE_TYPE_DEBUG_MARKER_OBJECT_NAME_INFO_EXT };
@@ -900,8 +857,94 @@ namespace Vulkan
 	{
 		uint8_t* mapped_ptr = nullptr;
 		VkCheckResult(vkMapMemory(vk_inst.device, device_memory, offset, size, 0, reinterpret_cast<void**>(&mapped_ptr)));
-
+		
 		return mapped_ptr;
+	}
+
+	void UnmapMemory(VkDeviceMemory device_memory)
+	{
+		vkUnmapMemory(vk_inst.device, device_memory);
+	}
+
+	DescriptorAllocation AllocateDescriptors(VkDescriptorType type, uint32_t num_descriptors)
+	{
+		switch (type)
+		{
+		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+			return vk_inst.descriptor_buffers.uniform.Allocate(num_descriptors);
+		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+			return vk_inst.descriptor_buffers.storage_buffer.Allocate(num_descriptors);
+		case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+			return vk_inst.descriptor_buffers.storage_image.Allocate(num_descriptors);
+		case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+			return vk_inst.descriptor_buffers.sampled_image.Allocate(num_descriptors);
+		case VK_DESCRIPTOR_TYPE_SAMPLER:
+			return vk_inst.descriptor_buffers.sampler.Allocate(num_descriptors);
+		default:
+			VK_EXCEPT("Vulkan::AllocateDescriptors", "Tried to allocate descriptors for a descriptor type that is not supported");
+		}
+	}
+
+	void FreeDescriptors(const DescriptorAllocation& descriptors)
+	{
+		switch (descriptors.GetType())
+		{
+		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+			return vk_inst.descriptor_buffers.uniform.Free(descriptors);
+		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+			return vk_inst.descriptor_buffers.storage_buffer.Free(descriptors);
+		case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+			return vk_inst.descriptor_buffers.storage_image.Free(descriptors);
+		case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+			return vk_inst.descriptor_buffers.sampled_image.Free(descriptors);
+		case VK_DESCRIPTOR_TYPE_SAMPLER:
+			return vk_inst.descriptor_buffers.sampler.Free(descriptors);
+		default:
+			VK_EXCEPT("Vulkan::AllocateDescriptors", "Tried to allocate descriptors for a descriptor type that is not supported");
+		}
+	}
+
+	std::vector<VkDescriptorSetLayout> GetDescriptorBufferLayouts()
+	{
+		return std::vector<VkDescriptorSetLayout>
+		{
+			vk_inst.descriptor_buffers.uniform.GetDescriptorSetLayout(),
+			vk_inst.descriptor_buffers.storage_buffer.GetDescriptorSetLayout(),
+			vk_inst.descriptor_buffers.storage_image.GetDescriptorSetLayout(),
+			vk_inst.descriptor_buffers.sampled_image.GetDescriptorSetLayout(),
+			vk_inst.descriptor_buffers.sampler.GetDescriptorSetLayout()
+		};
+	}
+
+	std::vector<VkDescriptorBufferBindingInfoEXT> GetDescriptorBufferBindingInfos()
+	{
+		return std::vector<VkDescriptorBufferBindingInfoEXT>
+		{
+			vk_inst.descriptor_buffers.uniform.GetBindingInfo(),
+				vk_inst.descriptor_buffers.storage_buffer.GetBindingInfo(),
+				vk_inst.descriptor_buffers.storage_image.GetBindingInfo(),
+				vk_inst.descriptor_buffers.sampled_image.GetBindingInfo(),
+				vk_inst.descriptor_buffers.sampler.GetBindingInfo()
+		};
+	}
+
+	size_t GetDescriptorTypeSize(VkDescriptorType type)
+	{
+		switch (type)
+		{
+		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+			return vk_inst.descriptor_sizes.uniform_buffer;
+		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+			return vk_inst.descriptor_sizes.storage_buffer;
+		case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+			return vk_inst.descriptor_sizes.storage_image;
+		case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+			return vk_inst.descriptor_sizes.sampled_image;
+		case VK_DESCRIPTOR_TYPE_SAMPLER:
+			return vk_inst.descriptor_sizes.sampler;
+		default:
+			VK_EXCEPT("Vulkan::GetDescriptorTypeSize", "Tried to retrieve descriptor size for a descriptor type that is not supported");
+		}
 	}
 
 	VkBuffer CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage_flags)
@@ -920,6 +963,7 @@ namespace Vulkan
 
 	void DestroyBuffer(VkBuffer buffer)
 	{
+		VulkanResourceTracker::RemoveBuffer(buffer);
 		vkDestroyBuffer(vk_inst.device, buffer, nullptr);
 	}
 
@@ -1044,6 +1088,7 @@ namespace Vulkan
 		);
 
 		EndImmediateCommand(command_buffer);
+		VulkanResourceTracker::UpdateImageLayout(image, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
 	}
 
 	VkImageView CreateImageView(VkImage image, VkImageViewType view_type, VkFormat format, uint32_t base_mip, uint32_t num_mips, uint32_t base_layer, uint32_t num_layers)
@@ -1147,47 +1192,6 @@ namespace Vulkan
 		vkFreeCommandBuffers(vk_inst.device, vk_inst.cmd_pools.graphics, 1, &command_buffer);
 	}
 
-	VkImageMemoryBarrier2 ImageMemoryBarrier(VkImage image, VkImageLayout new_layout,
-		uint32_t base_mip_level, uint32_t num_mips, uint32_t base_array_layer, uint32_t layer_count)
-	{
-		VkImageMemoryBarrier2 image_memory_barrier = {};
-		image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-		image_memory_barrier.image = image;
-		image_memory_barrier.oldLayout = VulkanResourceTracker::GetImageLayout(image);
-		image_memory_barrier.newLayout = new_layout;
-
-		image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-
-		VulkanResourceTracker::GetSrcAccessAndStageMasks();
-		VulkanResourceTracker::GetDstAccessAndStageMasks();
-		/*GetImageLayoutAccessAndStageFlags(view.layout, image_memory_barrier.srcAccessMask, image_memory_barrier.srcStageMask);
-		GetImageLayoutAccessAndStageFlags(new_layout, image_memory_barrier.dstAccessMask, image_memory_barrier.dstStageMask);*/
-
-		if (new_layout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL || new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-		{
-			image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-			if (HasStencilComponent(view.image->format))
-			{
-				image_memory_barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
-			}
-		}
-		else
-		{
-			image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		}
-
-		image_memory_barrier.subresourceRange.baseMipLevel = base_mip_level;
-		image_memory_barrier.subresourceRange.levelCount = num_mips;
-		image_memory_barrier.subresourceRange.baseArrayLayer = base_array_layer;
-		image_memory_barrier.subresourceRange.layerCount = layer_count;
-
-		// TODO: This smells bad, we are updating the images layout even though we haven't actually issued a pipeline barrier to be executed
-		// Probably having a resource tracker a la DX12 will do the trick here (hashmap with the VkImage pointer being the key)
-		view.layout = new_layout;
-		return image_memory_barrier;
-	}
-
 	void CmdImageMemoryBarrier(VkCommandBuffer command_buffer, uint32_t num_barriers, const VkImageMemoryBarrier2* image_barriers)
 	{
 		VkDependencyInfo dependency_info = { VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
@@ -1196,6 +1200,11 @@ namespace Vulkan
 		dependency_info.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
 		vkCmdPipelineBarrier2(command_buffer, &dependency_info);
+
+		for (uint32_t i = 0; i < num_barriers; ++i)
+		{
+			VulkanResourceTracker::UpdateImageLayout(image_barriers[i].image, image_barriers[i].newLayout);
+		}
 	}
 
 	void ImageMemoryBarrierImmediate(uint32_t num_barriers, const VkImageMemoryBarrier2* image_barriers)
@@ -1203,6 +1212,11 @@ namespace Vulkan
 		VkCommandBuffer command_buffer = BeginImmediateCommand();
 		CmdImageMemoryBarrier(command_buffer, num_barriers, image_barriers);
 		EndImmediateCommand(command_buffer);
+
+		for (uint32_t i = 0; i < num_barriers; ++i)
+		{
+			VulkanResourceTracker::UpdateImageLayout(image_barriers[i].image, image_barriers[i].newLayout);
+		}
 	}
 
 	VkPipelineLayout CreatePipelineLayout(const std::vector<VkDescriptorSetLayout>& descriptor_set_layouts, const std::vector<VkPushConstantRange>& push_constant_ranges)

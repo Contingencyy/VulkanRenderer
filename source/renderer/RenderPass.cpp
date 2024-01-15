@@ -1,5 +1,6 @@
 #include "renderer/RenderPass.h"
 #include "renderer/RenderTypes.h"
+#include "renderer/Texture.h"
 
 RenderPass::RenderPass(RenderPassType type)
 	: m_type(type)
@@ -23,7 +24,7 @@ void RenderPass::Begin(VkCommandBuffer command_buffer, const BeginInfo& begin_in
 
 		for (auto& attachment : m_attachments)
 		{
-			if (attachment.info.attachment_slot == ATTACHMENT_SLOT_INVALID)
+			if (attachment.info.slot == ATTACHMENT_SLOT_INVALID)
 				continue;
 
 			if (attachment.view->layout != attachment.info.expected_layout)
@@ -37,12 +38,12 @@ void RenderPass::Begin(VkCommandBuffer command_buffer, const BeginInfo& begin_in
 
 		for (auto& attachment : m_attachments)
 		{
-			if (attachment.info.attachment_slot == ATTACHMENT_SLOT_INVALID)
+			if (attachment.info.slot == ATTACHMENT_SLOT_INVALID)
 				continue;
 
 			VkRenderingAttachmentInfo* attachment_info = &depth_attachment_info;
 
-			if (IsColorAttachment(attachment.info.attachment_slot))
+			if (IsColorAttachment(attachment.info.slot))
 			{
 				attachment_info = &color_attachment_infos.emplace_back();
 			}
@@ -119,7 +120,7 @@ void RenderPass::Begin(VkCommandBuffer command_buffer, const BeginInfo& begin_in
 
 		for (auto& attachment : m_attachments)
 		{
-			if (attachment.info.attachment_slot == ATTACHMENT_SLOT_INVALID)
+			if (attachment.info.slot == ATTACHMENT_SLOT_INVALID)
 				continue;
 
 			if (attachment.view->layout != attachment.info.expected_layout)
@@ -166,13 +167,13 @@ void RenderPass::SetAttachmentInfos(const std::vector<AttachmentInfo>& attachmen
 {
 	for (const auto& info : attachment_infos)
 	{
-		m_attachments[info.attachment_slot].info = info;
+		m_attachments[info.slot].info = info;
 	}
 }
 
-void RenderPass::SetAttachment(AttachmentSlot slot, Vulkan::ImageView* attachment_view)
+void RenderPass::SetAttachment(AttachmentSlot slot, TextureView* attachment_view)
 {
-	VK_ASSERT(attachment_view->image->format == m_attachments[slot].info.format && "The format of the attachment does not match the format specified in the attachment info");
+	VK_ASSERT(attachment_view->format == m_attachments[slot].info.format && "The format of the attachment does not match the format specified in the attachment info");
 	VK_ASSERT(slot < m_attachments.size() && "Tried to set an attachment with an index larger than the total amount of attachments specified in the render pass");
 
 	m_attachments[slot].view = attachment_view;
@@ -184,10 +185,10 @@ std::vector<VkFormat> RenderPass::GetColorAttachmentFormats()
 
 	for (const auto& attachment : m_attachments)
 	{
-		if (attachment.info.attachment_slot == ATTACHMENT_SLOT_INVALID)
+		if (attachment.info.slot == ATTACHMENT_SLOT_INVALID)
 			continue;
 
-		if (IsColorAttachment(attachment.info.attachment_slot))
+		if (IsColorAttachment(attachment.info.slot))
 		{
 			formats.push_back(attachment.info.format);
 		}
@@ -200,7 +201,7 @@ VkFormat RenderPass::GetDepthStencilAttachmentFormat()
 {
 	for (const auto& attachment : m_attachments)
 	{
-		if (IsDepthStencilAttachment(attachment.info.attachment_slot))
+		if (IsDepthStencilAttachment(attachment.info.slot))
 		{
 			return attachment.info.format;
 		}

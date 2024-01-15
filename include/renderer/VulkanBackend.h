@@ -1,8 +1,8 @@
 #pragma once
+#include "renderer/VulkanIncludes.h"
+#include "renderer/DescriptorBuffer.h"
 #include "renderer/DescriptorAllocation.h"
-
-#include "vulkan/vulkan.h"
-#include "vulkan/vk_enum_string_helper.h"
+#include "Shared.glsl.h"
 
 #include <vector>
 
@@ -19,6 +19,7 @@ namespace Vulkan
 	VkResult SwapChainAcquireNextImage();
 	VkResult SwapChainPresent(const std::vector<VkSemaphore>& signal_semaphores);
 	void RecreateSwapChain();
+	void CopyToSwapchain(VkCommandBuffer command_buffer, VkImage src_image);
 
 	void DebugNameObject(uint64_t object, VkDebugReportObjectTypeEXT object_type, const char* debug_name);
 
@@ -26,6 +27,13 @@ namespace Vulkan
 	VkDeviceMemory AllocateDeviceMemory(VkImage image, VkMemoryPropertyFlags mem_flags);
 	void FreeDeviceMemory(VkDeviceMemory device_memory);
 	uint8_t* MapMemory(VkDeviceMemory device_memory, VkDeviceSize size, VkDeviceSize offset = 0);
+	void UnmapMemory(VkDeviceMemory device_memory);
+
+	DescriptorAllocation AllocateDescriptors(VkDescriptorType type, uint32_t num_descriptors = 1);
+	void FreeDescriptors(const DescriptorAllocation& descriptors);
+	std::vector<VkDescriptorSetLayout> GetDescriptorBufferLayouts();
+	std::vector<VkDescriptorBufferBindingInfoEXT> GetDescriptorBufferBindingInfos();
+	size_t GetDescriptorTypeSize(VkDescriptorType type);
 
 	VkBuffer CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage_flags);
 	void DestroyBuffer(VkBuffer buffer);
@@ -47,8 +55,6 @@ namespace Vulkan
 	VkCommandBuffer BeginImmediateCommand();
 	void EndImmediateCommand(VkCommandBuffer command_buffer);
 
-	VkImageMemoryBarrier2 ImageMemoryBarrier(VkImage image, VkImageLayout new_layout,
-		uint32_t base_mip_level = 0, uint32_t num_mips = 1, uint32_t base_array_layer = 0, uint32_t layer_count = 1);
 	void CmdImageMemoryBarrier(VkCommandBuffer command_buffer, uint32_t num_barriers, const VkImageMemoryBarrier2* image_barriers);
 	void ImageMemoryBarrierImmediate(uint32_t num_barriers, const VkImageMemoryBarrier2* image_barriers);
 
@@ -133,7 +139,6 @@ struct VulkanInstance
 		uint32_t current_image = 0;
 
 		std::vector<VkImage> images;
-		std::vector<VkImageLayout> layouts;
 		std::vector<VkSemaphore> image_available_semaphores;
 	} swapchain;
 
@@ -160,6 +165,15 @@ struct VulkanInstance
 		//VkCommandPool compute = VK_NULL_HANDLE;
 		//VkCommandPool transfer = VK_NULL_HANDLE;
 	} cmd_pools;
+
+	struct DescriptorBuffers
+	{
+		DescriptorBuffer uniform{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, RESERVED_DESCRIPTOR_UBO_COUNT * VulkanInstance::MAX_FRAMES_IN_FLIGHT };
+		DescriptorBuffer storage_buffer{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER };
+		DescriptorBuffer storage_image{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE };
+		DescriptorBuffer sampled_image{ VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE };
+		DescriptorBuffer sampler{ VK_DESCRIPTOR_TYPE_SAMPLER };
+	} descriptor_buffers;
 
 	struct Debug
 	{

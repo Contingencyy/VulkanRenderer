@@ -1,5 +1,15 @@
 #include "renderer/Sampler.h"
 
+Sampler* Sampler::Create(const SamplerCreateInfo& create_info)
+{
+	return new Sampler(create_info);
+}
+
+void Sampler::Destroy(const Sampler* sampler)
+{
+	delete sampler;
+}
+
 static VkSamplerAddressMode ToVkAddressMode(SamplerAddressMode address_mode)
 {
 	switch (address_mode)
@@ -58,7 +68,7 @@ static VkSamplerMipmapMode ToVkSamplerMipmapMode(SamplerFilter filter)
 	}
 }
 
-static VkSamplerCreateInfo ToVkSamplerCreateInfo(const Sampler::SamplerCreateInfo& create_info)
+static VkSamplerCreateInfo ToVkSamplerCreateInfo(const SamplerCreateInfo& create_info)
 {
 	VkSamplerCreateInfo vk_create_info = { VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
 
@@ -83,9 +93,16 @@ static VkSamplerCreateInfo ToVkSamplerCreateInfo(const Sampler::SamplerCreateInf
 Sampler::Sampler(const SamplerCreateInfo& create_info)
 {
 	m_vk_sampler = Vulkan::CreateSampler(ToVkSamplerCreateInfo(create_info));
+	m_descriptor = Vulkan::AllocateDescriptors(VK_DESCRIPTOR_TYPE_SAMPLER);
+
+	VkDescriptorGetInfoEXT descriptor_info = { VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT };
+	descriptor_info.type = VK_DESCRIPTOR_TYPE_SAMPLER;
+	descriptor_info.data.pSampler = &m_vk_sampler;
+	m_descriptor.WriteDescriptor(descriptor_info);
 }
 
 Sampler::~Sampler()
 {
+	Vulkan::FreeDescriptors(m_descriptor);
 	Vulkan::DestroySampler(m_vk_sampler);
 }

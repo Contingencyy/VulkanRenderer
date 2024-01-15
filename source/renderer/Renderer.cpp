@@ -1,10 +1,11 @@
 #include "renderer/Renderer.h"
 #include "renderer/VulkanBackend.h"
-#include "renderer/DescriptorBuffer.h"
+#include "renderer/VulkanResourceTracker.h"
 #include "renderer/ResourceSlotmap.h"
 #include "renderer/RenderPass.h"
 #include "renderer/Texture.h"
 #include "renderer/Buffer.h"
+#include "renderer/Sampler.h"
 #include "Common.h"
 #include "Shared.glsl.h"
 #include "Assets.h"
@@ -113,8 +114,14 @@ namespace Renderer
 
 	struct Mesh
 	{
-		Buffer vertex_buffer;
-		Buffer index_buffer;
+		Buffer* vertex_buffer;
+		Buffer* index_buffer;
+
+		~Mesh()
+		{
+			Buffer::Destroy(vertex_buffer);
+			Buffer::Destroy(index_buffer);
+		}
 	};
 
 	struct Data
@@ -125,19 +132,6 @@ namespace Renderer
 		ResourceSlotmap<Texture> texture_slotmap;
 		ResourceSlotmap<Mesh> mesh_slotmap;
 
-		// Command buffers and synchronization primitives
-		std::vector<VkCommandBuffer> command_buffers;
-		std::vector<VkSemaphore> render_finished_semaphores;
-		std::vector<VkFence> in_flight_fences;
-
-		// Descriptor buffers
-		DescriptorBuffer descriptor_buffer_uniform{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, (uint32_t)vk_inst.descriptor_sizes.uniform_buffer, RESERVED_DESCRIPTOR_UBO_COUNT * VulkanInstance::MAX_FRAMES_IN_FLIGHT };
-		DescriptorBuffer descriptor_buffer_storage{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, (uint32_t)vk_inst.descriptor_sizes.storage_buffer };
-		DescriptorBuffer descriptor_buffer_storage_image{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, (uint32_t)vk_inst.descriptor_sizes.storage_image };
-		DescriptorBuffer descriptor_buffer_sampled_image{ VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, (uint32_t)vk_inst.descriptor_sizes.sampled_image };
-		DescriptorBuffer descriptor_buffer_sampler{ VK_DESCRIPTOR_TYPE_SAMPLER, (uint32_t)vk_inst.descriptor_sizes.sampler };
-
-		std::array<VkDescriptorBufferBindingInfoEXT, 5> descriptor_buffer_binding_infos;
 		uint32_t descriptor_buffer_indices[5] = { 0, 1, 2, 3, 4 };
 		VkDeviceSize descriptor_buffer_offsets[5] = { 0, 0, 0, 0, 0 };
 
@@ -172,43 +166,40 @@ namespace Renderer
 			Texture* brdf_lut = nullptr;
 		} ibl;
 
-		struct UBOs
-		{
-			std::vector<Vulkan::Buffer> camera_buffers;
-			std::vector<Vulkan::Buffer> light_buffers;
-			std::vector<Vulkan::Buffer> material_buffers;
-			std::vector<Vulkan::Buffer> settings_buffers;
-		} ubos;
-		
 		struct Frame
 		{
-			// TODO: Free reserved descriptors on Exit()
-			DescriptorAllocation ubo_descriptors;
-		} per_frame[VulkanInstance::MAX_FRAMES_IN_FLIGHT];
+			VkCommandBuffer command_buffer;
 
-		// TODO: Free reserved descriptors on Exit()
-		DescriptorAllocation reserved_storage_image_descriptors;
+			struct Sync
+			{
+				VkSemaphore render_finished_semaphore;
+				VkFence in_flight_fence;
+			} sync;
+
+			struct UBOs
+			{
+				Buffer* camera_ubo;
+				Buffer* light_ubo;
+				Buffer* material_ubo;
+				Buffer* settings_ubo;
+			} ubos;
+
+			Buffer* instance_buffer;
+		} per_frame[VulkanInstance::MAX_FRAMES_IN_FLIGHT];
 
 		// Draw submission list
 		DrawList draw_list;
 		uint32_t num_pointlights;
 
-		std::vector<Vulkan::Buffer> instance_buffers;
-
 		// Default resources
 		TextureHandle_t default_white_texture_handle;
-		TextureResource* default_white_texture;
 		TextureHandle_t default_normal_texture_handle;
-		TextureResource* default_normal_texture;
 
-		VkSampler default_sampler = VK_NULL_HANDLE;
-		Buffer unit_cube_vb;
-		Buffer unit_cube_ib;
+		Sampler* default_sampler;
+		Buffer* unit_cube_vb;
+		Buffer* unit_cube_ib;
 
 		TextureHandle_t skybox_texture_handle;
-		// TODO: Free reserved descriptors on Exit()
-		DescriptorAllocation reserved_sampler_descriptors;
-
 		RenderSettings settings;
 
 		struct Statistics
@@ -229,6 +220,11 @@ namespace Renderer
 			RenderPass render_pass{ RENDER_PASS_TYPE_GRAPHICS };
 		} imgui;
 	} static *data;
+
+	static inline const Data::Frame* GetFrameCurrent()
+	{
+		return &data->per_frame[vk_inst.current_frame];
+	}
 	
 	static std::vector<VkVertexInputBindingDescription> GetVertexBindingDescription()
 	{
@@ -292,22 +288,23 @@ namespace Renderer
 
 	static void CreateCommandBuffers()
 	{
-		data->command_buffers.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
+		std::vector<VkCommandBuffer> command_buffers;
+		for (uint32_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
+		{
+			command_buffers.push_back(data->per_frame[i].command_buffer);
+		}
 
 		VkCommandBufferAllocateInfo alloc_info = {};
 		alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 		alloc_info.commandPool = vk_inst.cmd_pools.graphics;
 		alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-		alloc_info.commandBufferCount = (uint32_t)data->command_buffers.size();
+		alloc_info.commandBufferCount = (uint32_t)command_buffers.size();
 
-		VkCheckResult(vkAllocateCommandBuffers(vk_inst.device, &alloc_info, data->command_buffers.data()));
+		VkCheckResult(vkAllocateCommandBuffers(vk_inst.device, &alloc_info, command_buffers.data()));
 	}
 
 	static void CreateSyncObjects()
 	{
-		data->render_finished_semaphores.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
-		data->in_flight_fences.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
-
 		VkSemaphoreCreateInfo semaphore_info = {};
 		semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
@@ -317,48 +314,38 @@ namespace Renderer
 
 		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
-			VkCheckResult(vkCreateSemaphore(vk_inst.device, &semaphore_info, nullptr, &data->render_finished_semaphores[i]));
-			VkCheckResult(vkCreateFence(vk_inst.device, &fence_info, nullptr, &data->in_flight_fences[i]));
+			VkCheckResult(vkCreateSemaphore(vk_inst.device, &semaphore_info, nullptr, &data->per_frame[i].sync.render_finished_semaphore));
+			VkCheckResult(vkCreateFence(vk_inst.device, &fence_info, nullptr, &data->per_frame[i].sync.in_flight_fence));
 		}
 	}
 
 	static void CreateDefaultSamplers()
 	{
-		// Create sampler
-		VkSamplerCreateInfo sampler_info = {};
-		sampler_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-		// Oversampling
-		sampler_info.magFilter = VK_FILTER_LINEAR;
-		// Undersampling
-		sampler_info.minFilter = VK_FILTER_LINEAR;
-		sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-		sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-		sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-		sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-		sampler_info.anisotropyEnable = VK_TRUE;
-		sampler_info.maxAnisotropy = vk_inst.device_props.max_anisotropy;
-		sampler_info.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
-		sampler_info.unnormalizedCoordinates = VK_FALSE;
-		sampler_info.compareEnable = VK_FALSE;
-		sampler_info.compareOp = VK_COMPARE_OP_NEVER;
-		sampler_info.mipLodBias = 0.0f;
-		sampler_info.minLod = 0.0f;
-		//sampler_info.maxLod = (float)num_mips;
-		sampler_info.maxLod = std::numeric_limits<float>::max();
-		sampler_info.flags = 0;
+		SamplerCreateInfo sampler_info = {};
 
-		VkCheckResult(vkCreateSampler(vk_inst.device, &sampler_info, nullptr, &data->default_sampler));
+		sampler_info.address_u = SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+		sampler_info.address_v = SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+		sampler_info.address_w = SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+		sampler_info.border_color = SAMPLER_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+		
+		sampler_info.filter_min = SAMPLER_FILTER_LINEAR; // Undersampling
+		sampler_info.filter_mag = SAMPLER_FILTER_LINEAR; // Oversampling
+		sampler_info.filter_mip = SAMPLER_FILTER_LINEAR; // Mip
 
-		// Allocate and update sampler descriptor
-		data->reserved_sampler_descriptors = data->descriptor_buffer_sampler.Allocate();
-		data->reserved_sampler_descriptors.WriteDescriptor(data->default_sampler);
+		sampler_info.enable_anisotropy = VK_TRUE;
+
+		sampler_info.min_lod = 0.0f;
+		sampler_info.max_lod = std::numeric_limits<float>::max();
+		sampler_info.name = "Default Sampler";
+
+		data->default_sampler = Sampler::Create(sampler_info);
 	}
 
 	static void CreateDefaultTextures()
 	{
 		// Default white texture
 		std::vector<uint8_t> white_pixel = { 0xFF, 0xFF, 0xFF, 0xFF };
-
+		
 		CreateTextureArgs texture_args = {};
 		texture_args.width = 1;
 		texture_args.height = 1;
@@ -366,14 +353,12 @@ namespace Renderer
 		texture_args.pixels = white_pixel;
 
 		data->default_white_texture_handle = CreateTexture(texture_args);
-		data->default_white_texture = data->texture_slotmap.Find(data->default_white_texture_handle);
 
 		// Default normal texture
 		std::vector<uint8_t> normal_pixel = { 127, 127, 255, 255 };
 		texture_args.pixels = normal_pixel;
 
 		data->default_normal_texture_handle = CreateTexture(texture_args);
-		data->default_normal_texture = data->texture_slotmap.Find(data->default_normal_texture_handle);
 	}
 
 	static void CreateUnitCubeBuffers()
@@ -383,72 +368,53 @@ namespace Renderer
 		VkDeviceSize ib_size = UNIT_CUBE_INDICES.size() * sizeof(uint16_t);
 
 		// Create the staging buffer
-		Vulkan::Buffer staging_buffer;
-		Vulkan::CreateStagingBuffer(vb_size + ib_size, staging_buffer);
+		Buffer* staging_buffer = Buffer::CreateStaging(vb_size + ib_size, "Unit Cube VB IB staging");
 
 		// Write data to the staging buffer
-		Vulkan::WriteBuffer(staging_buffer.ptr, (void*)&UNIT_CUBE_VERTICES[0], vb_size);
-		Vulkan::WriteBuffer(staging_buffer.ptr + vb_size, (void*)&UNIT_CUBE_INDICES[0], ib_size);
+		staging_buffer->Write(vb_size, (void*)&UNIT_CUBE_VERTICES[0], 0, 0);
+		staging_buffer->Write(ib_size, (void*)&UNIT_CUBE_INDICES[0], 0, vb_size);
 
 		// Create cube vertex and index buffer
-		Vulkan::CreateVertexBuffer(vb_size, data->unit_cube_vertex_buffer);
-		Vulkan::CreateIndexBuffer(ib_size, data->unit_cube_index_buffer);
+		data->unit_cube_vb = Buffer::CreateVertex(vb_size, "Unit Cube VB");
+		data->unit_cube_ib = Buffer::CreateIndex(ib_size, "Unit Cube IB");
 
 		// Copy staged vertex and index data to the device local buffers
-		Vulkan::CopyBuffer(staging_buffer, data->unit_cube_vertex_buffer, vb_size, 0, 0);
-		Vulkan::CopyBuffer(staging_buffer, data->unit_cube_index_buffer, ib_size, vb_size, 0);
+		data->unit_cube_vb->CopyFromImmediate(*staging_buffer, vb_size, 0, 0);
+		data->unit_cube_ib->CopyFromImmediate(*staging_buffer, ib_size, vb_size, 0);
 
-		// Clean up, destroy the staging buffer
-		Vulkan::DestroyBuffer(staging_buffer);
+		// Get rid of the staging buffer
+		Buffer::Destroy(staging_buffer);
 	}
 
 	static void CreateUniformBuffers()
 	{
-		data->ubos.settings_buffers.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
 		VkDeviceSize settings_buffer_size = sizeof(RenderSettings);
-
-		data->ubos.camera_buffers.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
 		VkDeviceSize camera_buffer_size = sizeof(CameraData);
-
-		data->ubos.light_buffers.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
 		VkDeviceSize light_buffer_size = sizeof(uint32_t) + MAX_LIGHT_SOURCES * sizeof(PointlightData);
-
-		data->ubos.material_buffers.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
 		VkDeviceSize material_buffer_size = MAX_UNIQUE_MATERIALS * sizeof(MaterialData);
 
 		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
-			data->per_frame[i].ubo_descriptors = data->descriptor_buffer_uniform.Allocate(RESERVED_DESCRIPTOR_UBO_COUNT, vk_inst.device_props.descriptor_buffer_offset_alignment);
-
-			Vulkan::CreateUniformBuffer(settings_buffer_size, data->ubos.settings_buffers[i]);
-			data->per_frame[i].ubo_descriptors.WriteDescriptor(data->ubos.settings_buffers[i],
-				settings_buffer_size, RESERVED_DESCRIPTOR_UBO_SETTINGS);
-
-			Vulkan::CreateUniformBuffer(camera_buffer_size, data->ubos.camera_buffers[i]);
-			data->per_frame[i].ubo_descriptors.WriteDescriptor(data->ubos.camera_buffers[i],
-				camera_buffer_size, RESERVED_DESCRIPTOR_UBO_CAMERA);
-
-			Vulkan::CreateUniformBuffer(light_buffer_size, data->ubos.light_buffers[i]);
-			data->per_frame[i].ubo_descriptors.WriteDescriptor(data->ubos.light_buffers[i],
-				light_buffer_size, RESERVED_DESCRIPTOR_UBO_LIGHTS);
-
-			Vulkan::CreateUniformBuffer(material_buffer_size, data->ubos.material_buffers[i]);
-			data->per_frame[i].ubo_descriptors.WriteDescriptor(data->ubos.material_buffers[i],
-				material_buffer_size, RESERVED_DESCRIPTOR_UBO_MATERIALS);
+			data->per_frame[i].ubos.settings_ubo = Buffer::CreateUniform(settings_buffer_size, "Settings UBO");
+			data->per_frame[i].ubos.camera_ubo = Buffer::CreateUniform(camera_buffer_size, "Camera UBO");
+			data->per_frame[i].ubos.light_ubo = Buffer::CreateUniform(light_buffer_size, "Light UBO");
+			data->per_frame[i].ubos.material_ubo = Buffer::CreateUniform(material_buffer_size, "Material UBO");
 		}
 	}
 
 	static void CreateInstanceBuffers()
 	{
-		data->instance_buffers.resize(VulkanInstance::MAX_FRAMES_IN_FLIGHT);
 		VkDeviceSize instance_buffer_size = MAX_DRAW_LIST_ENTRIES * sizeof(glm::mat4);
 
 		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
-			Vulkan::Buffer& instance_buffer = data->instance_buffers[i];
-			Vulkan::CreateBuffer(instance_buffer_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, instance_buffer);
-			VkCheckResult(vkMapMemory(vk_inst.device, instance_buffer.memory, 0, instance_buffer_size, 0, (void**)&instance_buffer.ptr));
+			BufferCreateInfo create_info = {};
+			create_info.usage_flags = BUFFER_USAGE_VERTEX;
+			create_info.memory_flags = GPU_MEMORY_HOST_VISIBLE | GPU_MEMORY_HOST_COHERENT;
+			create_info.size_in_bytes = instance_buffer_size;
+			create_info.name = "Instance buffer";
+
+			data->per_frame[i].instance_buffer = Buffer::Create(create_info);
 		}
 	}
 
@@ -456,112 +422,112 @@ namespace Renderer
 	{
 		// Create HDR render target
 		{
-			if (!data->render_targets.hdr)
+			// Remove old HDR render target, if it exists
+			if (VK_RESOURCE_HANDLE_VALID(data->render_targets.hdr_handle))
 			{
-				ResourceSlotmap<TextureResource>::ReservedResource reserved = data->texture_slotmap.Reserve();
-				data->render_targets.hdr_handle = reserved.handle;
-				data->render_targets.hdr = reserved.resource;
+				data->texture_slotmap.Delete(data->render_targets.hdr_handle);
 			}
 
-			Vulkan::CreateImage(
-				vk_inst.swapchain.extent.width, vk_inst.swapchain.extent.height,
-				VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_TILING_OPTIMAL,
-				VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-				VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-				data->render_targets.hdr->image
-			);
-			Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, &data->render_targets.hdr->image, data->render_targets.hdr->view);
-			data->reserved_storage_image_descriptors.WriteDescriptor(data->render_targets.hdr->view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, RESERVED_DESCRIPTOR_STORAGE_IMAGE_HDR);
+			ResourceSlotmap<Texture>::ReservedResource reserved = data->texture_slotmap.Reserve();
+			TextureCreateInfo texture_info = {
+				.format = TEXTURE_FORMAT_RGBA16_SFLOAT,
+				.usage_flags = TEXTURE_USAGE_READ_ONLY | TEXTURE_USAGE_RENDER_TARGET,
+				.dimension = TEXTURE_DIMENSION_2D,
+				.width = vk_inst.swapchain.extent.width,
+				.height = vk_inst.swapchain.extent.height,
+				.num_mips = 1,
+				.num_layers = 1,
+				.name = "HDR Render Target"
+			};
 
-			data->render_passes.skybox.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, &data->render_targets.hdr->view);
-			data->render_passes.lighting.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, &data->render_targets.hdr->view);
-			data->render_passes.post_process.SetAttachment(RenderPass::ATTACHMENT_SLOT_READ_ONLY0, &data->render_targets.hdr->view);
+			reserved.resource = Texture::Create(texture_info);
+			data->render_targets.hdr_handle = reserved.handle;
+			data->render_targets.hdr = reserved.resource;
+
+			TextureView* hdr_view = data->render_targets.hdr->GetView();
+			hdr_view->WriteDescriptorInfo(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+
+			data->render_passes.skybox.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, hdr_view);
+			data->render_passes.lighting.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, hdr_view);
+			data->render_passes.post_process.SetAttachment(RenderPass::ATTACHMENT_SLOT_READ_ONLY0, hdr_view);
 		}
 
 		// Create depth render target
 		{
-			if (!data->render_targets.depth)
+			// Remove old depth render target, if it exists
+			if (VK_RESOURCE_HANDLE_VALID(data->render_targets.depth_handle))
 			{
-				ResourceSlotmap<TextureResource>::ReservedResource reserved = data->texture_slotmap.Reserve();
-				data->render_targets.depth_handle = reserved.handle;
-				data->render_targets.depth = reserved.resource;
+				data->texture_slotmap.Delete(data->render_targets.depth_handle);
 			}
 
-			Vulkan::CreateImage(
-				vk_inst.swapchain.extent.width, vk_inst.swapchain.extent.height,
-				Vulkan::FindDepthFormat(),
-				VK_IMAGE_TILING_OPTIMAL,
-				VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-				VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-				data->render_targets.depth->image
-			);
-			Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_DEPTH_BIT, &data->render_targets.depth->image, data->render_targets.depth->view);
+			ResourceSlotmap<Texture>::ReservedResource reserved = data->texture_slotmap.Reserve();
+			TextureCreateInfo texture_info = {
+				.format = TEXTURE_FORMAT_D32_SFLOAT,
+				.usage_flags = TEXTURE_USAGE_DEPTH_TARGET,
+				.dimension = TEXTURE_DIMENSION_2D,
+				.width = vk_inst.swapchain.extent.width,
+				.height = vk_inst.swapchain.extent.height,
+				.num_mips = 1,
+				.num_layers = 1,
+				.name = "Depth Render Target"
+			};
 
-			data->render_passes.skybox.SetAttachment(RenderPass::ATTACHMENT_SLOT_DEPTH_STENCIL, &data->render_targets.depth->view);
-			data->render_passes.lighting.SetAttachment(RenderPass::ATTACHMENT_SLOT_DEPTH_STENCIL, &data->render_targets.depth->view);
+			reserved.resource = Texture::Create(texture_info);
+			data->render_targets.depth_handle = reserved.handle;
+			data->render_targets.depth = reserved.resource;
+
+			TextureView* depth_view = data->render_targets.depth->GetView();
+			data->render_passes.skybox.SetAttachment(RenderPass::ATTACHMENT_SLOT_DEPTH_STENCIL, depth_view);
+			data->render_passes.lighting.SetAttachment(RenderPass::ATTACHMENT_SLOT_DEPTH_STENCIL, depth_view);
 		}
 
 		// Create SDR render target
 		{
-			if (!data->render_targets.sdr)
+			// Remove old sdr render target, if it exists
+			if (VK_RESOURCE_HANDLE_VALID(data->render_targets.sdr_handle))
 			{
-				ResourceSlotmap<TextureResource>::ReservedResource reserved = data->texture_slotmap.Reserve();
-				data->render_targets.sdr_handle = reserved.handle;
-				data->render_targets.sdr = reserved.resource;
+				data->texture_slotmap.Delete(data->render_targets.sdr_handle);
 			}
 
-			Vulkan::CreateImage(
-				vk_inst.swapchain.extent.width, vk_inst.swapchain.extent.height,
-				vk_inst.swapchain.format,
-				VK_IMAGE_TILING_OPTIMAL,
-				VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-				VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-				data->render_targets.sdr->image
-			);
-			Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, &data->render_targets.sdr->image, data->render_targets.sdr->view);
-			data->reserved_storage_image_descriptors.WriteDescriptor(data->render_targets.sdr->view, VK_IMAGE_LAYOUT_GENERAL, RESERVED_DESCRIPTOR_STORAGE_IMAGE_SDR);
+			ResourceSlotmap<Texture>::ReservedResource reserved = data->texture_slotmap.Reserve();
+			TextureCreateInfo texture_info = {
+				.format = TEXTURE_FORMAT_RGBA8_UNORM,
+				.usage_flags = TEXTURE_USAGE_READ_WRITE | TEXTURE_USAGE_RENDER_TARGET | TEXTURE_USAGE_COPY_SRC | TEXTURE_USAGE_COPY_DST,
+				.dimension = TEXTURE_DIMENSION_2D,
+				.width = vk_inst.swapchain.extent.width,
+				.height = vk_inst.swapchain.extent.height,
+				.num_mips = 1,
+				.num_layers = 1,
+				.name = "SDR Render Target"
+			};
 
-			data->render_passes.post_process.SetAttachment(RenderPass::ATTACHMENT_SLOT_READ_WRITE0, &data->render_targets.sdr->view);
-			data->imgui.render_pass.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, &data->render_targets.sdr->view);
+			reserved.resource = Texture::Create(texture_info);
+			data->render_targets.sdr_handle = reserved.handle;
+			data->render_targets.sdr = reserved.resource;
+
+			TextureView* sdr_view = data->render_targets.sdr->GetView();
+			sdr_view->WriteDescriptorInfo(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+
+			data->render_passes.post_process.SetAttachment(RenderPass::ATTACHMENT_SLOT_READ_WRITE0, sdr_view);
+			data->imgui.render_pass.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, sdr_view);
 		}
-	}
-
-	static void DestroyRenderTargets()
-	{
-		Vulkan::DestroyImageView(data->render_targets.hdr->view);
-		Vulkan::DestroyImage(data->render_targets.hdr->image);
-
-		Vulkan::DestroyImageView(data->render_targets.depth->view);
-		Vulkan::DestroyImage(data->render_targets.depth->image);
-
-		Vulkan::DestroyImageView(data->render_targets.sdr->view);
-		Vulkan::DestroyImage(data->render_targets.sdr->image);
 	}
 
 	static void CreateRenderPasses()
 	{
-		data->reserved_storage_image_descriptors = data->descriptor_buffer_storage_image.Allocate(RESERVED_DESCRIPTOR_STORAGE_IMAGE_COUNT);
-
-		std::vector<VkDescriptorSetLayout> descriptor_set_layouts =
-		{
-			data->descriptor_buffer_uniform.GetDescriptorSetLayout(),
-			data->descriptor_buffer_storage.GetDescriptorSetLayout(),
-			data->descriptor_buffer_storage_image.GetDescriptorSetLayout(),
-			data->descriptor_buffer_sampled_image.GetDescriptorSetLayout(),
-			data->descriptor_buffer_sampler.GetDescriptorSetLayout()
-		};
+		const auto& descriptor_buffer_layouts = Vulkan::GetDescriptorBufferLayouts();
 
 		// Skybox raster pass
 		{
 			std::vector<RenderPass::AttachmentInfo> attachment_infos(2);
-			attachment_infos[0].attachment_slot = RenderPass::ATTACHMENT_SLOT_COLOR0;
+			attachment_infos[0].slot = RenderPass::ATTACHMENT_SLOT_COLOR0;
 			attachment_infos[0].format = VK_FORMAT_R16G16B16A16_SFLOAT;
 			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 			attachment_infos[0].load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
 			attachment_infos[0].store_op = VK_ATTACHMENT_STORE_OP_STORE;
 			attachment_infos[0].clear_value.color = { 0.0f, 0.0f, 0.0f, 1.0f };
 
-			attachment_infos[1].attachment_slot = RenderPass::ATTACHMENT_SLOT_DEPTH_STENCIL;
+			attachment_infos[1].slot = RenderPass::ATTACHMENT_SLOT_DEPTH_STENCIL;
 			attachment_infos[1].format = VK_FORMAT_D32_SFLOAT;
 			attachment_infos[1].expected_layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
 			attachment_infos[1].load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
@@ -594,19 +560,19 @@ namespace Renderer
 			info.vs_path = "assets/shaders/Skybox.vert";
 			info.fs_path = "assets/shaders/Skybox.frag";
 
-			data->render_passes.skybox.Build(descriptor_set_layouts, push_ranges, info);
+			data->render_passes.skybox.Build(descriptor_buffer_layouts, push_ranges, info);
 		}
 
 		// Lighting raster pass
 		{
 			std::vector<RenderPass::AttachmentInfo> attachment_infos(2);
-			attachment_infos[0].attachment_slot = RenderPass::ATTACHMENT_SLOT_COLOR0;
+			attachment_infos[0].slot = RenderPass::ATTACHMENT_SLOT_COLOR0;
 			attachment_infos[0].format = VK_FORMAT_R16G16B16A16_SFLOAT;
 			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 			attachment_infos[0].load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
 			attachment_infos[0].store_op = VK_ATTACHMENT_STORE_OP_STORE;
 
-			attachment_infos[1].attachment_slot = RenderPass::ATTACHMENT_SLOT_DEPTH_STENCIL;
+			attachment_infos[1].slot = RenderPass::ATTACHMENT_SLOT_DEPTH_STENCIL;
 			attachment_infos[1].format = VK_FORMAT_D32_SFLOAT;
 			attachment_infos[1].expected_layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
 			attachment_infos[1].load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
@@ -630,17 +596,17 @@ namespace Renderer
 			info.vs_path = "assets/shaders/PbrLighting.vert";
 			info.fs_path = "assets/shaders/PbrLighting.frag";
 
-			data->render_passes.lighting.Build(descriptor_set_layouts, push_ranges, info);
+			data->render_passes.lighting.Build(descriptor_buffer_layouts, push_ranges, info);
 		}
 
 		// Post-processing compute pass
 		{
 			std::vector<RenderPass::AttachmentInfo> attachment_infos(2);
-			attachment_infos[0].attachment_slot = RenderPass::ATTACHMENT_SLOT_READ_ONLY0;
+			attachment_infos[0].slot = RenderPass::ATTACHMENT_SLOT_READ_ONLY0;
 			attachment_infos[0].format = VK_FORMAT_R16G16B16A16_SFLOAT;
 			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_GENERAL;
 
-			attachment_infos[1].attachment_slot = RenderPass::ATTACHMENT_SLOT_READ_WRITE0;
+			attachment_infos[1].slot = RenderPass::ATTACHMENT_SLOT_READ_WRITE0;
 			attachment_infos[1].format = vk_inst.swapchain.format;
 			attachment_infos[1].expected_layout = VK_IMAGE_LAYOUT_GENERAL;
 			attachment_infos[1].load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
@@ -657,13 +623,13 @@ namespace Renderer
 			Vulkan::ComputePipelineInfo info = {};
 			info.cs_path = "assets/shaders/PostProcessCS.glsl";
 
-			data->render_passes.post_process.Build(descriptor_set_layouts, push_ranges, info);
+			data->render_passes.post_process.Build(descriptor_buffer_layouts, push_ranges, info);
 		}
 
 		// Dear ImGui render pass
 		{
 			std::vector<RenderPass::AttachmentInfo> attachment_infos(1);
-			attachment_infos[0].attachment_slot = RenderPass::ATTACHMENT_SLOT_COLOR0;
+			attachment_infos[0].slot = RenderPass::ATTACHMENT_SLOT_COLOR0;
 			attachment_infos[0].format = vk_inst.swapchain.format;
 			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 			attachment_infos[0].load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
@@ -675,7 +641,7 @@ namespace Renderer
 		// Generate Cubemap from Equirectangular Map pass
 		{
 			std::vector<RenderPass::AttachmentInfo> attachment_infos(1);
-			attachment_infos[0].attachment_slot = RenderPass::ATTACHMENT_SLOT_COLOR0;
+			attachment_infos[0].slot = RenderPass::ATTACHMENT_SLOT_COLOR0;
 			attachment_infos[0].format = VK_FORMAT_R16G16B16A16_SFLOAT;
 			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 			attachment_infos[0].load_op = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -705,13 +671,13 @@ namespace Renderer
 			info.vs_path = "assets/shaders/Cube.vert";
 			info.fs_path = "assets/shaders/EquirectangularToCube.frag";
 
-			data->render_passes.gen_cubemap.Build(descriptor_set_layouts, push_ranges, info);
+			data->render_passes.gen_cubemap.Build(descriptor_buffer_layouts, push_ranges, info);
 		}
 
 		// Generate Irradiance Cube pass
 		{
 			std::vector<RenderPass::AttachmentInfo> attachment_infos(1);
-			attachment_infos[0].attachment_slot = RenderPass::ATTACHMENT_SLOT_COLOR0;
+			attachment_infos[0].slot = RenderPass::ATTACHMENT_SLOT_COLOR0;
 			attachment_infos[0].format = VK_FORMAT_R16G16B16A16_SFLOAT;
 			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 			attachment_infos[0].load_op = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -742,13 +708,13 @@ namespace Renderer
 			info.vs_path = "assets/shaders/Cube.vert";
 			info.fs_path = "assets/shaders/IrradianceCube.frag";
 
-			data->render_passes.gen_irradiance_cube.Build(descriptor_set_layouts, push_ranges, info);
+			data->render_passes.gen_irradiance_cube.Build(descriptor_buffer_layouts, push_ranges, info);
 		}
 
 		// Generate Prefiltered Cube pass
 		{
 			std::vector<RenderPass::AttachmentInfo> attachment_infos(1);
-			attachment_infos[0].attachment_slot = RenderPass::ATTACHMENT_SLOT_COLOR0;
+			attachment_infos[0].slot = RenderPass::ATTACHMENT_SLOT_COLOR0;
 			attachment_infos[0].format = VK_FORMAT_R16G16B16A16_SFLOAT;
 			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 			attachment_infos[0].load_op = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -779,13 +745,13 @@ namespace Renderer
 			info.vs_path = "assets/shaders/Cube.vert";
 			info.fs_path = "assets/shaders/PrefilteredEnvCube.frag";
 
-			data->render_passes.gen_prefiltered_cube.Build(descriptor_set_layouts, push_ranges, info);
+			data->render_passes.gen_prefiltered_cube.Build(descriptor_buffer_layouts, push_ranges, info);
 		}
 
 		// Generate BRDF LUT pass
 		{
 			std::vector<RenderPass::AttachmentInfo> attachment_infos(1);
-			attachment_infos[0].attachment_slot = RenderPass::ATTACHMENT_SLOT_COLOR0;
+			attachment_infos[0].slot = RenderPass::ATTACHMENT_SLOT_COLOR0;
 			attachment_infos[0].format = VK_FORMAT_R16G16_SFLOAT;
 			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 			attachment_infos[0].load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
@@ -805,7 +771,7 @@ namespace Renderer
 			info.fs_path = "assets/shaders/BRDF_LUT.frag";
 			info.cull_mode = VK_CULL_MODE_NONE;
 
-			data->render_passes.gen_brdf_lut.Build(descriptor_set_layouts, push_ranges, info);
+			data->render_passes.gen_brdf_lut.Build(descriptor_buffer_layouts, push_ranges, info);
 		}
 	}
 
@@ -845,7 +811,7 @@ namespace Renderer
 		init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
 		init_info.Allocator = nullptr;
 		init_info.UseDynamicRendering = true;
-		init_info.ColorAttachmentFormat = data->render_targets.sdr->image.format;
+		init_info.ColorAttachmentFormat = VK_FORMAT_R8G8B8A8_UNORM;
 		init_info.CheckVkResultFn = VkCheckResult;
 		ImGui_ImplVulkan_Init(&init_info, nullptr);
 
@@ -865,13 +831,26 @@ namespace Renderer
 		vkDestroyDescriptorPool(vk_inst.device, data->imgui.descriptor_pool, nullptr);
 	}
 
-	static void GenerateCubeMapFromEquirectangular(uint32_t src_texture_index, uint32_t src_sampler_index, Vulkan::Image& cubemap_image, Vulkan::ImageView& cubemap_view)
+	static Texture* GenerateCubeMapFromEquirectangular(uint32_t src_texture_index, uint32_t src_sampler_index)
 	{
+		const auto& descriptor_buffer_binding_info = Vulkan::GetDescriptorBufferBindingInfos();
+
 		// Create hdr environment cubemap
 		uint32_t num_cube_mips = (uint32_t)std::floor(std::log2(std::max(IBL_HDR_CUBEMAP_RESOLUTION, IBL_HDR_CUBEMAP_RESOLUTION))) + 1;
-		Vulkan::CreateImageCube(IBL_HDR_CUBEMAP_RESOLUTION, IBL_HDR_CUBEMAP_RESOLUTION, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_TILING_OPTIMAL,
-			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, cubemap_image, num_cube_mips);
-		Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_CUBE, VK_IMAGE_ASPECT_COLOR_BIT, &cubemap_image, cubemap_view, 0, num_cube_mips, 0, 6);
+		TextureCreateInfo texture_info = {
+			.format = TEXTURE_FORMAT_RGBA16_SFLOAT,
+			.usage_flags = TEXTURE_USAGE_RENDER_TARGET | TEXTURE_USAGE_SAMPLED,
+			.dimension = TEXTURE_DIMENSION_CUBE,
+			.width = IBL_HDR_CUBEMAP_RESOLUTION,
+			.height = IBL_HDR_CUBEMAP_RESOLUTION,
+			.num_mips = num_cube_mips,
+			.num_layers = 6,
+			.name = "HDR Environment Cubemap",
+		};
+
+		Texture* hdr_env_cubemap = Texture::Create(texture_info);
+		TextureView* cubemap_view = hdr_env_cubemap->GetView();
+		cubemap_view->WriteDescriptorInfo(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
 
 		// Render all 6 faces of the cube map using 6 different camera view matrices
 		VkViewport viewport = {};
@@ -891,7 +870,6 @@ namespace Renderer
 		push_consts.src_sampler_index = src_sampler_index;
 
 		VkCommandBuffer command_buffer = Vulkan::BeginImmediateCommand();
-		std::vector<Vulkan::ImageView> attachment_image_views;
 
 		for (uint32_t mip = 0; mip < num_cube_mips; ++mip)
 		{
@@ -902,9 +880,10 @@ namespace Renderer
 				begin_info.render_width = static_cast<float>(IBL_HDR_CUBEMAP_RESOLUTION) * std::pow(0.5f, mip);
 				begin_info.render_height = static_cast<float>(IBL_HDR_CUBEMAP_RESOLUTION) * std::pow(0.5f, mip);
 
-				Vulkan::ImageView& attachment_view = attachment_image_views.emplace_back();
-				Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, &cubemap_image, attachment_view, mip, 1, face, 1);
-				data->render_passes.gen_cubemap.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, &attachment_view);
+				// TODO: Should we delete these temporary views after we are done generating?
+				TextureView* face_view = hdr_env_cubemap->GetView(TextureViewCreateInfo{ .type = VK_IMAGE_VIEW_TYPE_2D,
+					.base_mip = mip, .num_mips = 1, .base_layer = face, .num_layers = 1 });
+				data->render_passes.gen_cubemap.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, face_view);
 
 				BEGIN_PASS(command_buffer, data->render_passes.gen_cubemap, begin_info);
 				{
@@ -921,36 +900,45 @@ namespace Renderer
 					data->render_passes.gen_cubemap.PushConstants(command_buffer, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &push_consts);
 					data->render_passes.gen_cubemap.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 64, 2 * sizeof(uint32_t), &push_consts.src_texture_index);
 
-					vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)data->descriptor_buffer_binding_infos.size(), data->descriptor_buffer_binding_infos.data());
+					vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)descriptor_buffer_binding_info.size(), descriptor_buffer_binding_info.data());
 					data->render_passes.gen_cubemap.SetDescriptorBufferOffsets(command_buffer, 0, 5, &data->descriptor_buffer_indices[0], &data->descriptor_buffer_offsets[0]);
 
+					VkBuffer vertex_buffers = { data->unit_cube_vb->GetVkBuffer() };
 					VkDeviceSize vb_offset = 0;
-					vkCmdBindVertexBuffers(command_buffer, 0, 1, &data->unit_cube_vertex_buffer.buffer, &vb_offset);
-					vkCmdBindIndexBuffer(command_buffer, data->unit_cube_index_buffer.buffer, 0, VK_INDEX_TYPE_UINT16);
-					vkCmdDrawIndexed(command_buffer, data->unit_cube_index_buffer.size / sizeof(uint16_t), 1, 0, 0, 0);
+					vkCmdBindVertexBuffers(command_buffer, 0, 1, &vertex_buffers, &vb_offset);
+					vkCmdBindIndexBuffer(command_buffer, data->unit_cube_ib->GetVkBuffer(), 0, VK_INDEX_TYPE_UINT16);
+					vkCmdDrawIndexed(command_buffer, data->unit_cube_ib->GetSize() / sizeof(uint16_t), 1, 0, 0, 0);
 				}
 				END_PASS(command_buffer, data->render_passes.gen_cubemap);
 			}
 		}
 
-		Vulkan::CmdTransitionImageLayout(command_buffer,
-			cubemap_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-		);
+		hdr_env_cubemap->TransitionLayout(command_buffer, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 		Vulkan::EndImmediateCommand(command_buffer);
 
-		for (auto& attachment_image_view : attachment_image_views)
-		{
-			Vulkan::DestroyImageView(attachment_image_view);
-		}
+		return hdr_env_cubemap;
 	}
 
-	static void GenerateIrradianceCube(uint32_t src_texture_index, uint32_t src_sampler_index, Vulkan::Image& cubemap_image, Vulkan::ImageView& cubemap_view)
+	static Texture* GenerateIrradianceCube(uint32_t src_texture_index, uint32_t src_sampler_index)
 	{
+		const auto& descriptor_buffer_binding_info = Vulkan::GetDescriptorBufferBindingInfos();
+
 		// Create irradiance cubemap
 		uint32_t num_cube_mips = (uint32_t)std::floor(std::log2(std::max(IBL_IRRADIANCE_CUBEMAP_RESOLUTION, IBL_IRRADIANCE_CUBEMAP_RESOLUTION))) + 1;
-		Vulkan::CreateImageCube(IBL_IRRADIANCE_CUBEMAP_RESOLUTION, IBL_IRRADIANCE_CUBEMAP_RESOLUTION, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_TILING_OPTIMAL,
-			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, cubemap_image, num_cube_mips);
-		Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_CUBE, VK_IMAGE_ASPECT_COLOR_BIT, &cubemap_image, cubemap_view, 0, num_cube_mips, 0, 6);
+		TextureCreateInfo texture_info = {
+			.format = TEXTURE_FORMAT_RGBA16_SFLOAT,
+			.usage_flags = TEXTURE_USAGE_RENDER_TARGET | TEXTURE_USAGE_SAMPLED,
+			.dimension = TEXTURE_DIMENSION_CUBE,
+			.width = IBL_IRRADIANCE_CUBEMAP_RESOLUTION,
+			.height = IBL_IRRADIANCE_CUBEMAP_RESOLUTION,
+			.num_mips = num_cube_mips,
+			.num_layers = 6,
+			.name = "Irradiance Cubemap",
+		};
+
+		Texture* irradiance_cubemap = Texture::Create(texture_info);
+		TextureView* cubemap_view = irradiance_cubemap->GetView();
+		cubemap_view->WriteDescriptorInfo(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
 
 		// Render all 6 faces of the cube map using 6 different camera view matrices
 		VkViewport viewport = {};
@@ -973,7 +961,6 @@ namespace Renderer
 		push_consts.src_sampler_index = src_sampler_index;
 
 		VkCommandBuffer command_buffer = Vulkan::BeginImmediateCommand();
-		std::vector<Vulkan::ImageView> attachment_image_views;
 
 		for (uint32_t mip = 0; mip < num_cube_mips; ++mip)
 		{
@@ -984,9 +971,10 @@ namespace Renderer
 
 			for (uint32_t face = 0; face < 6; ++face)
 			{
-				Vulkan::ImageView& attachment_view = attachment_image_views.emplace_back();
-				Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, &cubemap_image, attachment_view, mip, 1, face, 1);
-				data->render_passes.gen_irradiance_cube.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, &attachment_view);
+				// TODO: Should we delete these temporary views after we are done generating?
+				TextureView* face_view = irradiance_cubemap->GetView(TextureViewCreateInfo{ .type = VK_IMAGE_VIEW_TYPE_2D,
+					.base_mip = mip, .num_mips = 1, .base_layer = face, .num_layers = 1 });
+				data->render_passes.gen_irradiance_cube.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, face_view);
 
 				BEGIN_PASS(command_buffer, data->render_passes.gen_irradiance_cube, begin_info);
 				{
@@ -1003,36 +991,45 @@ namespace Renderer
 					data->render_passes.gen_irradiance_cube.PushConstants(command_buffer, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &push_consts);
 					data->render_passes.gen_irradiance_cube.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 64, 2 * sizeof(uint32_t) + 2 * sizeof(float), &push_consts.src_texture_index);
 
-					vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)data->descriptor_buffer_binding_infos.size(), data->descriptor_buffer_binding_infos.data());
+					vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)descriptor_buffer_binding_info.size(), descriptor_buffer_binding_info.data()); 
 					data->render_passes.gen_irradiance_cube.SetDescriptorBufferOffsets(command_buffer, 0, 5, &data->descriptor_buffer_indices[0], &data->descriptor_buffer_offsets[0]);
 
+					VkBuffer vertex_buffers = { data->unit_cube_vb->GetVkBuffer() };
 					VkDeviceSize vb_offset = 0;
-					vkCmdBindVertexBuffers(command_buffer, 0, 1, &data->unit_cube_vertex_buffer.buffer, &vb_offset);
-					vkCmdBindIndexBuffer(command_buffer, data->unit_cube_index_buffer.buffer, 0, VK_INDEX_TYPE_UINT16);
-					vkCmdDrawIndexed(command_buffer, data->unit_cube_index_buffer.size / sizeof(uint16_t), 1, 0, 0, 0);
+					vkCmdBindVertexBuffers(command_buffer, 0, 1, &vertex_buffers, &vb_offset);
+					vkCmdBindIndexBuffer(command_buffer, data->unit_cube_ib->GetVkBuffer(), 0, VK_INDEX_TYPE_UINT16);
+					vkCmdDrawIndexed(command_buffer, data->unit_cube_ib->GetSize() / sizeof(uint16_t), 1, 0, 0, 0);
 				}
 				END_PASS(command_buffer, data->render_passes.gen_irradiance_cube);
 			}
 		}
 
-		Vulkan::CmdTransitionImageLayout(command_buffer,
-			cubemap_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-		);
+		irradiance_cubemap->TransitionLayout(command_buffer, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 		Vulkan::EndImmediateCommand(command_buffer);
 
-		for (auto& attachment_image_view : attachment_image_views)
-		{
-			Vulkan::DestroyImageView(attachment_image_view);
-		}
+		return irradiance_cubemap;
 	}
 
-	static void GeneratePrefilteredEnvMap(uint32_t src_texture_index, uint32_t src_sampler_index, Vulkan::Image& cubemap_image, Vulkan::ImageView& cubemap_view)
+	static Texture* GeneratePrefilteredEnvMap(uint32_t src_texture_index, uint32_t src_sampler_index)
 	{
+		const auto& descriptor_buffer_binding_info = Vulkan::GetDescriptorBufferBindingInfos();
+
 		// Create prefiltered cubemap
 		uint32_t num_cube_mips = (uint32_t)std::floor(std::log2(std::max(IBL_PREFILTERED_CUBEMAP_RESOLUTION, IBL_PREFILTERED_CUBEMAP_RESOLUTION))) + 1;
-		Vulkan::CreateImageCube(IBL_PREFILTERED_CUBEMAP_RESOLUTION, IBL_PREFILTERED_CUBEMAP_RESOLUTION, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_TILING_OPTIMAL,
-			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, cubemap_image, num_cube_mips);
-		Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_CUBE, VK_IMAGE_ASPECT_COLOR_BIT, &cubemap_image, cubemap_view, 0, num_cube_mips, 0, 6);
+		TextureCreateInfo texture_info = {
+			.format = TEXTURE_FORMAT_RGBA16_SFLOAT,
+			.usage_flags = TEXTURE_USAGE_RENDER_TARGET | TEXTURE_USAGE_SAMPLED,
+			.dimension = TEXTURE_DIMENSION_CUBE,
+			.width = IBL_PREFILTERED_CUBEMAP_RESOLUTION,
+			.height = IBL_PREFILTERED_CUBEMAP_RESOLUTION,
+			.num_mips = num_cube_mips,
+			.num_layers = 6,
+			.name = "Prefiltered Cubemap",
+		};
+
+		Texture* prefiltered_cubemap = Texture::Create(texture_info);
+		TextureView* cubemap_view = prefiltered_cubemap->GetView();
+		cubemap_view->WriteDescriptorInfo(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
 
 		VkViewport viewport = {};
 		viewport.x = 0.0f, viewport.y = 0.0f;
@@ -1054,7 +1051,6 @@ namespace Renderer
 		push_consts.src_sampler_index = src_sampler_index;
 
 		VkCommandBuffer command_buffer = Vulkan::BeginImmediateCommand();
-		std::vector<Vulkan::ImageView> attachment_image_views;
 
 		for (uint32_t mip = 0; mip < num_cube_mips; ++mip)
 		{
@@ -1064,9 +1060,10 @@ namespace Renderer
 
 			for (uint32_t face = 0; face < 6; ++face)
 			{
-				Vulkan::ImageView& attachment_view = attachment_image_views.emplace_back();
-				Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, &cubemap_image, attachment_view, mip, 1, face, 1);
-				data->render_passes.gen_prefiltered_cube.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, &attachment_view);
+				// TODO: Should we delete these temporary views after we are done generating?
+				TextureView* face_view = prefiltered_cubemap->GetView(TextureViewCreateInfo{ .type = VK_IMAGE_VIEW_TYPE_2D,
+					.base_mip = mip, .num_mips = 1, .base_layer = face, .num_layers = 1 });
+				data->render_passes.gen_prefiltered_cube.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, face_view);
 
 				BEGIN_PASS(command_buffer, data->render_passes.gen_prefiltered_cube, begin_info);
 				{
@@ -1084,40 +1081,49 @@ namespace Renderer
 					push_consts.roughness = (float)mip / (float)(num_cube_mips - 1);
 					data->render_passes.gen_prefiltered_cube.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 64, 3 * sizeof(uint32_t) + sizeof(float), &push_consts.src_texture_index);
 
-					vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)data->descriptor_buffer_binding_infos.size(), data->descriptor_buffer_binding_infos.data());
+					vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)descriptor_buffer_binding_info.size(), descriptor_buffer_binding_info.data());
 					data->render_passes.gen_prefiltered_cube.SetDescriptorBufferOffsets(command_buffer, 0, 5, &data->descriptor_buffer_indices[0], &data->descriptor_buffer_offsets[0]);
 
+					VkBuffer vertex_buffers = { data->unit_cube_vb->GetVkBuffer() };
 					VkDeviceSize vb_offset = 0;
-					vkCmdBindVertexBuffers(command_buffer, 0, 1, &data->unit_cube_vertex_buffer.buffer, &vb_offset);
-					vkCmdBindIndexBuffer(command_buffer, data->unit_cube_index_buffer.buffer, 0, VK_INDEX_TYPE_UINT16);
-					vkCmdDrawIndexed(command_buffer, data->unit_cube_index_buffer.size / sizeof(uint16_t), 1, 0, 0, 0);
+					vkCmdBindVertexBuffers(command_buffer, 0, 1, &vertex_buffers, &vb_offset);
+					vkCmdBindIndexBuffer(command_buffer, data->unit_cube_ib->GetVkBuffer(), 0, VK_INDEX_TYPE_UINT16);
+					vkCmdDrawIndexed(command_buffer, data->unit_cube_ib->GetSize() / sizeof(uint16_t), 1, 0, 0, 0);
 				}
 				END_PASS(command_buffer, data->render_passes.gen_prefiltered_cube);
 			}
 		}
 
-		Vulkan::CmdTransitionImageLayout(command_buffer,
-			cubemap_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-		);
+		prefiltered_cubemap->TransitionLayout(command_buffer, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 		Vulkan::EndImmediateCommand(command_buffer);
 
-		for (auto& attachment_image_view : attachment_image_views)
-		{
-			Vulkan::DestroyImageView(attachment_image_view);
-		}
+		return prefiltered_cubemap;
 	}
 
 	static void GenerateBRDF_LUT()
 	{
-		ResourceSlotmap<TextureResource>::ReservedResource reserved_brdf_lut = data->texture_slotmap.Reserve();
+		const auto& descriptor_buffer_binding_info = Vulkan::GetDescriptorBufferBindingInfos();
+
+		// Create the BRDF LUT
+		ResourceSlotmap<Texture>::ReservedResource reserved_brdf_lut = data->texture_slotmap.Reserve();
+		TextureCreateInfo texture_info = {
+			.format = TEXTURE_FORMAT_RG16_SFLOAT,
+			.usage_flags = TEXTURE_USAGE_RENDER_TARGET | TEXTURE_USAGE_SAMPLED,
+			.dimension = TEXTURE_DIMENSION_2D,
+			.width = IBL_BRDF_LUT_RESOLUTION,
+			.height = IBL_BRDF_LUT_RESOLUTION,
+			.num_mips = 1,
+			.num_layers = 1,
+			.name = "BRDF LUT",
+		};
+
+		reserved_brdf_lut.resource = Texture::Create(texture_info);
 		data->ibl.brdf_lut_handle = reserved_brdf_lut.handle;
 		data->ibl.brdf_lut = reserved_brdf_lut.resource;
 
-		// Create the BRDF LUT
-		Vulkan::CreateImage(IBL_BRDF_LUT_RESOLUTION, IBL_BRDF_LUT_RESOLUTION, VK_FORMAT_R16G16_SFLOAT, VK_IMAGE_TILING_OPTIMAL,
-			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, data->ibl.brdf_lut->image);
-		Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, &data->ibl.brdf_lut->image, data->ibl.brdf_lut->view);
-
+		TextureView* brdf_lut_view = data->ibl.brdf_lut->GetView();
+		brdf_lut_view->WriteDescriptorInfo(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
+		
 		VkViewport viewport = {};
 		viewport.x = 0.0f, viewport.y = 0.0f;
 		viewport.minDepth = 0.0f, viewport.maxDepth = 1.0f;
@@ -1135,7 +1141,7 @@ namespace Renderer
 		begin_info.render_width = IBL_BRDF_LUT_RESOLUTION;
 		begin_info.render_height = IBL_BRDF_LUT_RESOLUTION;
 
-		data->render_passes.gen_brdf_lut.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, &data->ibl.brdf_lut->view);
+		data->render_passes.gen_brdf_lut.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, brdf_lut_view);
 
 		BEGIN_PASS(command_buffer, data->render_passes.gen_brdf_lut, begin_info);
 		{
@@ -1150,20 +1156,15 @@ namespace Renderer
 
 			data->render_passes.gen_brdf_lut.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(uint32_t), &push_consts);
 
-			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)data->descriptor_buffer_binding_infos.size(), data->descriptor_buffer_binding_infos.data());
+			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)descriptor_buffer_binding_info.size(), descriptor_buffer_binding_info.data());
 			data->render_passes.gen_brdf_lut.SetDescriptorBufferOffsets(command_buffer, 0, 5, &data->descriptor_buffer_indices[0], &data->descriptor_buffer_offsets[0]);
 
 			vkCmdDraw(command_buffer, 3, 1, 0, 0);
 		}
 		END_PASS(command_buffer, data->render_passes.gen_brdf_lut);
 
-		Vulkan::CmdTransitionImageLayout(command_buffer,
-			data->ibl.brdf_lut->view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-		);
+		reserved_brdf_lut.resource->TransitionLayout(command_buffer, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 		Vulkan::EndImmediateCommand(command_buffer);
-
-		data->ibl.brdf_lut->descriptor = data->descriptor_buffer_sampled_image.Allocate();
-		data->ibl.brdf_lut->descriptor.WriteDescriptor(data->ibl.brdf_lut->view, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
 	}
 
 	void Init(::GLFWwindow* window)
@@ -1172,15 +1173,6 @@ namespace Renderer
 
 		data = new Data();
 		data->window = window;
-
-		data->descriptor_buffer_binding_infos = std::array<VkDescriptorBufferBindingInfoEXT, 5>
-		{
-			data->descriptor_buffer_uniform.GetBindingInfo(),
-			data->descriptor_buffer_storage.GetBindingInfo(),
-			data->descriptor_buffer_storage_image.GetBindingInfo(),
-			data->descriptor_buffer_sampled_image.GetBindingInfo(),
-			data->descriptor_buffer_sampler.GetBindingInfo()
-		};
 
 		CreateRenderPasses();
 		CreateRenderTargets();
@@ -1212,26 +1204,28 @@ namespace Renderer
 
 	void Exit()
 	{
+		// Wait for GPU to be idle before we start the cleanup
 		vkDeviceWaitIdle(vk_inst.device);
 
 		ExitDearImGui();
 
-		// Clean up vulkan stuff
-		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
-		{
-			vkDestroyFence(vk_inst.device, data->in_flight_fences[i], nullptr);
-			vkDestroySemaphore(vk_inst.device, data->render_finished_semaphores[i], nullptr);
-		}
+		// Start cleaning up all of the objects that won't be destroyed by RAII/destructors
+		Sampler::Destroy(data->default_sampler);
 
-		vkDestroySampler(vk_inst.device, data->default_sampler, nullptr);
+		Buffer::Destroy(data->unit_cube_vb);
+		Buffer::Destroy(data->unit_cube_ib);
 
-		for (size_t i = 0; i < VulkanInstance::VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
+		for (uint32_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
-			Vulkan::DestroyBuffer(data->ubos.camera_buffers[i]);
-			Vulkan::DestroyBuffer(data->ubos.light_buffers[i]);
-			Vulkan::DestroyBuffer(data->ubos.material_buffers[i]);
-			Vulkan::DestroyBuffer(data->ubos.settings_buffers[i]);
-			Vulkan::DestroyBuffer(data->instance_buffers[i]);
+			vkDestroyFence(vk_inst.device, data->per_frame[i].sync.in_flight_fence, nullptr);
+			vkDestroySemaphore(vk_inst.device, data->per_frame[i].sync.render_finished_semaphore, nullptr);
+
+			Buffer::Destroy(data->per_frame[i].ubos.settings_ubo);
+			Buffer::Destroy(data->per_frame[i].ubos.camera_ubo);
+			Buffer::Destroy(data->per_frame[i].ubos.light_ubo);
+			Buffer::Destroy(data->per_frame[i].ubos.material_ubo);
+
+			Buffer::Destroy(data->per_frame[i].instance_buffer);
 		}
 
 		// Clean up the renderer data
@@ -1243,11 +1237,13 @@ namespace Renderer
 
 	void BeginFrame(const BeginFrameInfo& frame_info)
 	{
+		const Data::Frame* frame = GetFrameCurrent();
+
 		// Wait for completion of all rendering for the current swapchain image
-		VkCheckResult(vkWaitForFences(vk_inst.device, 1, &data->in_flight_fences[vk_inst.current_frame], VK_TRUE, UINT64_MAX));
+		VkCheckResult(vkWaitForFences(vk_inst.device, 1, &frame->sync.in_flight_fence, VK_TRUE, UINT64_MAX));
 
 		// Reset the fence
-		VkCheckResult(vkResetFences(vk_inst.device, 1, &data->in_flight_fences[vk_inst.current_frame]));
+		VkCheckResult(vkResetFences(vk_inst.device, 1, &frame->sync.in_flight_fence));
 
 		// Get an available image index from the swap chain
 		VkResult result = Vulkan::SwapChainAcquireNextImage();
@@ -1256,7 +1252,6 @@ namespace Renderer
 			if (result == VK_ERROR_OUT_OF_DATE_KHR)
 			{
 				Vulkan::RecreateSwapChain();
-				DestroyRenderTargets();
 				CreateRenderTargets();
 			}
 
@@ -1268,7 +1263,7 @@ namespace Renderer
 		}
 
 		// Reset and record the command buffer
-		VkCommandBuffer graphics_command_buffer = data->command_buffers[vk_inst.current_frame];
+		VkCommandBuffer graphics_command_buffer = frame->command_buffer;
 		vkResetCommandBuffer(graphics_command_buffer, 0);
 
 		ImGui_ImplGlfw_NewFrame();
@@ -1280,23 +1275,31 @@ namespace Renderer
 		camera_data.view = frame_info.view;
 		camera_data.proj = frame_info.proj;
 		camera_data.view_pos = glm::inverse(frame_info.view)[3];
-		memcpy(data->ubos.camera_buffers[vk_inst.current_frame].ptr, &camera_data, sizeof(camera_data));
 
-		memcpy(data->ubos.settings_buffers[vk_inst.current_frame].ptr, &data->settings, sizeof(RenderSettings));
+		// Write camera and settings to their respective UBOs
+		frame->ubos.camera_ubo->Write(sizeof(camera_data), &camera_data);
+		frame->ubos.settings_ubo->Write(sizeof(data->settings), &data->settings);
 
+		// Update the skybox texture handle to the skybox texture handle passed by the frame info
 		data->skybox_texture_handle = frame_info.skybox_texture_handle;
 	}
 
 	void RenderFrame()
 	{
-		// Update number of lights in the light ubo
-		memcpy((PointlightData*)data->ubos.light_buffers[vk_inst.current_frame].ptr + MAX_LIGHT_SOURCES, &data->num_pointlights, sizeof(uint32_t));
+		const Data::Frame* frame = GetFrameCurrent();
+		const auto& descriptor_buffer_binding_info = Vulkan::GetDescriptorBufferBindingInfos();
+		VkCommandBuffer command_buffer = frame->command_buffer;
 
+		// Update number of lights in the light ubo
+		frame->ubos.light_ubo->Write(sizeof(uint32_t), &data->num_pointlights, 0, sizeof(PointlightData) * MAX_LIGHT_SOURCES);
+
+		// TODO: Move to the vulkan backend, we should not care about descriptor buffers in the renderer
 		// Update UBO descriptor buffer offset
 		// We need a UBO per in-flight frame, so we need to update the offset at which we want to bind our UBOs from the descriptor buffer
-		data->descriptor_buffer_offsets[DESCRIPTOR_SET_UBO] = VK_ALIGN_POW2(RESERVED_DESCRIPTOR_UBO_COUNT * vk_inst.current_frame * vk_inst.descriptor_sizes.uniform_buffer, vk_inst.device_props.descriptor_buffer_offset_alignment);
-
-		VkCommandBuffer command_buffer = data->command_buffers[vk_inst.current_frame];
+		data->descriptor_buffer_offsets[DESCRIPTOR_SET_UBO] = VK_ALIGN_POW2(
+			RESERVED_DESCRIPTOR_UBO_COUNT * vk_inst.current_frame * vk_inst.descriptor_sizes.uniform_buffer,
+			vk_inst.device_props.descriptor_buffer_offset_alignment
+		);
 
 		VkCommandBufferBeginInfo command_buffer_begin_info = {};
 		command_buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -1334,23 +1337,25 @@ namespace Renderer
 				uint32_t env_sampler_index;
 			} push_consts;
 
-			TextureResource* skybox_texture = data->texture_slotmap.Find(data->skybox_texture_handle);
-			//TextureResource* skybox_texture = data->texture_slotmap.Find(data->texture_slotmap.Find(data->skybox_texture_handle)->next);
-			//TextureResource* skybox_texture = data->texture_slotmap.Find(data->texture_slotmap.Find(data->texture_slotmap.Find(data->skybox_texture_handle)->next)->next);
-			VK_ASSERT(skybox_texture);
+			Texture* skybox_texture = data->texture_slotmap.Find(data->skybox_texture_handle);
+			if (!skybox_texture)
+			{
+				VK_EXCEPT("Renderer::RenderFrame", "HDR environment map is missing a skybox cubemap");
+			}
 
-			push_consts.env_texture_index = skybox_texture->descriptor.GetIndex();
+			push_consts.env_texture_index = skybox_texture->GetView()->descriptor.GetIndex();
 			push_consts.env_sampler_index = 0;
 
 			data->render_passes.skybox.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push_consts), &push_consts);
 
-			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)data->descriptor_buffer_binding_infos.size(), data->descriptor_buffer_binding_infos.data());
+			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)descriptor_buffer_binding_info.size(), descriptor_buffer_binding_info.data());
 			data->render_passes.skybox.SetDescriptorBufferOffsets(command_buffer, 0, 5, &data->descriptor_buffer_indices[0], &data->descriptor_buffer_offsets[0]);
 			
+			VkBuffer vertex_buffers = { data->unit_cube_vb->GetVkBuffer() };
 			VkDeviceSize vb_offset = 0;
-			vkCmdBindVertexBuffers(command_buffer, 0, 1, &data->unit_cube_vertex_buffer.buffer, &vb_offset);
-			vkCmdBindIndexBuffer(command_buffer, data->unit_cube_index_buffer.buffer, 0, VK_INDEX_TYPE_UINT16);
-			vkCmdDrawIndexed(command_buffer, data->unit_cube_index_buffer.size / sizeof(uint16_t), 1, 0, 0, 0);
+			vkCmdBindVertexBuffers(command_buffer, 0, 1, &vertex_buffers, &vb_offset);
+			vkCmdBindIndexBuffer(command_buffer, data->unit_cube_ib->GetVkBuffer(), 0, VK_INDEX_TYPE_UINT16);
+			vkCmdDrawIndexed(command_buffer, data->unit_cube_ib->GetSize() / sizeof(uint16_t), 1, 0, 0, 0);
 		}
 		END_PASS(command_buffer, data->render_passes.skybox);
 
@@ -1363,6 +1368,22 @@ namespace Renderer
 			vkCmdSetViewport(command_buffer, 0, 1, &viewport);
 			vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
+			Texture* skybox_texture = data->texture_slotmap.Find(data->skybox_texture_handle);
+			if (!skybox_texture)
+			{
+				VK_EXCEPT("Renderer::RenderFrame", "HDR environment map is missing a skybox cubemap");
+			}
+			Texture* irradiance_cubemap = skybox_texture->GetChainned(0);
+			if (!irradiance_cubemap)
+			{
+				VK_EXCEPT("Renderer::RenderFrame", "HDR environment map is missing an irradiance cubemap");
+			}
+			Texture* prefiltered_cubemap = skybox_texture->GetChainned(1);
+			if (!prefiltered_cubemap)
+			{
+				VK_EXCEPT("Renderer::RenderFrame", "HDR environment map is missing a prefiltered cubemap");
+			}
+
 			// Push constants
 			struct PushConsts
 			{
@@ -1373,38 +1394,26 @@ namespace Renderer
 				uint32_t mat_index;
 			} push_consts;
 
-			TextureResource* irradiance_cubemap = data->texture_slotmap.Find(data->texture_slotmap.Find(data->skybox_texture_handle)->next);
-			if (!irradiance_cubemap)
-			{
-				VK_EXCEPT("Renderer::RenderFrame", "HDR environment map is missing an irradiance cubemap");
-			}
-
-			TextureResource* prefiltered_cubemap = data->texture_slotmap.Find(data->texture_slotmap.Find(data->texture_slotmap.Find(data->skybox_texture_handle)->next)->next);
-			if (!prefiltered_cubemap)
-			{
-				VK_EXCEPT("Renderer::RenderFrame", "HDR environment map is missing a prefiltered cubemap");
-			}
-
-			push_consts.irradiance_cubemap_index = irradiance_cubemap->descriptor.GetIndex();
-			push_consts.prefiltered_cubemap_index = prefiltered_cubemap->descriptor.GetIndex();
-			push_consts.num_prefiltered_mips = prefiltered_cubemap->view.num_mips - 1;
-			push_consts.brdf_lut_index = data->ibl.brdf_lut->descriptor.GetIndex();
+			push_consts.irradiance_cubemap_index = irradiance_cubemap->GetView()->descriptor.GetIndex();
+			push_consts.prefiltered_cubemap_index = prefiltered_cubemap->GetView()->descriptor.GetIndex();
+			push_consts.num_prefiltered_mips = prefiltered_cubemap->GetView()->create_info.num_mips - 1;
+			push_consts.brdf_lut_index = data->ibl.brdf_lut->GetView()->descriptor.GetIndex();
 
 			data->render_passes.lighting.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 4 * sizeof(uint32_t), &push_consts);
 
 			// Bind descriptor buffers
-			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)data->descriptor_buffer_binding_infos.size(), data->descriptor_buffer_binding_infos.data());
+			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)descriptor_buffer_binding_info.size(), descriptor_buffer_binding_info.data());
 			data->render_passes.lighting.SetDescriptorBufferOffsets(command_buffer, 0, 5, &data->descriptor_buffer_indices[0], &data->descriptor_buffer_offsets[0]);
 
 			// Instance buffer
-			const Vulkan::Buffer& instance_buffer = data->instance_buffers[vk_inst.current_frame];
+			const Buffer& instance_buffer = *frame->instance_buffer;
 
 			for (uint32_t i = 0; i < data->draw_list.next_free_entry; ++i)
 			{
 				const DrawList::Entry& entry = data->draw_list.entries[i];
 
 				// TODO: Default mesh
-				MeshResource* mesh = nullptr;
+				Mesh* mesh = nullptr;
 				if (VK_RESOURCE_HANDLE_VALID(entry.mesh_handle))
 				{
 					mesh = data->mesh_slotmap.Find(entry.mesh_handle);
@@ -1414,16 +1423,16 @@ namespace Renderer
 				data->render_passes.lighting.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 16, sizeof(uint32_t), &i);
 
 				// Vertex and index buffers
-				VkBuffer vertex_buffers[] = { mesh->vertex_buffer.buffer, instance_buffer.buffer };
+				VkBuffer vertex_buffers[] = { mesh->vertex_buffer->GetVkBuffer(), instance_buffer.GetVkBuffer() };
 				VkDeviceSize offsets[] = { 0, i * sizeof(glm::mat4) };
 				vkCmdBindVertexBuffers(command_buffer, 0, 2, vertex_buffers, offsets);
-				vkCmdBindIndexBuffer(command_buffer, mesh->index_buffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+				vkCmdBindIndexBuffer(command_buffer, mesh->index_buffer->GetVkBuffer(), 0, VK_INDEX_TYPE_UINT32);
 
 				// Draw call
-				vkCmdDrawIndexed(command_buffer, mesh->index_buffer.size / sizeof(uint32_t), 1, 0, 0, 0);
+				vkCmdDrawIndexed(command_buffer, mesh->index_buffer->GetSize() / sizeof(uint32_t), 1, 0, 0, 0);
 
-				data->stats.total_vertex_count += mesh->vertex_buffer.size / sizeof(Vertex);
-				data->stats.total_triangle_count += (mesh->index_buffer.size / sizeof(uint32_t)) / 3;
+				data->stats.total_vertex_count += mesh->index_buffer->GetSize() / sizeof(Vertex);
+				data->stats.total_triangle_count += (mesh->index_buffer->GetSize() / sizeof(uint32_t)) / 3;
 			}
 		}
 		END_PASS(command_buffer, data->render_passes.lighting);
@@ -1433,7 +1442,7 @@ namespace Renderer
 
 		BEGIN_PASS(command_buffer, data->render_passes.post_process, begin_info);
 		{
-			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)data->descriptor_buffer_binding_infos.size(), data->descriptor_buffer_binding_infos.data());
+			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)descriptor_buffer_binding_info.size(), descriptor_buffer_binding_info.data());
 			data->render_passes.post_process.SetDescriptorBufferOffsets(command_buffer, 0, 5, &data->descriptor_buffer_indices[0], &data->descriptor_buffer_offsets[0]);
 
 			uint32_t src_dst_indices[2] = { RESERVED_DESCRIPTOR_STORAGE_IMAGE_HDR, RESERVED_DESCRIPTOR_STORAGE_IMAGE_SDR};
@@ -1532,7 +1541,8 @@ namespace Renderer
 
 	void EndFrame()
 	{
-		VkCommandBuffer command_buffer = data->command_buffers[vk_inst.current_frame];
+		const Data::Frame* frame = GetFrameCurrent();
+		VkCommandBuffer command_buffer = frame->command_buffer;
 
 		// Render ImGui
 		RenderPass::BeginInfo begin_info = {};
@@ -1548,41 +1558,20 @@ namespace Renderer
 		}
 		END_PASS(command_buffer, data->imgui.render_pass);
 
-		// Copy final result to swapchain image
-		VkImageCopy copy_region = {};
-		copy_region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		copy_region.srcSubresource.mipLevel = 0;
-		copy_region.srcSubresource.baseArrayLayer = 0;
-		copy_region.srcSubresource.layerCount = 1;
-		copy_region.srcOffset = { 0, 0, 0 };
+		// Transition SDR render target and swapchain image to TRANSFER_SRC and TRANSFER_DST
+		data->render_targets.sdr->TransitionLayout(command_buffer, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 
-		copy_region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		copy_region.dstSubresource.mipLevel = 0;
-		copy_region.dstSubresource.baseArrayLayer = 0;
-		copy_region.dstSubresource.layerCount = 1;
-		copy_region.dstOffset = { 0, 0, 0 };
-		copy_region.extent = { vk_inst.swapchain.extent.width, vk_inst.swapchain.extent.height, 1 };
+		VkImageMemoryBarrier2 copy_barrier = VulkanResourceTracker::ImageMemoryBarrier(
+			vk_inst.swapchain.images[vk_inst.swapchain.current_image], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+		Vulkan::CmdImageMemoryBarrier(command_buffer, 1, &copy_barrier);
 
-		Vulkan::ImageView swapchain_view;
-		Vulkan::Image swapchain_image;
-		swapchain_view.image = &swapchain_image;
-		swapchain_view.image->image = vk_inst.swapchain.images[vk_inst.swapchain.current_image];
-		swapchain_view.image->format = vk_inst.swapchain.format;
-		swapchain_view.layout = vk_inst.swapchain.layouts[vk_inst.swapchain.current_image];
+		// Copy the contents of the SDR render target into the currently active swapchain back buffer
+		Vulkan::CopyToSwapchain(command_buffer, data->render_targets.sdr->GetVkImage());
 
-		std::vector<VkImageMemoryBarrier2> copy_barriers =
-		{
-			Vulkan::ImageMemoryBarrier(data->render_targets.sdr->view, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL),
-			Vulkan::ImageMemoryBarrier(swapchain_view, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
-		};
-
-		Vulkan::CmdTransitionImageLayouts(command_buffer, copy_barriers);
-		vk_inst.swapchain.layouts[vk_inst.swapchain.current_image] = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-		vkCmdCopyImage(command_buffer, data->render_targets.sdr->image.image, data->render_targets.sdr->view.layout,
-			vk_inst.swapchain.images[vk_inst.swapchain.current_image], vk_inst.swapchain.layouts[vk_inst.swapchain.current_image], 1, &copy_region);
-
-		Vulkan::CmdTransitionImageLayout(command_buffer, swapchain_view, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
-		vk_inst.swapchain.layouts[vk_inst.swapchain.current_image] = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+		// Transition the active swapchain back buffer to PRESENT_SRC
+		VkImageMemoryBarrier2 present_barrier = VulkanResourceTracker::ImageMemoryBarrier(
+			vk_inst.swapchain.images[vk_inst.swapchain.current_image], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+		Vulkan::CmdImageMemoryBarrier(command_buffer, 1, &present_barrier);
 
 		// Submit the command buffer for execution
 		VkCheckResult(vkEndCommandBuffer(command_buffer));
@@ -1598,18 +1587,17 @@ namespace Renderer
 		submit_info.commandBufferCount = 1;
 		submit_info.pCommandBuffers = &command_buffer;
 
-		std::vector<VkSemaphore> signal_semaphores = { data->render_finished_semaphores[vk_inst.current_frame] };
+		std::vector<VkSemaphore> signal_semaphores = { frame->sync.render_finished_semaphore };
 		submit_info.signalSemaphoreCount = (uint32_t)signal_semaphores.size();
 		submit_info.pSignalSemaphores = signal_semaphores.data();
 
-		VkCheckResult(vkQueueSubmit(vk_inst.queues.graphics, 1, &submit_info, data->in_flight_fences[vk_inst.current_frame]));
+		VkCheckResult(vkQueueSubmit(vk_inst.queues.graphics, 1, &submit_info, frame->sync.in_flight_fence));
 
 		// Present
 		VkResult result = Vulkan::SwapChainPresent(signal_semaphores);
 		if ((result == VK_ERROR_OUT_OF_DATE_KHR) || (result == VK_SUBOPTIMAL_KHR))
 		{
 			Vulkan::RecreateSwapChain();
-			DestroyRenderTargets();
 			CreateRenderTargets();
 
 			if (result == VK_ERROR_OUT_OF_DATE_KHR)
@@ -1635,126 +1623,93 @@ namespace Renderer
 		VkDeviceSize image_size = args.pixels.size();
 
 		// Create staging buffer
-		Vulkan::Buffer staging_buffer;
-		Vulkan::CreateStagingBuffer(image_size, staging_buffer);
+		Buffer* staging_buffer = Buffer::CreateStaging(image_size, "Staging Buffer Renderer::CreateTexture");
 
 		// Copy data into the mapped memory of the staging buffer
-		Vulkan::WriteBuffer(staging_buffer.ptr, (void*)args.pixels.data(), image_size);
+		staging_buffer->Write(image_size, (void*)args.pixels.data());
 
 		// Create texture image
-		ResourceSlotmap<TextureResource>::ReservedResource reserved = data->texture_slotmap.Reserve();
+		ResourceSlotmap<Texture>::ReservedResource reserved = data->texture_slotmap.Reserve();
+		uint32_t num_mips = args.generate_mips ? (uint32_t)std::floor(std::log2(std::max(args.width, args.height))) + 1 : 1;
+		
+		TextureCreateInfo texture_info = {
+			.format = args.format,
+			.usage_flags = TEXTURE_USAGE_COPY_DST | TEXTURE_USAGE_SAMPLED,
+			.dimension = TEXTURE_DIMENSION_2D,
+			.width = args.width,
+			.height = args.height,
+			.num_mips = num_mips,
+			.num_layers = 1,
+			.name = args.name,
+		};
+		reserved.resource = Texture::Create(texture_info);
 
-		uint32_t num_mips = 1;
-		if (args.generate_mips)
-		{
-			num_mips = (uint32_t)std::floor(std::log2(std::max(args.width, args.height))) + 1;
-		}
-
-		Vulkan::CreateImage(args.width, args.height, TEXTURE_FORMAT_TO_VK_FORMAT[args.format], VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-			VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, reserved.resource->image, num_mips);
-		Vulkan::CreateImageView(VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, &reserved.resource->image, reserved.resource->view, 0, num_mips, 0, 1);
-
+		TextureView* texture_view = reserved.resource->GetView();
+		texture_view->WriteDescriptorInfo(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
+		
 		// Copy staging buffer data into final texture image memory (device local)
-		Vulkan::TransitionImageLayoutImmediate(reserved.resource->view, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, num_mips);
-		Vulkan::CopyBufferToImage(staging_buffer, reserved.resource->image, args.width, args.height);
+		reserved.resource->TransitionLayoutImmediate(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+		reserved.resource->CopyFromBufferImmediate(*staging_buffer, 0);
+
+		// Clean up staging buffer
+		Buffer::Destroy(staging_buffer);
 		
 		// Generate mips
 		if (num_mips > 1)
 		{
-			Vulkan::GenerateMips(args.width, args.height, num_mips, TEXTURE_FORMAT_TO_VK_FORMAT[args.format], reserved.resource->image);
-			reserved.resource->view.layout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
+			Vulkan::GenerateMips(reserved.resource->GetVkImage(), reserved.resource->GetVkFormat(), args.width, args.height, num_mips);
 		}
 		else
 		{
 			// Generate Mips will already transition the image back to READ_ONLY_OPTIMAL, if we do not generate mips, we have to do it manually
-			Vulkan::TransitionImageLayoutImmediate(reserved.resource->view, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
+			reserved.resource->TransitionLayoutImmediate(VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
 		}
-
-		// Allocate and update image descriptor
-		reserved.resource->descriptor = data->descriptor_buffer_sampled_image.Allocate();
-		reserved.resource->descriptor.WriteDescriptor(reserved.resource->view, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
-
-		// Clean up staging buffer
-		Vulkan::DestroyBuffer(staging_buffer);
 
 		// Generate irradiance cube map for IBL
 		if (args.is_environment_map)
 		{
-			// TODO: Assumed always using the default sampler at index 0 for now
+			// TODO: Use proper samplers and not always the default one
+			// TODO: Change 0 to actual default sampler index
 			// Generate a cubemap from the equirectangular hdr environment map
-			Vulkan::Image cubemap_image;
-			Vulkan::ImageView cubemap_view;
-			GenerateCubeMapFromEquirectangular(reserved.resource->descriptor.GetIndex(), 0, cubemap_image, cubemap_view);
+			Texture* hdr_env_cubemap = GenerateCubeMapFromEquirectangular(reserved.resource->GetView()->descriptor.GetIndex(), 0);
 
 			// Delete the original HDR texture, we don't need it anymore, and swap in the cubemap
-			Vulkan::DestroyImageView(reserved.resource->view);
-			Vulkan::DestroyImage(reserved.resource->image);
+			Texture::Destroy(reserved.resource);
+			reserved.resource = hdr_env_cubemap;
 
-			// Update the cubemap to the reserved resource
-			reserved.resource->image = cubemap_image;
-			reserved.resource->view = cubemap_view;
-			reserved.resource->descriptor.WriteDescriptor(reserved.resource->view, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
+			// Generate the irradiance cubemap from the hdr cubemap, and append it to the base environment map
+			Texture* irradiance_cubemap = GenerateIrradianceCube(reserved.resource->GetView()->descriptor.GetIndex(), 0);
+			reserved.resource->AppendToChain(irradiance_cubemap);
 
-			// Generate the irradiance cubemap from the hdr cubemap
-			// Reserve another resource for the irradiance cubemap
-			ResourceSlotmap<TextureResource>::ReservedResource reserved_irradiance = data->texture_slotmap.Reserve();
-			GenerateIrradianceCube(reserved.resource->descriptor.GetIndex(), 0, reserved_irradiance.resource->image, reserved_irradiance.resource->view);
-
-			// Update descriptor
-			reserved_irradiance.resource->descriptor = data->descriptor_buffer_sampled_image.Allocate();
-			reserved_irradiance.resource->descriptor.WriteDescriptor(reserved_irradiance.resource->view, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
-
-			// Chain the irradiance cubemap to the primary hdr cubemap resource
-			reserved.resource->next = reserved_irradiance.handle;
-
-			// Generate the prefiltered cubemap from the hdr cubemap
-			// Reserve yet another resource for the prefiltered cubemap
-			ResourceSlotmap<TextureResource>::ReservedResource reserved_prefiltered = data->texture_slotmap.Reserve();
-			GeneratePrefilteredEnvMap(reserved.resource->descriptor.GetIndex(), 0, reserved_prefiltered.resource->image, reserved_prefiltered.resource->view);
-
-			// Update descriptor
-			reserved_prefiltered.resource->descriptor = data->descriptor_buffer_sampled_image.Allocate();
-			reserved_prefiltered.resource->descriptor.WriteDescriptor(reserved_prefiltered.resource->view, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
-
-			// Chain the prefiltered cubemap to the irradiance cubemap resource
-			reserved_irradiance.resource->next = reserved_prefiltered.handle;
+			// Generate the prefiltered cubemap from the hdr cubemap, and append it to the base environment map
+			Texture* prefiltered_cubemap = GeneratePrefilteredEnvMap(reserved.resource->GetView()->descriptor.GetIndex(), 0);
+			reserved.resource->AppendToChain(prefiltered_cubemap);
 		}
 
 		// Create ImGui descriptor set
-		reserved.resource->imgui_descriptor_set = ImGui_ImplVulkan_AddTexture(data->default_sampler, reserved.resource->view.view, reserved.resource->view.layout);
+		// TODO: FIX
+		//reserved.resource->imgui_descriptor_set = ImGui_ImplVulkan_AddTexture(data->default_sampler, reserved.resource->view.view, reserved.resource->view.layout);
 
 		return reserved.handle;
 	}
 
 	void DestroyTexture(TextureHandle_t handle)
 	{
-		TextureResource* texture = data->texture_slotmap.Find(handle);
+		VK_ASSERT(VK_RESOURCE_HANDLE_VALID(handle) && "Tried to destroy a texture with an invalid texture handle");
+		Texture* texture = data->texture_slotmap.Find(handle);
+
 		if (!texture)
 		{
-			VK_EXCEPT("Renderer::DestroyTexture", "Tried to destroy a texture that does not exist");
+			VK_EXCEPT("Renderer::DestroyTexture", "Tried to destroy a null texture");
 		}
 
-		// We can currently chain textures together if there are multiple associated, so we need a loop
-		// E.g. used with environment maps, 0 = hdr cube, 1 = irradiance cube, 2 = prefiltered cube
-		while (texture)
-		{
-			data->texture_slotmap.Delete(handle);
-
-			if (VK_RESOURCE_HANDLE_VALID(texture->next))
-			{
-				texture = data->texture_slotmap.Find(texture->next);
-			}
-			else
-			{
-				texture = nullptr;
-			}
-		}
+		data->texture_slotmap.Delete(handle);
 	}
 
 	void ImGuiRenderTexture(TextureHandle_t handle)
 	{
 		VK_ASSERT(VK_RESOURCE_HANDLE_VALID(handle));
-		TextureResource* texture = data->texture_slotmap.Find(handle);
+		Texture* texture = data->texture_slotmap.Find(handle);
 		VK_ASSERT(texture);
 
 		if (texture)
@@ -1763,36 +1718,37 @@ namespace Renderer
 				std::min((float)vk_inst.swapchain.extent.width / 8.0f, ImGui::GetWindowSize().x),
 				std::min((float)vk_inst.swapchain.extent.width / 8.0f, ImGui::GetWindowSize().y)
 			);
-			ImGui::Image(texture->imgui_descriptor_set, size);
+			// TODO: FIX
+			//ImGui::Image(texture->imgui_descriptor_set, size);
 		}
 	}
 
 	MeshHandle_t CreateMesh(const CreateMeshArgs& args)
 	{
-		VkDeviceSize vertex_buffer_size = sizeof(Vertex) * args.vertices.size();
-		VkDeviceSize index_buffer_size = sizeof(uint32_t) * args.indices.size();
+		// Reserve mesh resource
+		ResourceSlotmap<Mesh>::ReservedResource reserved = data->mesh_slotmap.Reserve();
+
+		// Determine vertex and index buffer byte size
+		VkDeviceSize vb_size = sizeof(Vertex) * args.vertices.size();
+		VkDeviceSize ib_size = sizeof(uint32_t) * args.indices.size();
 
 		// Create staging buffer
-		Vulkan::Buffer staging_buffer;
-		Vulkan::CreateStagingBuffer(vertex_buffer_size + index_buffer_size, staging_buffer);
+		Buffer* staging_buffer = Buffer::CreateStaging(vb_size + ib_size, "Staging Buffer CreateMesh");
 
 		// Write data into staging buffer
-		Vulkan::WriteBuffer(staging_buffer.ptr, (void*)args.vertices.data(), vertex_buffer_size);
-		Vulkan::WriteBuffer(staging_buffer.ptr + vertex_buffer_size, (void*)args.indices.data(), index_buffer_size);
-
-		// Reserve mesh resource
-		ResourceSlotmap<MeshResource>::ReservedResource reserved = data->mesh_slotmap.Reserve();
+		staging_buffer->Write(vb_size, (void*)args.vertices.data(), 0, 0);
+		staging_buffer->Write(ib_size, (void*)args.indices.data(), 0, vb_size);
 
 		// Create vertex and index buffers
-		Vulkan::CreateVertexBuffer(vertex_buffer_size, reserved.resource->vertex_buffer);
-		Vulkan::CreateIndexBuffer(index_buffer_size, reserved.resource->index_buffer);
+		reserved.resource->vertex_buffer = Buffer::CreateVertex(vb_size, "Vertex Buffer " + args.name);
+		reserved.resource->index_buffer = Buffer::CreateIndex(ib_size, "Index Buffer " + args.name);
 
 		// Copy staging buffer data into vertex and index buffers
-		Vulkan::CopyBuffer(staging_buffer, reserved.resource->vertex_buffer, vertex_buffer_size);
-		Vulkan::CopyBuffer(staging_buffer, reserved.resource->index_buffer, index_buffer_size, vertex_buffer_size);
+		reserved.resource->vertex_buffer->CopyFromImmediate(*staging_buffer, vb_size, 0, 0);
+		reserved.resource->index_buffer->CopyFromImmediate(*staging_buffer, ib_size, vb_size, 0);
 
 		// Destroy staging buffer
-		Vulkan::DestroyBuffer(staging_buffer);
+		Buffer::Destroy(staging_buffer);
 
 		return reserved.handle;
 	}
@@ -1804,22 +1760,28 @@ namespace Renderer
 
 	void SubmitMesh(MeshHandle_t mesh_handle, const Assets::Material& material, const glm::mat4& transform)
 	{
-		Vulkan::Buffer& instance_buffer = data->instance_buffers[vk_inst.current_frame];
-
 		DrawList::Entry& entry = data->draw_list.GetNextEntry();
 		entry.mesh_handle = mesh_handle;
 		entry.transform = transform;
 
-		memcpy((glm::mat4*)instance_buffer.ptr + entry.index, &entry.transform, sizeof(glm::mat4));
+		// Write mesh transform to the instance buffer for the currently active frame
+		const Data::Frame* frame = GetFrameCurrent();
+		frame->instance_buffer->Write(sizeof(glm::mat4), &entry.transform, 0, sizeof(glm::mat4) * entry.index);
 
-		TextureResource* albedo_texture = data->texture_slotmap.Find(material.albedo_texture_handle);
-		entry.material_data.albedo_texture_index = albedo_texture ? albedo_texture->descriptor.GetIndex() : data->default_white_texture->descriptor.GetIndex();
+		Texture* albedo_texture = data->texture_slotmap.Find(material.albedo_texture_handle);
+		if (!albedo_texture)
+			albedo_texture = data->texture_slotmap.Find(data->default_white_texture_handle);
+		entry.material_data.albedo_texture_index = albedo_texture->GetView()->descriptor.GetIndex();
 
-		TextureResource* normal_texture = data->texture_slotmap.Find(material.normal_texture_handle);
-		entry.material_data.normal_texture_index = normal_texture ? normal_texture->descriptor.GetIndex() : data->default_normal_texture->descriptor.GetIndex();
+		Texture* normal_texture = data->texture_slotmap.Find(material.normal_texture_handle);
+		if (!normal_texture)
+			normal_texture = data->texture_slotmap.Find(data->default_normal_texture_handle);
+		entry.material_data.normal_texture_index = normal_texture->GetView()->descriptor.GetIndex();
 
-		TextureResource* metallic_roughness_texture = data->texture_slotmap.Find(material.metallic_roughness_texture_handle);
-		entry.material_data.metallic_roughness_texture_index = metallic_roughness_texture ? metallic_roughness_texture->descriptor.GetIndex() : data->default_white_texture->descriptor.GetIndex();
+		Texture* metallic_roughness_texture = data->texture_slotmap.Find(material.metallic_roughness_texture_handle);
+		if (!metallic_roughness_texture)
+			metallic_roughness_texture = data->texture_slotmap.Find(data->default_white_texture_handle);
+		entry.material_data.metallic_roughness_texture_index = metallic_roughness_texture->GetView()->descriptor.GetIndex();
 
 		entry.material_data.albedo_factor = material.albedo_factor;
 		entry.material_data.metallic_factor = material.metallic_factor;
@@ -1827,32 +1789,46 @@ namespace Renderer
 
 		entry.material_data.has_clearcoat = material.has_clearcoat ? 1 : 0;
 
-		TextureResource* clearcoat_alpha_texture = data->texture_slotmap.Find(material.clearcoat_alpha_texture_handle);
-		entry.material_data.clearcoat_alpha_texture_index = clearcoat_alpha_texture ? clearcoat_alpha_texture->descriptor.GetIndex() : data->default_white_texture->descriptor.GetIndex();
+		Texture* clearcoat_alpha_texture = data->texture_slotmap.Find(material.clearcoat_alpha_texture_handle);
+		if (!clearcoat_alpha_texture)
+			clearcoat_alpha_texture = data->texture_slotmap.Find(data->default_white_texture_handle);
+		entry.material_data.clearcoat_alpha_texture_index = clearcoat_alpha_texture->GetView()->descriptor.GetIndex();
 
-		TextureResource* clearcoat_normal_texture = data->texture_slotmap.Find(material.clearcoat_normal_texture_handle);
-		entry.material_data.clearcoat_normal_texture_index = clearcoat_normal_texture ? clearcoat_normal_texture->descriptor.GetIndex() : data->default_normal_texture->descriptor.GetIndex();
+		Texture* clearcoat_normal_texture = data->texture_slotmap.Find(material.clearcoat_normal_texture_handle);
+		if (!clearcoat_normal_texture)
+			clearcoat_normal_texture = data->texture_slotmap.Find(data->default_normal_texture_handle);
+		entry.material_data.clearcoat_normal_texture_index = clearcoat_normal_texture->GetView()->descriptor.GetIndex();
 
-		TextureResource* clearcoat_roughness_texture = data->texture_slotmap.Find(material.clearcoat_roughness_texture_handle);
-		entry.material_data.clearcoat_roughness_texture_index = clearcoat_roughness_texture ? clearcoat_roughness_texture->descriptor.GetIndex() : data->default_white_texture->descriptor.GetIndex();
+		Texture* clearcoat_roughness_texture = data->texture_slotmap.Find(material.clearcoat_roughness_texture_handle);
+		if (!clearcoat_roughness_texture)
+			clearcoat_roughness_texture = data->texture_slotmap.Find(data->default_white_texture_handle);
+		entry.material_data.clearcoat_roughness_texture_index = clearcoat_roughness_texture->GetView()->descriptor.GetIndex();
 
 		entry.material_data.clearcoat_alpha_factor = material.clearcoat_alpha_factor;
 		entry.material_data.clearcoat_roughness_factor = material.clearcoat_roughness_factor;
 
 		// Default sampler
+		// TODO: Take actual default sampler
+		// TODO: Materials should be able to specify samplers
 		entry.material_data.sampler_index = 0;
 
-		memcpy((MaterialData*)data->ubos.material_buffers[vk_inst.current_frame].ptr + entry.index, &entry.material_data, sizeof(MaterialData));
+		// Write material data to the material ubo for the currently active frame
+		Buffer* material_ubo = frame->ubos.material_ubo;
+		material_ubo->Write(sizeof(MaterialData), &entry.material_data, 0, sizeof(MaterialData) * entry.index);
 	}
 
 	void SubmitPointlight(const glm::vec3& pos, const glm::vec3& color, float intensity)
 	{
 		VK_ASSERT(data->num_pointlights < MAX_LIGHT_SOURCES && "Exceeded the maximum amount of light sources");
 
-		PointlightData* pointlight_data = (PointlightData*)data->ubos.light_buffers[vk_inst.current_frame].ptr;
-		pointlight_data[data->num_pointlights].position = pos;
-		pointlight_data[data->num_pointlights].intensity = intensity;
-		pointlight_data[data->num_pointlights].color = color;
+		PointlightData pointlight = {
+			.position = pos,
+			.intensity = intensity,
+			.color = color
+		};
+
+		const Data::Frame* frame = GetFrameCurrent();
+		frame->ubos.light_ubo->Write(sizeof(PointlightData), &pointlight, 0, sizeof(PointlightData) * data->num_pointlights);
 
 		data->num_pointlights++;
 	}

@@ -39,6 +39,8 @@ namespace Renderer
 
 		bool generate_mips;
 		bool is_environment_map;
+
+		std::string name;
 	};
 
 	TextureHandle_t CreateTexture(const CreateTextureArgs& args);
@@ -49,6 +51,8 @@ namespace Renderer
 	{
 		std::vector<Vertex> vertices;
 		std::vector<uint32_t> indices;
+
+		std::string name;
 	};
 
 	MeshHandle_t CreateMesh(const CreateMeshArgs& args);

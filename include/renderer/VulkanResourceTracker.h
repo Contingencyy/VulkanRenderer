@@ -8,6 +8,15 @@ namespace VulkanResourceTracker
 	void Exit();
 
 	void TrackBuffer(VkBuffer buffer);
-	void TrackImage(VkImage image, VkImageLayout layout);
+	void RemoveBuffer(VkBuffer buffer);
+	
+	void TrackImage(VkImage image, VkImageLayout layout, uint32_t num_mips = 1, uint32_t num_layers = 1);
+	void TrackSubresource(VkImage image, VkImageLayout layout, uint32_t base_mip = 0, uint32_t num_mips = 1, uint32_t base_layer = 0, uint32_t num_layers = 1);
+	void RemoveImage(VkImage image);
+
+	VkImageMemoryBarrier2 ImageMemoryBarrier(VkImage image, VkImageLayout new_layout,
+		uint32_t base_mip_level = 0, uint32_t num_mips = 1, uint32_t base_array_layer = 0, uint32_t layer_count = 1);
+	void UpdateImageLayout(VkImage image, VkImageLayout new_layout);
+	VkImageLayout GetImageLayout(VkImage image);
 
 };

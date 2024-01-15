@@ -3,6 +3,8 @@
 
 #include <array>
 
+struct TextureView;
+
 enum RenderPassType
 {
 	RENDER_PASS_TYPE_GRAPHICS,
@@ -35,7 +37,7 @@ public:
 
 	struct AttachmentInfo
 	{
-		AttachmentSlot attachment_slot = ATTACHMENT_SLOT_INVALID;
+		AttachmentSlot slot = ATTACHMENT_SLOT_INVALID;
 		VkFormat format;
 		VkAttachmentLoadOp load_op = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		VkAttachmentStoreOp store_op = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -46,7 +48,7 @@ public:
 	struct Attachment
 	{
 		AttachmentInfo info;
-		Vulkan::ImageView* view;
+		TextureView* view;
 	};
 
 	struct BeginInfo
@@ -65,7 +67,7 @@ public:
 	void End(VkCommandBuffer command_buffer);
 
 	void SetAttachmentInfos(const std::vector<AttachmentInfo>& attachment_infos);
-	void SetAttachment(AttachmentSlot slot, Vulkan::ImageView* attachment_view);
+	void SetAttachment(AttachmentSlot slot, TextureView* attachment_view);
 	std::vector<VkFormat> GetColorAttachmentFormats();
 	VkFormat GetDepthStencilAttachmentFormat();
 

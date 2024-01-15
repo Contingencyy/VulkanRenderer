@@ -1,102 +1,38 @@
 #include "renderer/DescriptorAllocation.h"
 #include "renderer/VulkanBackend.h"
+#include "renderer/Buffer.h"
+#include "renderer/Texture.h"
+#include "renderer/Sampler.h"
 
 DescriptorAllocation::DescriptorAllocation(VkDescriptorType type, uint32_t descriptor_offset, uint32_t num_descriptors, uint32_t descriptor_size, uint8_t* base_ptr)
 	: m_descriptor_type(type), m_descriptor_offset(descriptor_offset), m_num_descriptors(num_descriptors), m_descriptor_size(descriptor_size), m_ptr(base_ptr)
 {
 }
 
-void* DescriptorAllocation::GetDescriptor(uint32_t offset)
+void DescriptorAllocation::WriteDescriptor(const VkDescriptorGetInfoEXT& descriptor_info, uint32_t offset)
+{
+	size_t descriptor_size = Vulkan::GetDescriptorTypeSize(m_descriptor_type);
+	vk_inst.pFunc.get_descriptor_ext(vk_inst.device, &descriptor_info, descriptor_size, GetDescriptor(offset));
+}
+
+void* DescriptorAllocation::GetDescriptor(uint32_t offset) const
 {
 	VK_ASSERT(offset < m_num_descriptors && "Tried to retrieve a descriptor from descriptor allocation that is larger than the allocation");
 	return m_ptr + offset * m_descriptor_size;
 }
 
-uint32_t DescriptorAllocation::GetIndex(uint32_t offset)
+uint32_t DescriptorAllocation::GetIndex(uint32_t offset) const
 {
 	VK_ASSERT(!IsNull());
 	return m_descriptor_offset + offset;
 }
 
-void DescriptorAllocation::WriteDescriptor(const Vulkan::Buffer& buffer, VkDeviceSize size, uint32_t offset)
+VkDescriptorType DescriptorAllocation::GetType() const
 {
-	VK_ASSERT(!IsNull());
-
-	VkBufferDeviceAddressInfoEXT buffer_address_info = {};
-	buffer_address_info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
-	buffer_address_info.buffer = buffer.buffer;
-
-	VkDescriptorAddressInfoEXT descriptor_address_info = {};
-	descriptor_address_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT;
-	descriptor_address_info.address = vkGetBufferDeviceAddress(vk_inst.device, &buffer_address_info);
-	descriptor_address_info.format = VK_FORMAT_UNDEFINED;
-	descriptor_address_info.range = size;
-
-	VkDescriptorGetInfoEXT descriptor_info = {};
-	descriptor_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
-
-	if (m_descriptor_type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
-	{
-		descriptor_info.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		descriptor_info.data.pUniformBuffer = &descriptor_address_info;
-
-		vk_inst.pFunc.get_descriptor_ext(vk_inst.device, &descriptor_info,
-			vk_inst.descriptor_sizes.uniform_buffer, GetDescriptor(offset));
-	}
-	else if (m_descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-	{
-		descriptor_info.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-		descriptor_info.data.pStorageBuffer = &descriptor_address_info;
-
-		vk_inst.pFunc.get_descriptor_ext(vk_inst.device, &descriptor_info,
-			vk_inst.descriptor_sizes.storage_buffer, GetDescriptor(offset));
-	}
+	return m_descriptor_type;
 }
 
-void DescriptorAllocation::WriteDescriptor(const Vulkan::ImageView& view, VkImageLayout layout, uint32_t offset)
-{
-	VK_ASSERT(!IsNull());
-
-	VkDescriptorImageInfo image_info = {};
-	image_info.imageView = view.view;
-	image_info.imageLayout = layout;
-	image_info.sampler = VK_NULL_HANDLE;
-
-	VkDescriptorGetInfoEXT descriptor_info = {};
-	descriptor_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
-
-	if (m_descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
-	{
-		descriptor_info.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-		descriptor_info.data.pStorageImage = &image_info;
-
-		vk_inst.pFunc.get_descriptor_ext(vk_inst.device, &descriptor_info,
-			vk_inst.descriptor_sizes.storage_image, GetDescriptor(offset));
-	}
-	else if (m_descriptor_type == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
-	{
-		descriptor_info.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-		descriptor_info.data.pSampledImage = &image_info;
-
-		vk_inst.pFunc.get_descriptor_ext(vk_inst.device, &descriptor_info,
-			vk_inst.descriptor_sizes.sampled_image, GetDescriptor(offset));
-	}
-}
-
-void DescriptorAllocation::WriteDescriptor(const VkSampler sampler, uint32_t offset)
-{
-	VK_ASSERT(!IsNull());
-
-	VkDescriptorGetInfoEXT descriptor_info = {};
-	descriptor_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
-	descriptor_info.type = VK_DESCRIPTOR_TYPE_SAMPLER;
-	descriptor_info.data.pSampler = &sampler;
-
-	vk_inst.pFunc.get_descriptor_ext(vk_inst.device, &descriptor_info,
-		vk_inst.descriptor_sizes.sampler, GetDescriptor(offset));
-}
-
-bool DescriptorAllocation::IsNull()
+bool DescriptorAllocation::IsNull() const
 {
 	return (m_num_descriptors == 0 || m_descriptor_size == 0 || !m_ptr);
 }

@@ -1,11 +1,14 @@
 #include "renderer/DescriptorBuffer.h"
 #include "renderer/DescriptorAllocation.h"
+#include "renderer/VulkanBackend.h"
 
 #include "Shared.glsl.h"
 
-DescriptorBuffer::DescriptorBuffer(VkDescriptorType type, uint32_t descriptor_size, uint32_t num_descriptors)
-	: m_descriptor_type(type), m_descriptor_size(descriptor_size), m_num_descriptors(num_descriptors)
+DescriptorBuffer::DescriptorBuffer(VkDescriptorType type, uint32_t num_descriptors)
+	: m_descriptor_type(type), m_num_descriptors(num_descriptors)
 {
+	m_descriptor_size = Vulkan::GetDescriptorTypeSize(type);
+
 	std::vector<VkDescriptorSetLayoutBinding> bindings;
 	std::vector<VkDescriptorBindingFlags> binding_flags;
 
@@ -54,12 +57,24 @@ DescriptorBuffer::DescriptorBuffer(VkDescriptorType type, uint32_t descriptor_si
 		buffer_size *= VulkanInstance::MAX_FRAMES_IN_FLIGHT;
 	}
 
-	Vulkan::CreateDescriptorBuffer(buffer_size, m_buffer);
-	m_current_ptr = m_buffer.ptr;
+	m_buffer = Vulkan::CreateBuffer(buffer_size,
+		VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
+		VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT |
+		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
+	);
+	m_buffer_memory = Vulkan::AllocateDeviceMemory(m_buffer, buffer_size);
+	m_current_ptr = Vulkan::MapMemory(m_buffer_memory, buffer_size, 0);
+
+#ifdef _DEBUG
+	Vulkan::DebugNameObject((uint64_t)m_buffer, VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_EXT, "Descriptor Buffer");
+	Vulkan::DebugNameObject((uint64_t)m_buffer_memory, VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_MEMORY_EXT, "Descriptor Buffer Memory");
+#endif
 }
 
 DescriptorBuffer::~DescriptorBuffer()
 {
+	Vulkan::UnmapMemory(m_buffer_memory);
+	Vulkan::FreeDeviceMemory(m_buffer_memory);
 	Vulkan::DestroyBuffer(m_buffer);
 	vkDestroyDescriptorSetLayout(vk_inst.device, m_layout, nullptr);
 }
@@ -91,7 +106,7 @@ VkDescriptorBufferBindingInfoEXT DescriptorBuffer::GetBindingInfo() const
 {
 	VkBufferDeviceAddressInfo address_info = {};
 	address_info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
-	address_info.buffer = m_buffer.buffer;
+	address_info.buffer = m_buffer;
 
 	VkDescriptorBufferBindingInfoEXT binding_info = {};
 	binding_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT;

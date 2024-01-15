@@ -192,6 +192,7 @@
     <ClInclude Include="include\renderer\ResourceSlotmap.h" />
     <ClInclude Include="include\renderer\Sampler.h" />
     <ClInclude Include="include\renderer\Texture.h" />
+    <ClInclude Include="include\renderer\VulkanIncludes.h" />
     <ClInclude Include="include\renderer\VulkanResourceTracker.h" />
     <ClInclude Include="include\renderer\VulkanBackend.h" />
     <ClInclude Include="include\Scene.h" />

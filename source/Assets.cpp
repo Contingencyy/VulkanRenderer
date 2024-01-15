@@ -376,14 +376,14 @@ namespace Assets
 			{
 				size_t texture_handle_index = CGLTFGetIndex<cgltf_image>(gltf_data->images,
 					gltf_material.pbr_metallic_roughness.base_color_texture.texture->image);
-				materials[i].albedo_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TextureFormat_RGBA8_SRGB);
+				materials[i].albedo_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TEXTURE_FORMAT_RGBA8_SRGB);
 			}
 
 			if (gltf_material.normal_texture.texture)
 			{
 				size_t texture_handle_index = CGLTFGetIndex<cgltf_image>(gltf_data->images,
 					gltf_material.normal_texture.texture->image);
-				materials[i].normal_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TextureFormat_RGBA8_UNORM);
+				materials[i].normal_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TEXTURE_FORMAT_RGBA8_UNORM);
 			}
 
 			materials[i].metallic_factor = gltf_material.pbr_metallic_roughness.metallic_factor;
@@ -392,7 +392,7 @@ namespace Assets
 			{
 				size_t texture_handle_index = CGLTFGetIndex<cgltf_image>(gltf_data->images,
 					gltf_material.pbr_metallic_roughness.metallic_roughness_texture.texture->image);
-				materials[i].metallic_roughness_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TextureFormat_RGBA8_UNORM);
+				materials[i].metallic_roughness_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TEXTURE_FORMAT_RGBA8_UNORM);
 			}
 
 			if (gltf_material.has_clearcoat)
@@ -404,19 +404,19 @@ namespace Assets
 				if (gltf_material.clearcoat.clearcoat_texture.texture)
 				{
 					size_t texture_handle_index = CGLTFGetIndex<cgltf_image>(gltf_data->images, gltf_material.clearcoat.clearcoat_texture.texture->image);
-					materials[i].clearcoat_alpha_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TextureFormat_RGBA8_UNORM);
+					materials[i].clearcoat_alpha_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TEXTURE_FORMAT_RGBA8_UNORM);
 				}
 
 				if (gltf_material.clearcoat.clearcoat_normal_texture.texture)
 				{
 					size_t texture_handle_index = CGLTFGetIndex<cgltf_image>(gltf_data->images, gltf_material.clearcoat.clearcoat_normal_texture.texture->image);
-					materials[i].clearcoat_normal_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TextureFormat_RGBA8_UNORM);
+					materials[i].clearcoat_normal_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TEXTURE_FORMAT_RGBA8_UNORM);
 				}
 
 				if (gltf_material.clearcoat.clearcoat_roughness_texture.texture)
 				{
 					size_t texture_handle_index = CGLTFGetIndex<cgltf_image>(gltf_data->images, gltf_material.clearcoat.clearcoat_roughness_texture.texture->image);
-					materials[i].clearcoat_roughness_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TextureFormat_RGBA8_UNORM);
+					materials[i].clearcoat_roughness_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TEXTURE_FORMAT_RGBA8_UNORM);
 				}
 			}
 		}

@@ -1,12 +1,8 @@
 #pragma once
-#include "Common.h"
-#include "vulkan/vulkan.h"
+#include "renderer/VulkanIncludes.h"
 
-namespace Vulkan
-{
-	struct Buffer;
-	struct ImageView;
-}
+class Buffer;
+class Sampler;
 
 class DescriptorAllocation
 {
@@ -14,14 +10,13 @@ public:
 	DescriptorAllocation() = default;
 	DescriptorAllocation(VkDescriptorType type, uint32_t descriptor_offset, uint32_t num_descriptors, uint32_t descriptor_size, uint8_t* base_ptr);
 
-	void* GetDescriptor(uint32_t offset = 0);
-	uint32_t GetIndex(uint32_t offset = 0);
+	void WriteDescriptor(const VkDescriptorGetInfoEXT& descriptor_info, uint32_t offset = 0);
 
-	void WriteDescriptor(const Vulkan::Buffer& buffer, VkDeviceSize size, uint32_t offset = 0);
-	void WriteDescriptor(const Vulkan::ImageView& view, VkImageLayout layout, uint32_t offset = 0);
-	void WriteDescriptor(const VkSampler sampler, uint32_t offset = 0);
+	void* GetDescriptor(uint32_t offset = 0) const;
+	uint32_t GetIndex(uint32_t offset = 0) const;
+	VkDescriptorType GetType() const;
 
-	bool IsNull();
+	bool IsNull() const;
 
 private:
 	VkDescriptorType m_descriptor_type = VK_DESCRIPTOR_TYPE_MAX_ENUM;

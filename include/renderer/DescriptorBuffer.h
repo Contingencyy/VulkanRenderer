@@ -1,5 +1,5 @@
 #pragma once
-#include "renderer/VulkanBackend.h"
+#include "renderer/VulkanIncludes.h"
 
 class DescriptorAllocation;
 
@@ -9,7 +9,7 @@ public:
 	static constexpr uint32_t DEFAULT_DESCRIPTOR_BUFFER_SIZE = 1000;
 
 public:
-	DescriptorBuffer(VkDescriptorType type, uint32_t descriptor_size, uint32_t num_descriptors = DEFAULT_DESCRIPTOR_BUFFER_SIZE);
+	DescriptorBuffer(VkDescriptorType type, uint32_t num_descriptors = DEFAULT_DESCRIPTOR_BUFFER_SIZE);
 	~DescriptorBuffer();
 
 	DescriptorAllocation Allocate(uint32_t num_descriptors = 1, uint32_t align = 0);
@@ -20,8 +20,10 @@ public:
 
 private:
 	VkDescriptorType m_descriptor_type;
-	VkDescriptorSetLayout m_layout;
-	Vulkan::Buffer m_buffer;
+	VkDescriptorSetLayout m_layout = VK_NULL_HANDLE;
+
+	VkBuffer m_buffer = VK_NULL_HANDLE;
+	VkDeviceMemory m_buffer_memory = VK_NULL_HANDLE;
 
 	uint32_t m_num_descriptors = 0;
 	uint32_t m_descriptor_size = 0;
