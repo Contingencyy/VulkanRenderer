@@ -774,6 +774,8 @@ namespace Vulkan
 		present_info.pResults = nullptr;
 
 		VkResult present_result = vkQueuePresentKHR(vk_inst.queues.graphics, &present_info);
+		vk_inst.current_frame = (vk_inst.current_frame + 1) % VulkanInstance::MAX_FRAMES_IN_FLIGHT;
+
 		return present_result;
 	}
 

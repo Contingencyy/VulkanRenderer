@@ -1592,14 +1592,14 @@ namespace Renderer
 
 		VkCheckResult(vkQueueSubmit(vk_inst.queues.graphics, 1, &submit_info, frame->sync.in_flight_fence));
 
-		// Reset/Update per-frame data
+		// Reset per-frame statistics, draw list, and other data
 		data->stats.Reset();
 		data->draw_list.Reset();
 		data->num_pointlights = 0;
-		vk_inst.current_frame = (vk_inst.current_frame + 1) % VulkanInstance::MAX_FRAMES_IN_FLIGHT;
 
 		// Present
 		VkResult result = Vulkan::SwapChainPresent(signal_semaphores);
+
 		if ((result == VK_ERROR_OUT_OF_DATE_KHR) || (result == VK_SUBOPTIMAL_KHR))
 		{
 			Vulkan::RecreateSwapChain();
