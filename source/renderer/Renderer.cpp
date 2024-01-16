@@ -1262,9 +1262,8 @@ namespace Renderer
 		}
 
 		// Reset and record the command buffer
-		frame = GetFrameCurrent();
-		VkCommandBuffer graphics_command_buffer = frame->command_buffer;
-		vkResetCommandBuffer(graphics_command_buffer, 0);
+		VkCommandBuffer command_buffer = frame->command_buffer;
+		vkResetCommandBuffer(command_buffer, 0);
 
 		ImGui_ImplGlfw_NewFrame();
 		ImGui_ImplVulkan_NewFrame();
@@ -1290,6 +1289,10 @@ namespace Renderer
 		const auto& descriptor_buffer_binding_info = Vulkan::GetDescriptorBufferBindingInfos();
 		VkCommandBuffer command_buffer = frame->command_buffer;
 
+		VkCommandBufferBeginInfo command_buffer_begin_info = {};
+		command_buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		VkCheckResult(vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info));
+
 		// Update number of lights in the light ubo
 		frame->ubos.light_ubo->Write(sizeof(uint32_t), &data->num_pointlights, 0, sizeof(PointlightData) * MAX_LIGHT_SOURCES);
 
@@ -1300,10 +1303,6 @@ namespace Renderer
 			RESERVED_DESCRIPTOR_UBO_COUNT * vk_inst.current_frame * vk_inst.descriptor_sizes.uniform_buffer,
 			vk_inst.device_props.descriptor_buffer_offset_alignment
 		);
-
-		VkCommandBufferBeginInfo command_buffer_begin_info = {};
-		command_buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-		VkCheckResult(vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info));
 
 		// Render pass begin info
 		RenderPass::BeginInfo begin_info = {};
@@ -1445,7 +1444,7 @@ namespace Renderer
 			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)descriptor_buffer_binding_info.size(), descriptor_buffer_binding_info.data());
 			data->render_passes.post_process.SetDescriptorBufferOffsets(command_buffer, 0, 5, &data->descriptor_buffer_indices[0], &data->descriptor_buffer_offsets[0]);
 
-			uint32_t src_dst_indices[2] = { RESERVED_DESCRIPTOR_STORAGE_IMAGE_HDR, RESERVED_DESCRIPTOR_STORAGE_IMAGE_SDR};
+			uint32_t src_dst_indices[2] = { data->render_targets.hdr->GetView()->descriptor.GetIndex(), data->render_targets.sdr->GetView()->descriptor.GetIndex() };
 			data->render_passes.post_process.PushConstants(command_buffer, VK_SHADER_STAGE_COMPUTE_BIT, 0, 2 * sizeof(uint32_t), &src_dst_indices);
 
 			uint32_t dispatch_x = VK_ALIGN_POW2(begin_info.render_width, 8) / 8;
@@ -1593,6 +1592,12 @@ namespace Renderer
 
 		VkCheckResult(vkQueueSubmit(vk_inst.queues.graphics, 1, &submit_info, frame->sync.in_flight_fence));
 
+		// Reset/Update per-frame data
+		data->stats.Reset();
+		data->draw_list.Reset();
+		data->num_pointlights = 0;
+		vk_inst.current_frame = (vk_inst.current_frame + 1) % VulkanInstance::MAX_FRAMES_IN_FLIGHT;
+
 		// Present
 		VkResult result = Vulkan::SwapChainPresent(signal_semaphores);
 		if ((result == VK_ERROR_OUT_OF_DATE_KHR) || (result == VK_SUBOPTIMAL_KHR))
@@ -1609,12 +1614,6 @@ namespace Renderer
 		{
 			VkCheckResult(result);
 		}
-
-		// Reset/Update per-frame data
-		data->stats.Reset();
-		data->draw_list.Reset();
-		vk_inst.current_frame = (vk_inst.current_frame + 1) % VulkanInstance::MAX_FRAMES_IN_FLIGHT;
-		data->num_pointlights = 0;
 	}
 
 	TextureHandle_t CreateTexture(const CreateTextureArgs& args)
