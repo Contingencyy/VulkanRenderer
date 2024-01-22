@@ -281,16 +281,17 @@ namespace Vulkan
 			// Enable device features
 			VkPhysicalDeviceDescriptorBufferFeaturesEXT descriptor_buffer_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT };
 
+			VkPhysicalDeviceBufferDeviceAddressFeaturesEXT buffer_device_address_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES_EXT };
+			descriptor_buffer_features.pNext = &buffer_device_address_features;
+
 			VkPhysicalDeviceMaintenance4Features maintenance4_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_4_FEATURES };
-			descriptor_buffer_features.pNext = &maintenance4_features;
+			buffer_device_address_features.pNext = &maintenance4_features;
 
 			VkPhysicalDeviceDynamicRenderingFeatures dynamic_rendering_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES };
 			maintenance4_features.pNext = &dynamic_rendering_features;
 
-			VkPhysicalDeviceBufferDeviceAddressFeatures buffer_device_address_features = {};
-			buffer_device_address_features.bufferDeviceAddress = VK_TRUE;
-			buffer_device_address_features.bufferDeviceAddressCaptureReplay = VK_TRUE;
-			dynamic_rendering_features.pNext = &buffer_device_address_features;
+			VkPhysicalDeviceTimelineSemaphoreFeatures timeline_semaphore_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES };
+			dynamic_rendering_features.pNext = &timeline_semaphore_features;
 
 			VkPhysicalDeviceFeatures2 device_features2 = {};
 			device_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
@@ -302,9 +303,11 @@ namespace Vulkan
 				required_extensions.empty() && swapchain_suitable &&
 				device_features2.features.samplerAnisotropy &&
 				descriptor_buffer_features.descriptorBuffer &&
-				maintenance4_features.maintenance4 &&
 				buffer_device_address_features.bufferDeviceAddress &&
-				buffer_device_address_features.bufferDeviceAddressCaptureReplay)
+				buffer_device_address_features.bufferDeviceAddressCaptureReplay &&
+				maintenance4_features.maintenance4 &&
+				dynamic_rendering_features.dynamicRendering &&
+				timeline_semaphore_features.timelineSemaphore)
 			{
 				vk_inst.physical_device = device;
 
@@ -358,8 +361,6 @@ namespace Vulkan
 		descriptor_indexing_features.pNext = &descriptor_buffer_features;
 
 		VkPhysicalDeviceBufferDeviceAddressFeaturesEXT buffer_device_address_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES_EXT };
-		buffer_device_address_features.bufferDeviceAddress = VK_TRUE;
-		buffer_device_address_features.bufferDeviceAddressCaptureReplay = VK_TRUE;
 		descriptor_buffer_features.pNext = &buffer_device_address_features;
 
 		VkPhysicalDeviceSynchronization2Features sync_2_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES };
@@ -370,6 +371,9 @@ namespace Vulkan
 
 		VkPhysicalDeviceDynamicRenderingFeatures dynamic_rendering_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES };
 		maintenance4_features.pNext = &dynamic_rendering_features;
+
+		VkPhysicalDeviceTimelineSemaphoreFeatures timeline_semaphore_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES };
+		dynamic_rendering_features.pNext = &timeline_semaphore_features;
 
 		VkPhysicalDeviceFeatures2 device_features2 = {};
 		device_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
@@ -761,12 +765,12 @@ namespace Vulkan
 		return image_result;
 	}
 
-	VkResult SwapChainPresent(const std::vector<VkSemaphore>& signal_semaphores)
+	VkResult SwapChainPresent(const std::vector<VkSemaphore>& wait_semaphores)
 	{
 		VkPresentInfoKHR present_info = {};
 		present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-		present_info.waitSemaphoreCount = (uint32_t)signal_semaphores.size();
-		present_info.pWaitSemaphores = signal_semaphores.data();
+		present_info.waitSemaphoreCount = (uint32_t)wait_semaphores.size();
+		present_info.pWaitSemaphores = wait_semaphores.data();
 
 		present_info.swapchainCount = 1;
 		present_info.pSwapchains = &vk_inst.swapchain.swapchain;

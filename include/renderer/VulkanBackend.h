@@ -17,7 +17,7 @@ namespace Vulkan
 	void Exit();
 	
 	VkResult SwapChainAcquireNextImage();
-	VkResult SwapChainPresent(const std::vector<VkSemaphore>& signal_semaphores);
+	VkResult SwapChainPresent(const std::vector<VkSemaphore>& wait_semaphores);
 	void RecreateSwapChain();
 	void CopyToSwapchain(VkCommandBuffer command_buffer, VkImage src_image);
 
@@ -104,8 +104,8 @@ struct VulkanInstance
 	{
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
 		VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
+		VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME,
 		VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME,
-		//VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME,
 		//VK_EXT_SHADER_OBJECT_EXTENSION_NAME,
 		//VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME
 	};

@@ -170,14 +170,20 @@ namespace Renderer
 			TextureHandle_t brdf_lut_handle;
 		} ibl;
 
+		struct Sync
+		{
+			uint64_t semaphore_value = 0;
+			VkSemaphore in_flight_semaphore_timeline = VK_NULL_HANDLE;
+		} sync;
+
 		struct Frame
 		{
-			VkCommandBuffer command_buffer;
+			VkCommandBuffer command_buffer = VK_NULL_HANDLE;
 
 			struct Sync
 			{
-				VkSemaphore render_finished_semaphore;
-				VkFence in_flight_fence;
+				VkSemaphore render_finished_semaphore_binary = VK_NULL_HANDLE;
+				uint64_t render_finished_value = 0;
 			} sync;
 
 			struct UBOs
@@ -225,7 +231,7 @@ namespace Renderer
 		} imgui;
 	} static *data;
 
-	static inline const Data::Frame* GetFrameCurrent()
+	static inline Data::Frame* GetFrameCurrent()
 	{
 		return &data->per_frame[vk_inst.current_frame];
 	}
@@ -306,17 +312,26 @@ namespace Renderer
 
 	static void CreateSyncObjects()
 	{
-		VkSemaphoreCreateInfo semaphore_info = {};
-		semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+		// Create timeline semaphore that keeps track of back buffers in-flight
+		VkSemaphoreTypeCreateInfo timeline_create_info = { VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO };
+		timeline_create_info.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+		timeline_create_info.initialValue = 0;
 
-		VkFenceCreateInfo fence_info = {};
-		fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-		fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+		VkSemaphoreCreateInfo semaphore_info = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+		semaphore_info.flags = 0;
+		semaphore_info.pNext = &timeline_create_info;
+
+		VkCheckResult(vkCreateSemaphore(vk_inst.device, &semaphore_info, nullptr, &data->sync.in_flight_semaphore_timeline));
+
+		// Create binary semaphore for each frame in-flight for the swapchain to wait on
+		VkSemaphoreTypeCreateInfo binary_create_info = { VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO };
+		binary_create_info.semaphoreType = VK_SEMAPHORE_TYPE_BINARY;
+
+		semaphore_info.pNext = &binary_create_info;
 
 		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
-			VkCheckResult(vkCreateSemaphore(vk_inst.device, &semaphore_info, nullptr, &data->per_frame[i].sync.render_finished_semaphore));
-			VkCheckResult(vkCreateFence(vk_inst.device, &fence_info, nullptr, &data->per_frame[i].sync.in_flight_fence));
+			VkCheckResult(vkCreateSemaphore(vk_inst.device, &semaphore_info, nullptr, &data->per_frame[i].sync.render_finished_semaphore_binary));
 		}
 	}
 	
@@ -1190,10 +1205,10 @@ namespace Renderer
 		ExitDearImGui();
 
 		// Start cleaning up all of the objects that won't be destroyed automatically
+		vkDestroySemaphore(vk_inst.device, data->sync.in_flight_semaphore_timeline, nullptr);
 		for (uint32_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
-			vkDestroyFence(vk_inst.device, data->per_frame[i].sync.in_flight_fence, nullptr);
-			vkDestroySemaphore(vk_inst.device, data->per_frame[i].sync.render_finished_semaphore, nullptr);
+			vkDestroySemaphore(vk_inst.device, data->per_frame[i].sync.render_finished_semaphore_binary, nullptr);
 		}
 
 		// Clean up the renderer data
@@ -1207,13 +1222,16 @@ namespace Renderer
 	{
 		const Data::Frame* frame = GetFrameCurrent();
 
-		// Wait for completion of all rendering for the current swapchain image
-		VkCheckResult(vkWaitForFences(vk_inst.device, 1, &frame->sync.in_flight_fence, VK_TRUE, UINT64_MAX));
+		// Wait for timeline semaphore to reach 
+		VkSemaphoreWaitInfo wait_info = { VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO };
+		wait_info.semaphoreCount = 1;
+		wait_info.pSemaphores = &data->sync.in_flight_semaphore_timeline;
+		wait_info.pValues = &frame->sync.render_finished_value;
+		wait_info.flags = 0;
 
-		// Reset the fence
-		VkCheckResult(vkResetFences(vk_inst.device, 1, &frame->sync.in_flight_fence));
+		vkWaitSemaphores(vk_inst.device, &wait_info, UINT64_MAX);
 
-		// Get an available image index from the swap chain
+		// Get the next available image from the swapchain
 		VkResult result = Vulkan::SwapChainAcquireNextImage();
 		if ((result == VK_ERROR_OUT_OF_DATE_KHR) || (result == VK_SUBOPTIMAL_KHR))
 		{
@@ -1501,7 +1519,7 @@ namespace Renderer
 
 	void EndFrame()
 	{
-		const Data::Frame* frame = GetFrameCurrent();
+		Data::Frame* frame = GetFrameCurrent();
 		VkCommandBuffer command_buffer = frame->command_buffer;
 
 		// Render ImGui
@@ -1536,22 +1554,30 @@ namespace Renderer
 		// Submit the command buffer for execution
 		VkCheckResult(vkEndCommandBuffer(command_buffer));
 
-		VkSubmitInfo submit_info = {};
-		submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-
-		VkSemaphore wait_semaphores[] = { vk_inst.swapchain.image_available_semaphores[vk_inst.current_frame] };
+		std::vector<VkSemaphore> wait_semaphores = { vk_inst.swapchain.image_available_semaphores[vk_inst.current_frame] };
 		VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT };
-		submit_info.waitSemaphoreCount = 1;
-		submit_info.pWaitSemaphores = wait_semaphores;
-		submit_info.pWaitDstStageMask = wait_stages;
+
+		// Update the render finished timline semaphore value for the current frame
+		frame->sync.render_finished_value = ++data->sync.semaphore_value;
+		const uint64_t signal_semaphore_values[] = {frame->sync.render_finished_value, 0};
+		VkTimelineSemaphoreSubmitInfo timeline_semaphore_submit_info = { VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO };
+		timeline_semaphore_submit_info.waitSemaphoreValueCount = 0;
+		timeline_semaphore_submit_info.pWaitSemaphoreValues = nullptr;
+		timeline_semaphore_submit_info.signalSemaphoreValueCount = 2;
+		timeline_semaphore_submit_info.pSignalSemaphoreValues = signal_semaphore_values;
+		std::vector<VkSemaphore> signal_semaphores = { data->sync.in_flight_semaphore_timeline, frame->sync.render_finished_semaphore_binary };
+
+		VkSubmitInfo submit_info = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
 		submit_info.commandBufferCount = 1;
 		submit_info.pCommandBuffers = &command_buffer;
-
-		std::vector<VkSemaphore> signal_semaphores = { frame->sync.render_finished_semaphore };
-		submit_info.signalSemaphoreCount = (uint32_t)signal_semaphores.size();
+		submit_info.waitSemaphoreCount = static_cast<uint32_t>(wait_semaphores.size());
+		submit_info.pWaitSemaphores = wait_semaphores.data();
+		submit_info.pWaitDstStageMask = wait_stages;
+		submit_info.signalSemaphoreCount = static_cast<uint32_t>(signal_semaphores.size());
 		submit_info.pSignalSemaphores = signal_semaphores.data();
+		submit_info.pNext = &timeline_semaphore_submit_info;
 
-		VkCheckResult(vkQueueSubmit(vk_inst.queues.graphics, 1, &submit_info, frame->sync.in_flight_fence));
+		VkCheckResult(vkQueueSubmit(vk_inst.queues.graphics, 1, &submit_info, nullptr));
 
 		// Reset per-frame statistics, draw list, and other data
 		data->stats.Reset();
@@ -1559,7 +1585,8 @@ namespace Renderer
 		data->num_pointlights = 0;
 
 		// Present
-		VkResult result = Vulkan::SwapChainPresent(signal_semaphores);
+		std::vector<VkSemaphore> present_wait_semaphore = { frame->sync.render_finished_semaphore_binary };
+		VkResult result = Vulkan::SwapChainPresent(present_wait_semaphore);
 
 		if ((result == VK_ERROR_OUT_OF_DATE_KHR) || (result == VK_SUBOPTIMAL_KHR))
 		{
