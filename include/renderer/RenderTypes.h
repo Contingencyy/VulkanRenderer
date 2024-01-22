@@ -53,7 +53,7 @@ enum TextureUsageFlags
 	TEXTURE_USAGE_COPY_DST = (1 << 7)
 };
 
-static bool IsHDRFormat(TextureFormat format)
+inline bool IsHDRFormat(TextureFormat format)
 {
 	switch (format)
 	{

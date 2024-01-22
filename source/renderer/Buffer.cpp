@@ -1,6 +1,11 @@
 #include "renderer/Buffer.h"
 
-Buffer* Buffer::CreateStaging(size_t size_in_bytes, const std::string& name)
+std::unique_ptr<Buffer> Buffer::Create(const BufferCreateInfo& create_info)
+{
+	return std::make_unique<Buffer>(create_info);
+}
+
+std::unique_ptr<Buffer> Buffer::CreateStaging(size_t size_in_bytes, const std::string& name)
 {
 	BufferCreateInfo buffer_info = {};
 	buffer_info.usage_flags = BUFFER_USAGE_STAGING | BUFFER_USAGE_COPY_SRC;
@@ -8,10 +13,10 @@ Buffer* Buffer::CreateStaging(size_t size_in_bytes, const std::string& name)
 	buffer_info.size_in_bytes = size_in_bytes;
 	buffer_info.name = name;
 
-	return new Buffer(buffer_info);
+	return std::make_unique<Buffer>(buffer_info);
 }
 
-Buffer* Buffer::CreateUniform(size_t size_in_bytes, const std::string& name)
+std::unique_ptr<Buffer> Buffer::CreateUniform(size_t size_in_bytes, const std::string& name)
 {
 	BufferCreateInfo buffer_info = {};
 	buffer_info.usage_flags = BUFFER_USAGE_UNIFORM;
@@ -19,10 +24,10 @@ Buffer* Buffer::CreateUniform(size_t size_in_bytes, const std::string& name)
 	buffer_info.size_in_bytes = size_in_bytes;
 	buffer_info.name = name;
 
-	return new Buffer(buffer_info);
+	return std::make_unique<Buffer>(buffer_info);
 }
 
-Buffer* Buffer::CreateVertex(size_t size_in_bytes, const std::string& name)
+std::unique_ptr<Buffer> Buffer::CreateVertex(size_t size_in_bytes, const std::string& name)
 {
 	BufferCreateInfo buffer_info = {};
 	buffer_info.usage_flags = BUFFER_USAGE_VERTEX | BUFFER_USAGE_COPY_DST;
@@ -30,10 +35,10 @@ Buffer* Buffer::CreateVertex(size_t size_in_bytes, const std::string& name)
 	buffer_info.size_in_bytes = size_in_bytes;
 	buffer_info.name = name;
 
-	return new Buffer(buffer_info);
+	return std::make_unique<Buffer>(buffer_info);
 }
 
-Buffer* Buffer::CreateIndex(size_t size_in_bytes, const std::string& name)
+std::unique_ptr<Buffer> Buffer::CreateIndex(size_t size_in_bytes, const std::string& name)
 {
 	BufferCreateInfo buffer_info = {};
 	buffer_info.usage_flags = BUFFER_USAGE_INDEX | BUFFER_USAGE_COPY_DST;
@@ -41,7 +46,18 @@ Buffer* Buffer::CreateIndex(size_t size_in_bytes, const std::string& name)
 	buffer_info.size_in_bytes = size_in_bytes;
 	buffer_info.name = name;
 
-	return new Buffer(buffer_info);
+	return std::make_unique<Buffer>(buffer_info);
+}
+
+std::unique_ptr<Buffer> Buffer::CreateInstance(size_t size_in_bytes, const std::string& name)
+{
+	BufferCreateInfo buffer_info = {};
+	buffer_info.usage_flags = BUFFER_USAGE_VERTEX;
+	buffer_info.memory_flags = GPU_MEMORY_HOST_VISIBLE | GPU_MEMORY_HOST_COHERENT;
+	buffer_info.size_in_bytes = size_in_bytes;
+	buffer_info.name = name;
+
+	return std::make_unique<Buffer>(buffer_info);
 }
 
 static VkBufferUsageFlags ToVkBufferUsageFlags(Flags usage_flags)

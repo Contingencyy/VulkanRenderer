@@ -59,7 +59,12 @@ struct TextureView
 class Texture
 {
 public:
-	Texture() = default;
+	// Factory patterns will return a unique_ptr, which can be converted into a shared_ptr if necessary
+	// Factories should never own the memory themselves, and we can't make assumptions of the memory ownership
+	// of the callee, so we will return a unique_ptr
+	static std::unique_ptr<Texture> Create(const TextureCreateInfo& create_info);
+
+public:
 	Texture(const TextureCreateInfo& create_info);
 	~Texture();
 
@@ -72,8 +77,8 @@ public:
 	void TransitionLayoutImmediate(VkImageLayout new_layout,
 		uint32_t base_mip = 0, uint32_t num_mips = UINT32_MAX, uint32_t base_layer = 0, uint32_t num_layers = UINT32_MAX) const;
 
-	void AppendToChain(Texture* texture);
-	Texture* GetChainned(uint32_t index = 0);
+	void AppendToChain(std::unique_ptr<Texture>&& texture);
+	Texture& GetChainned(uint32_t index = 0);
 
 	TextureView* GetView(const TextureViewCreateInfo& view_info = {});
 	VkImage GetVkImage() const { return m_vk_image; }
@@ -86,6 +91,6 @@ private:
 	TextureCreateInfo m_create_info;
 
 	std::unordered_map<TextureViewCreateInfo, TextureView> m_views;
-	std::vector<Texture*> m_chainned_textures;
+	std::vector<std::unique_ptr<Texture>> m_chainned_textures;
 
 };

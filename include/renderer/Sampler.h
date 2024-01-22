@@ -5,10 +5,12 @@
 class Sampler
 {
 public:
-	static Sampler* Create(const SamplerCreateInfo& create_info);
-	static void Destroy(const Sampler* sampler);
+	// Factory patterns will return a unique_ptr, which can be converted into a shared_ptr if necessary
+	// Factories should never own the memory themselves, and we can't make assumptions of the memory ownership
+	// of the callee, so we will return a unique_ptr
+	static std::unique_ptr<Sampler> Create(const SamplerCreateInfo& create_info);
 
-private:
+public:
 	Sampler(const SamplerCreateInfo& create_info);
 	~Sampler();
 

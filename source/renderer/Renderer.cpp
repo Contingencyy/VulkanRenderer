@@ -112,16 +112,24 @@ namespace Renderer
 		}
 	};
 
-	struct Mesh
+	struct TextureResource
 	{
-		Buffer* vertex_buffer;
-		Buffer* index_buffer;
+		std::unique_ptr<Texture> texture = nullptr;
+		std::shared_ptr<Sampler> sampler = nullptr;
 
-		~Mesh()
-		{
-			delete vertex_buffer;
-			delete index_buffer;
-		}
+		TextureResource() = default;
+		TextureResource(std::unique_ptr<Texture>&& texture, std::shared_ptr<Sampler> sampler)
+			: texture(std::move(texture)), sampler(sampler) {}
+	};
+
+	struct MeshResource
+	{
+		std::unique_ptr<Buffer> vertex_buffer = nullptr;
+		std::unique_ptr<Buffer> index_buffer = nullptr;
+
+		MeshResource() = default;
+		MeshResource(std::unique_ptr<Buffer>&& vertex_buffer, std::unique_ptr<Buffer>&& index_buffer)
+			: vertex_buffer(std::move(vertex_buffer)), index_buffer(std::move(index_buffer)) {}
 	};
 
 	struct Data
@@ -129,8 +137,8 @@ namespace Renderer
 		::GLFWwindow* window = nullptr;
 
 		// Resource slotmaps
-		ResourceSlotmap<Texture> texture_slotmap;
-		ResourceSlotmap<Mesh> mesh_slotmap;
+		ResourceSlotmap<TextureResource> texture_slotmap;
+		ResourceSlotmap<MeshResource> mesh_slotmap;
 
 		uint32_t descriptor_buffer_indices[5] = { 0, 1, 2, 3, 4 };
 		VkDeviceSize descriptor_buffer_offsets[5] = { 0, 0, 0, 0, 0 };
@@ -152,18 +160,14 @@ namespace Renderer
 
 		struct RenderTargets
 		{
-			TextureHandle_t hdr_handle;
-			Texture* hdr = nullptr;
-			TextureHandle_t depth_handle;
-			Texture* depth = nullptr;
-			TextureHandle_t sdr_handle;
-			Texture* sdr = nullptr;
+			std::unique_ptr<Texture> hdr;
+			std::unique_ptr<Texture> depth;
+			std::unique_ptr<Texture> sdr;
 		} render_targets;
 
 		struct IBL
 		{
 			TextureHandle_t brdf_lut_handle;
-			Texture* brdf_lut = nullptr;
 		} ibl;
 
 		struct Frame
@@ -178,13 +182,13 @@ namespace Renderer
 
 			struct UBOs
 			{
-				Buffer* camera_ubo;
-				Buffer* light_ubo;
-				Buffer* material_ubo;
-				Buffer* settings_ubo;
+				std::unique_ptr<Buffer> camera_ubo;
+				std::unique_ptr<Buffer> light_ubo;
+				std::unique_ptr<Buffer> material_ubo;
+				std::unique_ptr<Buffer> settings_ubo;
 			} ubos;
 
-			Buffer* instance_buffer;
+			std::unique_ptr<Buffer> instance_buffer;
 		} per_frame[VulkanInstance::MAX_FRAMES_IN_FLIGHT];
 
 		// Draw submission list
@@ -195,9 +199,9 @@ namespace Renderer
 		TextureHandle_t default_white_texture_handle;
 		TextureHandle_t default_normal_texture_handle;
 
-		Sampler* default_sampler;
-		Buffer* unit_cube_vb;
-		Buffer* unit_cube_ib;
+		std::shared_ptr<Sampler> default_sampler;
+		std::unique_ptr<Buffer> unit_cube_vb;
+		std::unique_ptr<Buffer> unit_cube_ib;
 
 		TextureHandle_t skybox_texture_handle;
 		RenderSettings settings;
@@ -315,7 +319,7 @@ namespace Renderer
 			VkCheckResult(vkCreateFence(vk_inst.device, &fence_info, nullptr, &data->per_frame[i].sync.in_flight_fence));
 		}
 	}
-
+	
 	static void CreateDefaultSamplers()
 	{
 		SamplerCreateInfo sampler_info = {};
@@ -366,7 +370,7 @@ namespace Renderer
 		VkDeviceSize ib_size = UNIT_CUBE_INDICES.size() * sizeof(uint16_t);
 
 		// Create the staging buffer
-		Buffer* staging_buffer = Buffer::CreateStaging(vb_size + ib_size, "Unit Cube VB IB staging");
+		std::unique_ptr<Buffer> staging_buffer = Buffer::CreateStaging(vb_size + ib_size, "Unit Cube VB IB staging");
 
 		// Write data to the staging buffer
 		staging_buffer->Write(vb_size, (void*)&UNIT_CUBE_VERTICES[0], 0, 0);
@@ -379,9 +383,6 @@ namespace Renderer
 		// Copy staged vertex and index data to the device local buffers
 		data->unit_cube_vb->CopyFromImmediate(*staging_buffer, vb_size, 0, 0);
 		data->unit_cube_ib->CopyFromImmediate(*staging_buffer, ib_size, vb_size, 0);
-
-		// Get rid of the staging buffer
-		delete staging_buffer;
 	}
 
 	static void CreateUniformBuffers()
@@ -393,9 +394,9 @@ namespace Renderer
 
 		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
-			data->per_frame[i].ubos.settings_ubo = Buffer::CreateUniform(settings_buffer_size, "Settings UBO");
 			// NOTE: We need to do this for UBO descriptors for now... because a descriptor buffer offsets need to be aligned to a specific boundary
 			// And since you need one UBO descriptor for each frame (or you could also update it each frame), this is what we need to do.
+			data->per_frame[i].ubos.settings_ubo = Buffer::CreateUniform(settings_buffer_size, "Settings UBO");
 			data->per_frame[i].ubos.settings_ubo->WriteDescriptorInfo(vk_inst.device_props.descriptor_buffer_offset_alignment);
 
 			data->per_frame[i].ubos.camera_ubo = Buffer::CreateUniform(camera_buffer_size, "Camera UBO");
@@ -415,13 +416,7 @@ namespace Renderer
 
 		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
-			BufferCreateInfo create_info = {};
-			create_info.usage_flags = BUFFER_USAGE_VERTEX;
-			create_info.memory_flags = GPU_MEMORY_HOST_VISIBLE | GPU_MEMORY_HOST_COHERENT;
-			create_info.size_in_bytes = instance_buffer_size;
-			create_info.name = "Instance buffer";
-
-			data->per_frame[i].instance_buffer = new Buffer(create_info);
+			data->per_frame[i].instance_buffer = Buffer::CreateInstance(instance_buffer_size, "Instance Buffer");
 		}
 	}
 
@@ -429,12 +424,10 @@ namespace Renderer
 	{
 		// Create HDR render target
 		{
-			// Remove old HDR render target, if it exists
-			if (VK_RESOURCE_HANDLE_VALID(data->render_targets.hdr_handle))
-			{
-				data->texture_slotmap.Delete(data->render_targets.hdr_handle);
-			}
+			// Remove old HDR render target
+			data->render_targets.hdr.reset();
 
+			// Create HDR render target
 			TextureCreateInfo texture_info = {
 				.format = TEXTURE_FORMAT_RGBA16_SFLOAT,
 				.usage_flags = TEXTURE_USAGE_READ_ONLY | TEXTURE_USAGE_RENDER_TARGET,
@@ -445,9 +438,7 @@ namespace Renderer
 				.num_layers = 1,
 				.name = "HDR Render Target"
 			};
-
-			data->render_targets.hdr_handle = data->texture_slotmap.Emplace(texture_info);
-			data->render_targets.hdr = data->texture_slotmap.Find(data->render_targets.hdr_handle);
+			data->render_targets.hdr = Texture::Create(texture_info);
 
 			TextureView* hdr_view = data->render_targets.hdr->GetView();
 			hdr_view->WriteDescriptorInfo(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -459,12 +450,10 @@ namespace Renderer
 
 		// Create depth render target
 		{
-			// Remove old depth render target, if it exists
-			if (VK_RESOURCE_HANDLE_VALID(data->render_targets.depth_handle))
-			{
-				data->texture_slotmap.Delete(data->render_targets.depth_handle);
-			}
+			// Remove old depth render target
+			data->render_targets.depth.reset();
 
+			// Create SDR render target
 			TextureCreateInfo texture_info = {
 				.format = TEXTURE_FORMAT_D32_SFLOAT,
 				.usage_flags = TEXTURE_USAGE_DEPTH_TARGET,
@@ -475,9 +464,7 @@ namespace Renderer
 				.num_layers = 1,
 				.name = "Depth Render Target"
 			};
-
-			data->render_targets.depth_handle = data->texture_slotmap.Emplace(texture_info);
-			data->render_targets.depth = data->texture_slotmap.Find(data->render_targets.depth_handle);
+			data->render_targets.depth = Texture::Create(texture_info);
 
 			TextureView* depth_view = data->render_targets.depth->GetView();
 			data->render_passes.skybox.SetAttachment(RenderPass::ATTACHMENT_SLOT_DEPTH_STENCIL, depth_view);
@@ -486,11 +473,8 @@ namespace Renderer
 
 		// Create SDR render target
 		{
-			// Remove old sdr render target, if it exists
-			if (VK_RESOURCE_HANDLE_VALID(data->render_targets.sdr_handle))
-			{
-				data->texture_slotmap.Delete(data->render_targets.sdr_handle);
-			}
+			// Remove old sdr render target
+			data->render_targets.sdr.reset();
 
 			TextureCreateInfo texture_info = {
 				.format = TEXTURE_FORMAT_RGBA8_UNORM,
@@ -502,9 +486,7 @@ namespace Renderer
 				.num_layers = 1,
 				.name = "SDR Render Target"
 			};
-
-			data->render_targets.sdr_handle = data->texture_slotmap.Emplace(texture_info);
-			data->render_targets.sdr = data->texture_slotmap.Find(data->render_targets.sdr_handle);
+			data->render_targets.sdr = Texture::Create(texture_info);
 
 			TextureView* sdr_view = data->render_targets.sdr->GetView();
 			sdr_view->WriteDescriptorInfo(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL);
@@ -832,7 +814,7 @@ namespace Renderer
 		vkDestroyDescriptorPool(vk_inst.device, data->imgui.descriptor_pool, nullptr);
 	}
 
-	static Texture* GenerateCubeMapFromEquirectangular(uint32_t src_texture_index, uint32_t src_sampler_index)
+	static std::unique_ptr<Texture> GenerateCubeMapFromEquirectangular(uint32_t src_texture_index, uint32_t src_sampler_index)
 	{
 		const auto& descriptor_buffer_binding_info = Vulkan::GetDescriptorBufferBindingInfos();
 
@@ -849,7 +831,7 @@ namespace Renderer
 			.name = "HDR Environment Cubemap",
 		};
 
-		Texture* hdr_env_cubemap = new Texture(texture_info);
+		std::unique_ptr<Texture> hdr_env_cubemap = Texture::Create(texture_info);
 		TextureView* cubemap_view = hdr_env_cubemap->GetView();
 		cubemap_view->WriteDescriptorInfo(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
@@ -920,7 +902,7 @@ namespace Renderer
 		return hdr_env_cubemap;
 	}
 
-	static Texture* GenerateIrradianceCube(uint32_t src_texture_index, uint32_t src_sampler_index)
+	static std::unique_ptr<Texture> GenerateIrradianceCube(uint32_t src_texture_index, uint32_t src_sampler_index)
 	{
 		const auto& descriptor_buffer_binding_info = Vulkan::GetDescriptorBufferBindingInfos();
 
@@ -937,7 +919,7 @@ namespace Renderer
 			.name = "Irradiance Cubemap",
 		};
 
-		Texture* irradiance_cubemap = new Texture(texture_info);
+		std::unique_ptr<Texture> irradiance_cubemap = Texture::Create(texture_info);
 		TextureView* cubemap_view = irradiance_cubemap->GetView();
 		cubemap_view->WriteDescriptorInfo(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
@@ -1011,7 +993,7 @@ namespace Renderer
 		return irradiance_cubemap;
 	}
 
-	static Texture* GeneratePrefilteredEnvMap(uint32_t src_texture_index, uint32_t src_sampler_index)
+	static std::unique_ptr<Texture> GeneratePrefilteredEnvMap(uint32_t src_texture_index, uint32_t src_sampler_index)
 	{
 		const auto& descriptor_buffer_binding_info = Vulkan::GetDescriptorBufferBindingInfos();
 
@@ -1028,7 +1010,7 @@ namespace Renderer
 			.name = "Prefiltered Cubemap",
 		};
 
-		Texture* prefiltered_cubemap = new Texture(texture_info);
+		std::unique_ptr<Texture> prefiltered_cubemap = Texture::Create(texture_info);
 		TextureView* cubemap_view = prefiltered_cubemap->GetView();
 		cubemap_view->WriteDescriptorInfo(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
@@ -1116,11 +1098,10 @@ namespace Renderer
 			.num_layers = 1,
 			.name = "BRDF LUT",
 		};
+		data->ibl.brdf_lut_handle = data->texture_slotmap.Insert(TextureResource(Texture::Create(texture_info), data->default_sampler));
+		const TextureResource* brdf_lut = data->texture_slotmap.Find(data->ibl.brdf_lut_handle);
 
-		data->ibl.brdf_lut_handle = data->texture_slotmap.Emplace(texture_info);
-		data->ibl.brdf_lut = data->texture_slotmap.Find(data->ibl.brdf_lut_handle);
-
-		TextureView* brdf_lut_view = data->ibl.brdf_lut->GetView();
+		TextureView* brdf_lut_view = brdf_lut->texture->GetView();
 		brdf_lut_view->WriteDescriptorInfo(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 		
 		VkViewport viewport = {};
@@ -1162,7 +1143,7 @@ namespace Renderer
 		}
 		END_PASS(command_buffer, data->render_passes.gen_brdf_lut);
 
-		data->ibl.brdf_lut->TransitionLayout(command_buffer, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+		brdf_lut->texture->TransitionLayout(command_buffer, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 		Vulkan::EndImmediateCommand(command_buffer);
 	}
 
@@ -1208,23 +1189,11 @@ namespace Renderer
 
 		ExitDearImGui();
 
-		// Start cleaning up all of the objects that won't be destroyed by RAII/destructors
-		Sampler::Destroy(data->default_sampler);
-
-		delete data->unit_cube_vb;
-		delete data->unit_cube_ib;
-
+		// Start cleaning up all of the objects that won't be destroyed automatically
 		for (uint32_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
 			vkDestroyFence(vk_inst.device, data->per_frame[i].sync.in_flight_fence, nullptr);
 			vkDestroySemaphore(vk_inst.device, data->per_frame[i].sync.render_finished_semaphore, nullptr);
-
-			delete data->per_frame[i].ubos.settings_ubo;
-			delete data->per_frame[i].ubos.camera_ubo;
-			delete data->per_frame[i].ubos.light_ubo;
-			delete data->per_frame[i].ubos.material_ubo;
-
-			delete data->per_frame[i].instance_buffer;
 		}
 
 		// Clean up the renderer data
@@ -1286,7 +1255,7 @@ namespace Renderer
 	void RenderFrame()
 	{
 		const Data::Frame* frame = GetFrameCurrent();
-		const auto& descriptor_buffer_binding_info = Vulkan::GetDescriptorBufferBindingInfos();
+		const std::vector<VkDescriptorBufferBindingInfoEXT>& descriptor_buffer_binding_info = Vulkan::GetDescriptorBufferBindingInfos();
 		VkCommandBuffer command_buffer = frame->command_buffer;
 
 		VkCommandBufferBeginInfo command_buffer_begin_info = {};
@@ -1336,13 +1305,13 @@ namespace Renderer
 				uint32_t env_sampler_index;
 			} push_consts;
 
-			Texture* skybox_texture = data->texture_slotmap.Find(data->skybox_texture_handle);
+			const TextureResource* skybox_texture = data->texture_slotmap.Find(data->skybox_texture_handle);
 			if (!skybox_texture)
 			{
 				VK_EXCEPT("Renderer::RenderFrame", "HDR environment map is missing a skybox cubemap");
 			}
 
-			push_consts.env_texture_index = skybox_texture->GetView()->descriptor.GetIndex();
+			push_consts.env_texture_index = skybox_texture->texture->GetView()->descriptor.GetIndex();
 			push_consts.env_sampler_index = 0;
 
 			data->render_passes.skybox.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push_consts), &push_consts);
@@ -1367,21 +1336,13 @@ namespace Renderer
 			vkCmdSetViewport(command_buffer, 0, 1, &viewport);
 			vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
-			Texture* skybox_texture = data->texture_slotmap.Find(data->skybox_texture_handle);
+			const TextureResource* skybox_texture = data->texture_slotmap.Find(data->skybox_texture_handle);
 			if (!skybox_texture)
 			{
 				VK_EXCEPT("Renderer::RenderFrame", "HDR environment map is missing a skybox cubemap");
 			}
-			Texture* irradiance_cubemap = skybox_texture->GetChainned(0);
-			if (!irradiance_cubemap)
-			{
-				VK_EXCEPT("Renderer::RenderFrame", "HDR environment map is missing an irradiance cubemap");
-			}
-			Texture* prefiltered_cubemap = skybox_texture->GetChainned(1);
-			if (!prefiltered_cubemap)
-			{
-				VK_EXCEPT("Renderer::RenderFrame", "HDR environment map is missing a prefiltered cubemap");
-			}
+			Texture& irradiance_cubemap = skybox_texture->texture->GetChainned(0);
+			Texture& prefiltered_cubemap = skybox_texture->texture->GetChainned(1);
 
 			// Push constants
 			struct PushConsts
@@ -1393,10 +1354,10 @@ namespace Renderer
 				uint32_t mat_index;
 			} push_consts;
 
-			push_consts.irradiance_cubemap_index = irradiance_cubemap->GetView()->descriptor.GetIndex();
-			push_consts.prefiltered_cubemap_index = prefiltered_cubemap->GetView()->descriptor.GetIndex();
-			push_consts.num_prefiltered_mips = prefiltered_cubemap->GetView()->create_info.num_mips - 1;
-			push_consts.brdf_lut_index = data->ibl.brdf_lut->GetView()->descriptor.GetIndex();
+			push_consts.irradiance_cubemap_index = irradiance_cubemap.GetView()->descriptor.GetIndex();
+			push_consts.prefiltered_cubemap_index = prefiltered_cubemap.GetView()->descriptor.GetIndex();
+			push_consts.num_prefiltered_mips = prefiltered_cubemap.GetView()->create_info.num_mips - 1;
+			push_consts.brdf_lut_index = data->texture_slotmap.Find(data->ibl.brdf_lut_handle)->texture->GetView()->descriptor.GetIndex();
 
 			data->render_passes.lighting.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 4 * sizeof(uint32_t), &push_consts);
 
@@ -1412,7 +1373,7 @@ namespace Renderer
 				const DrawList::Entry& entry = data->draw_list.entries[i];
 
 				// TODO: Default mesh
-				Mesh* mesh = nullptr;
+				const MeshResource* mesh = nullptr;
 				if (VK_RESOURCE_HANDLE_VALID(entry.mesh_handle))
 				{
 					mesh = data->mesh_slotmap.Find(entry.mesh_handle);
@@ -1622,7 +1583,7 @@ namespace Renderer
 		VkDeviceSize image_size = args.pixels.size();
 
 		// Create staging buffer
-		Buffer* staging_buffer = Buffer::CreateStaging(image_size, "Staging Buffer Renderer::CreateTexture");
+		std::unique_ptr<Buffer> staging_buffer = Buffer::CreateStaging(image_size, "Staging Buffer Renderer::CreateTexture");
 
 		// Copy data into the mapped memory of the staging buffer
 		staging_buffer->Write(image_size, (void*)args.pixels.data());
@@ -1641,20 +1602,16 @@ namespace Renderer
 			.name = args.name,
 		};
 
-		// For generating mips, the texture usage also needs to be flagged as COPY_SRC (TRANSFER_SRC)
-		// because of vkBlitImage
+		// For generating mips, the texture usage also needs to be flagged as COPY_SRC (TRANSFER_SRC) for vkBlitImage
 		if (num_mips > 1)
 			texture_info.usage_flags |= TEXTURE_USAGE_COPY_SRC;
 
-		Texture* texture = new Texture(texture_info);
+		std::unique_ptr<Texture> texture = Texture::Create(texture_info);
 		
 		// Copy staging buffer data into final texture image memory (device local)
 		texture->TransitionLayoutImmediate(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 		texture->CopyFromBufferImmediate(*staging_buffer, 0);
 
-		// Clean up staging buffer
-		delete staging_buffer;
-		
 		// Generate mips
 		if (num_mips > 1)
 		{
@@ -1676,55 +1633,41 @@ namespace Renderer
 			// TODO: Use proper samplers and not always the default one
 			// TODO: Change 0 to actual default sampler index
 			// Generate a cubemap from the equirectangular hdr environment map
-			Texture* hdr_env_texture = texture;
-			Texture* hdr_env_cubemap = GenerateCubeMapFromEquirectangular(texture_view->descriptor.GetIndex(), 0);
-			
-			texture = hdr_env_cubemap;
+			texture = GenerateCubeMapFromEquirectangular(texture_view->descriptor.GetIndex(), 0);
 			texture_view = texture->GetView();
 
 			// Generate the irradiance cubemap from the hdr cubemap, and append it to the base environment map
-			Texture* irradiance_cubemap = GenerateIrradianceCube(texture_view->descriptor.GetIndex(), 0);
-			texture->AppendToChain(irradiance_cubemap);
+			texture->AppendToChain(GenerateIrradianceCube(texture_view->descriptor.GetIndex(), 0));
 
 			// Generate the prefiltered cubemap from the hdr cubemap, and append it to the base environment map
-			Texture* prefiltered_cubemap = GeneratePrefilteredEnvMap(texture_view->descriptor.GetIndex(), 0);
-			texture->AppendToChain(prefiltered_cubemap);
-
-			// Delete the original HDR texture, we don't need it anymore, and swap in the cubemap
-			delete hdr_env_texture;
+			texture->AppendToChain(GeneratePrefilteredEnvMap(texture_view->descriptor.GetIndex(), 0));
 		}
 
-		// Create ImGui descriptor set
 		// TODO: FIX
+		// Create ImGui descriptor set
 		//reserved.resource->imgui_descriptor_set = ImGui_ImplVulkan_AddTexture(data->default_sampler, reserved.resource->view.view, reserved.resource->view.layout);
 
-		return data->texture_slotmap.Insert(*texture);
+		return data->texture_slotmap.Insert(TextureResource(std::move(texture), data->default_sampler));
 	}
 
 	void DestroyTexture(TextureHandle_t handle)
 	{
 		VK_ASSERT(VK_RESOURCE_HANDLE_VALID(handle) && "Tried to destroy a texture with an invalid texture handle");
-		Texture* texture = data->texture_slotmap.Find(handle);
-
-		VK_ASSERT(texture && "Tried to destroy a texture that was already null");
 		data->texture_slotmap.Delete(handle);
 	}
 
 	void ImGuiRenderTexture(TextureHandle_t handle)
 	{
 		VK_ASSERT(VK_RESOURCE_HANDLE_VALID(handle));
-		Texture* texture = data->texture_slotmap.Find(handle);
-		VK_ASSERT(texture);
 
-		if (texture)
-		{
-			ImVec2 size = ImVec2(
-				std::min((float)vk_inst.swapchain.extent.width / 8.0f, ImGui::GetWindowSize().x),
-				std::min((float)vk_inst.swapchain.extent.width / 8.0f, ImGui::GetWindowSize().y)
-			);
-			// TODO: FIX
-			//ImGui::Image(texture->imgui_descriptor_set, size);
-		}
+		ImVec2 size = ImVec2(
+			std::min((float)vk_inst.swapchain.extent.width / 8.0f, ImGui::GetWindowSize().x),
+			std::min((float)vk_inst.swapchain.extent.width / 8.0f, ImGui::GetWindowSize().y)
+		);
+
+		// TODO: FIX
+		//const TextureResource* texture = data->texture_slotmap.Find(handle);
+		//ImGui::Image(texture->imgui_descriptor_set, size);
 	}
 
 	MeshHandle_t CreateMesh(const CreateMeshArgs& args)
@@ -1734,24 +1677,21 @@ namespace Renderer
 		VkDeviceSize ib_size = sizeof(uint32_t) * args.indices.size();
 
 		// Create staging buffer
-		Buffer* staging_buffer = Buffer::CreateStaging(vb_size + ib_size, "Staging Buffer CreateMesh");
+		std::unique_ptr<Buffer> staging_buffer = Buffer::CreateStaging(vb_size + ib_size, "Staging Buffer CreateMesh");
 
 		// Write data into staging buffer
 		staging_buffer->Write(vb_size, (void*)args.vertices.data(), 0, 0);
 		staging_buffer->Write(ib_size, (void*)args.indices.data(), 0, vb_size);
 
 		// Create vertex and index buffers
-		Buffer* vertex_buffer = Buffer::CreateVertex(vb_size, "Vertex Buffer " + args.name);
-		Buffer* index_buffer = Buffer::CreateIndex(ib_size, "Index Buffer " + args.name);
+		std::unique_ptr<Buffer> vertex_buffer = Buffer::CreateVertex(vb_size, "Vertex Buffer " + args.name);
+		std::unique_ptr<Buffer> index_buffer = Buffer::CreateIndex(ib_size, "Index Buffer " + args.name);
 
 		// Copy staging buffer data into vertex and index buffers
 		vertex_buffer->CopyFromImmediate(*staging_buffer, vb_size, 0, 0);
 		index_buffer->CopyFromImmediate(*staging_buffer, ib_size, vb_size, 0);
 
-		// Destroy staging buffer
-		delete staging_buffer;
-
-		return data->mesh_slotmap.Emplace(vertex_buffer, index_buffer);
+		return data->mesh_slotmap.Insert(MeshResource(std::move(vertex_buffer), std::move(index_buffer)));
 	}
 
 	void DestroyMesh(MeshHandle_t handle)
@@ -1770,20 +1710,20 @@ namespace Renderer
 		frame->instance_buffer->Write(sizeof(glm::mat4), &entry.transform, 0, sizeof(glm::mat4) * entry.index);
 
 		// Write material data to the material UBO
-		Texture* albedo_texture = data->texture_slotmap.Find(material.albedo_texture_handle);
+		TextureResource* albedo_texture = data->texture_slotmap.Find(material.albedo_texture_handle);
 		if (!albedo_texture)
 			albedo_texture = data->texture_slotmap.Find(data->default_white_texture_handle);
-		entry.material_data.albedo_texture_index = albedo_texture->GetView()->descriptor.GetIndex();
+		entry.material_data.albedo_texture_index = albedo_texture->texture->GetView()->descriptor.GetIndex();
 
-		Texture* normal_texture = data->texture_slotmap.Find(material.normal_texture_handle);
+		TextureResource* normal_texture = data->texture_slotmap.Find(material.normal_texture_handle);
 		if (!normal_texture)
 			normal_texture = data->texture_slotmap.Find(data->default_normal_texture_handle);
-		entry.material_data.normal_texture_index = normal_texture->GetView()->descriptor.GetIndex();
+		entry.material_data.normal_texture_index = normal_texture->texture->GetView()->descriptor.GetIndex();
 
-		Texture* metallic_roughness_texture = data->texture_slotmap.Find(material.metallic_roughness_texture_handle);
+		TextureResource* metallic_roughness_texture = data->texture_slotmap.Find(material.metallic_roughness_texture_handle);
 		if (!metallic_roughness_texture)
 			metallic_roughness_texture = data->texture_slotmap.Find(data->default_white_texture_handle);
-		entry.material_data.metallic_roughness_texture_index = metallic_roughness_texture->GetView()->descriptor.GetIndex();
+		entry.material_data.metallic_roughness_texture_index = metallic_roughness_texture->texture->GetView()->descriptor.GetIndex();
 
 		entry.material_data.albedo_factor = material.albedo_factor;
 		entry.material_data.metallic_factor = material.metallic_factor;
@@ -1791,20 +1731,20 @@ namespace Renderer
 
 		entry.material_data.has_clearcoat = material.has_clearcoat ? 1 : 0;
 
-		Texture* clearcoat_alpha_texture = data->texture_slotmap.Find(material.clearcoat_alpha_texture_handle);
+		TextureResource* clearcoat_alpha_texture = data->texture_slotmap.Find(material.clearcoat_alpha_texture_handle);
 		if (!clearcoat_alpha_texture)
 			clearcoat_alpha_texture = data->texture_slotmap.Find(data->default_white_texture_handle);
-		entry.material_data.clearcoat_alpha_texture_index = clearcoat_alpha_texture->GetView()->descriptor.GetIndex();
+		entry.material_data.clearcoat_alpha_texture_index = clearcoat_alpha_texture->texture->GetView()->descriptor.GetIndex();
 
-		Texture* clearcoat_normal_texture = data->texture_slotmap.Find(material.clearcoat_normal_texture_handle);
+		TextureResource* clearcoat_normal_texture = data->texture_slotmap.Find(material.clearcoat_normal_texture_handle);
 		if (!clearcoat_normal_texture)
 			clearcoat_normal_texture = data->texture_slotmap.Find(data->default_normal_texture_handle);
-		entry.material_data.clearcoat_normal_texture_index = clearcoat_normal_texture->GetView()->descriptor.GetIndex();
+		entry.material_data.clearcoat_normal_texture_index = clearcoat_normal_texture->texture->GetView()->descriptor.GetIndex();
 
-		Texture* clearcoat_roughness_texture = data->texture_slotmap.Find(material.clearcoat_roughness_texture_handle);
+		TextureResource* clearcoat_roughness_texture = data->texture_slotmap.Find(material.clearcoat_roughness_texture_handle);
 		if (!clearcoat_roughness_texture)
 			clearcoat_roughness_texture = data->texture_slotmap.Find(data->default_white_texture_handle);
-		entry.material_data.clearcoat_roughness_texture_index = clearcoat_roughness_texture->GetView()->descriptor.GetIndex();
+		entry.material_data.clearcoat_roughness_texture_index = clearcoat_roughness_texture->texture->GetView()->descriptor.GetIndex();
 
 		entry.material_data.clearcoat_alpha_factor = material.clearcoat_alpha_factor;
 		entry.material_data.clearcoat_roughness_factor = material.clearcoat_roughness_factor;

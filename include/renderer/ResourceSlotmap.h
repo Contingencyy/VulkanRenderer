@@ -33,22 +33,22 @@ public:
 	const ResourceSlotmap& operator=(const ResourceSlotmap& other) = delete;
 	ResourceSlotmap&& operator=(ResourceSlotmap&& other) = delete;
 
-	ResourceHandle_t Insert(const TResource& resource)
+	ResourceHandle_t Insert(TResource&& resource)
 	{
 		ResourceHandle_t handle = AllocateSlot();
-		m_slots[handle.index].resource = resource;
+		m_slots[handle.index].resource = std::move(resource);
 
 		return handle;
 	}
 
-	template<typename... TArgs>
+	/*template<typename... TArgs>
 	ResourceHandle_t Emplace(TArgs&&... args)
 	{
 		ResourceHandle_t handle = AllocateSlot();
 		new (&m_slots[handle.index].resource) TResource(std::forward<TArgs>(args)...);
 
 		return handle;
-	}
+	}*/
 
 	TResource* Find(ResourceHandle_t handle)
 	{

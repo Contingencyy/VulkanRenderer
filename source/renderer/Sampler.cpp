@@ -1,13 +1,8 @@
 #include "renderer/Sampler.h"
 
-Sampler* Sampler::Create(const SamplerCreateInfo& create_info)
+std::unique_ptr<Sampler> Sampler::Create(const SamplerCreateInfo& create_info)
 {
-	return new Sampler(create_info);
-}
-
-void Sampler::Destroy(const Sampler* sampler)
-{
-	delete sampler;
+	return std::make_unique<Sampler>(create_info);
 }
 
 static VkSamplerAddressMode ToVkAddressMode(SamplerAddressMode address_mode)
@@ -103,6 +98,8 @@ Sampler::Sampler(const SamplerCreateInfo& create_info)
 
 Sampler::~Sampler()
 {
-	Vulkan::FreeDescriptors(m_descriptor);
+	if (!m_descriptor.IsNull())
+		Vulkan::FreeDescriptors(m_descriptor);
+
 	Vulkan::DestroySampler(m_vk_sampler);
 }

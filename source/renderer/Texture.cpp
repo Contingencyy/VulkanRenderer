@@ -6,6 +6,11 @@
 
 #include <vector>
 
+std::unique_ptr<Texture> Texture::Create(const TextureCreateInfo& create_info)
+{
+	return std::unique_ptr<Texture>(new Texture(create_info));
+}
+
 void TextureView::WriteDescriptorInfo(VkDescriptorType type, VkImageLayout layout, uint32_t descriptor_offset)
 {
 	// Allocate a descriptor first before writing to it, if descriptor allocation is null
@@ -135,11 +140,6 @@ Texture::Texture(const TextureCreateInfo& create_info)
 
 Texture::~Texture()
 {
-	for (auto& chainned_texture : m_chainned_textures)
-	{
-		delete chainned_texture;
-	}
-
 	for (auto& view : m_views)
 	{
 		if (!view.second.descriptor.IsNull())
@@ -207,15 +207,15 @@ void Texture::TransitionLayoutImmediate(VkImageLayout new_layout, uint32_t base_
 	Vulkan::EndImmediateCommand(command_buffer);
 }
 
-void Texture::AppendToChain(Texture* texture)
+void Texture::AppendToChain(std::unique_ptr<Texture>&& texture)
 {
-	m_chainned_textures.push_back(texture);
+	m_chainned_textures.push_back(std::move(texture));
 }
 
-Texture* Texture::GetChainned(uint32_t index)
+Texture& Texture::GetChainned(uint32_t index)
 {
 	VK_ASSERT(index < m_chainned_textures.size());
-	return m_chainned_textures[index];
+	return *m_chainned_textures[index].get();
 }
 
 VkFormat Texture::GetVkFormat() const
