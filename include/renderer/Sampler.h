@@ -14,6 +14,10 @@ public:
 	Sampler(const SamplerCreateInfo& create_info);
 	~Sampler();
 
+	uint32_t GetIndex() const;
+
+	VkSampler GetVkSampler() const { return m_vk_sampler; }
+
 private:
 	VkSampler m_vk_sampler = VK_NULL_HANDLE;
 	DescriptorAllocation m_descriptor;

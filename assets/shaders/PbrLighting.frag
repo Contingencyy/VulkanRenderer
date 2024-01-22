@@ -28,10 +28,13 @@ layout(set = DESCRIPTOR_SET_UBO, binding = RESERVED_DESCRIPTOR_UBO_MATERIALS) un
 layout(std140, push_constant) uniform constants
 {
 	layout(offset = 0) uint irradiance_cubemap_index;
-	layout(offset = 4) uint prefiltered_cubemap_index;
-	layout(offset = 8) uint num_prefiltered_mips;
-	layout(offset = 12) uint brdf_lut_index;
-	layout(offset = 16) uint mat_index;
+	layout(offset = 4) uint irradiance_sampler_index;
+	layout(offset = 8) uint prefiltered_cubemap_index;
+	layout(offset = 12) uint prefiltered_sampler_index;
+	layout(offset = 16) uint num_prefiltered_mips;
+	layout(offset = 20) uint brdf_lut_index;
+	layout(offset = 24) uint brdf_lut_sampler_index;
+	layout(offset = 28) uint mat_index;
 } push_consts;
 
 layout(location = 0) in vec4 frag_pos;
@@ -78,9 +81,9 @@ vec3 RadianceAtFragment(vec3 V, vec3 N, vec3 world_pos,
 	{
 		vec3 R = reflect(-V, N);
 
-		vec2 env_brdf = SampleTexture(push_consts.brdf_lut_index, 0, vec2(max(dot(N, V), 0.0), roughness)).rg;
-		vec3 reflection = SampleTextureCubeLod(push_consts.prefiltered_cubemap_index, 0, R, roughness * push_consts.num_prefiltered_mips).rgb;
-		vec3 irradiance = SampleTextureCube(push_consts.irradiance_cubemap_index, 0, N).rgb;
+		vec2 env_brdf = SampleTexture(push_consts.brdf_lut_index, push_consts.brdf_lut_sampler_index, vec2(max(dot(N, V), 0.0), roughness)).rg;
+		vec3 reflection = SampleTextureCubeLod(push_consts.prefiltered_cubemap_index, push_consts.prefiltered_sampler_index, R, roughness * push_consts.num_prefiltered_mips).rgb;
+		vec3 irradiance = SampleTextureCube(push_consts.irradiance_cubemap_index, push_consts.irradiance_sampler_index, N).rgb;
 
 		vec3 diffuse = irradiance * albedo * INV_PI;
 	
@@ -153,9 +156,9 @@ vec3 RadianceAtFragmentClearCoat(vec3 V, vec3 N, vec3 world_pos,
 	{
 		vec3 R = reflect(-V, N);
 
-		vec2 env_brdf = SampleTexture(push_consts.brdf_lut_index, 0, vec2(max(dot(N, V), 0.0), roughness)).rg;
-		vec3 reflection = SampleTextureCubeLod(push_consts.prefiltered_cubemap_index, 0, R, roughness * push_consts.num_prefiltered_mips).rgb;
-		vec3 irradiance = SampleTextureCube(push_consts.irradiance_cubemap_index, 0, N).rgb;
+		vec2 env_brdf = SampleTexture(push_consts.brdf_lut_index, push_consts.brdf_lut_sampler_index, vec2(max(dot(N, V), 0.0), roughness)).rg;
+		vec3 reflection = SampleTextureCubeLod(push_consts.prefiltered_cubemap_index, push_consts.prefiltered_sampler_index, R, roughness * push_consts.num_prefiltered_mips).rgb;
+		vec3 irradiance = SampleTextureCube(push_consts.irradiance_cubemap_index, push_consts.irradiance_sampler_index, N).rgb;
 
 		vec3 diffuse = irradiance * albedo * INV_PI;
 
@@ -170,8 +173,8 @@ vec3 RadianceAtFragmentClearCoat(vec3 V, vec3 N, vec3 world_pos,
 			specular *= pow(1.0 - coat_alpha * Fc, vec3(2.0));
 
 			vec3 Rc = reflect(-V, coat_normal);
-			vec3 coat_reflection = SampleTextureCubeLod(push_consts.prefiltered_cubemap_index, 0, Rc, coat_roughness * push_consts.num_prefiltered_mips).rgb;
-			vec2 coat_env_brdf = SampleTexture(push_consts.brdf_lut_index, 0, vec2(max(dot(coat_normal, V), 0.0), coat_roughness)).rg;
+			vec3 coat_reflection = SampleTextureCubeLod(push_consts.prefiltered_cubemap_index, push_consts.prefiltered_sampler_index, Rc, coat_roughness * push_consts.num_prefiltered_mips).rgb;
+			vec2 coat_env_brdf = SampleTexture(push_consts.brdf_lut_index, push_consts.brdf_lut_sampler_index, vec2(max(dot(coat_normal, V), 0.0), coat_roughness)).rg;
 			specular += coat_alpha * coat_reflection * (Fc * coat_env_brdf.x + coat_env_brdf.y);
 		}
 	

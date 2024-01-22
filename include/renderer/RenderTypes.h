@@ -150,7 +150,8 @@ enum SamplerBorderColor
 enum SamplerFilter
 {
 	SAMPLER_FILTER_NEAREST,
-	SAMPLER_FILTER_LINEAR
+	SAMPLER_FILTER_LINEAR,
+	SAMPLER_FILTER_CUBIC
 };
 
 struct SamplerCreateInfo
@@ -171,48 +172,3 @@ struct SamplerCreateInfo
 
 	std::string name = "Unnamed Sampler";
 };
-
-//struct SamplerResource
-//{
-//	VkSampler sampler;
-//	DescriptorAllocation descriptor;
-//
-//	~SamplerResource()
-//	{
-//		vkDestroySampler(vk_inst.device, sampler, nullptr);
-//		// TODO: Free descriptors
-//	}
-//};
-//
-//struct TextureResource
-//{
-//	Vulkan::Image image;
-//	Vulkan::ImageView view;
-//	DescriptorAllocation descriptor;
-//
-//	// We need this descriptor set to render any texture to ImGui menus
-//	VkDescriptorSet imgui_descriptor_set;
-//
-//	// TODO: Find a better solution for this, for now this is used for hdr environment maps and points to the
-//	// irradiance map made from this hdr environment map
-//	TextureHandle_t next;
-//
-//	~TextureResource()
-//	{
-//		Vulkan::DestroyImageView(view);
-//		Vulkan::DestroyImage(image);
-//		// TODO: Free descriptors
-//	}
-//};
-//
-//struct MeshResource
-//{
-//	Vulkan::Buffer vertex_buffer;
-//	Vulkan::Buffer index_buffer;
-//
-//	~MeshResource()
-//	{
-//		Vulkan::DestroyBuffer(vertex_buffer);
-//		Vulkan::DestroyBuffer(index_buffer);
-//	}
-//};

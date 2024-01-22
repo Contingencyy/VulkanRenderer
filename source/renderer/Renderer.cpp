@@ -117,9 +117,14 @@ namespace Renderer
 		std::unique_ptr<Texture> texture = nullptr;
 		std::shared_ptr<Sampler> sampler = nullptr;
 
+		VkDescriptorSet imgui_descriptor_set = VK_NULL_HANDLE;
+
 		TextureResource() = default;
-		TextureResource(std::unique_ptr<Texture>&& texture, std::shared_ptr<Sampler> sampler)
-			: texture(std::move(texture)), sampler(sampler) {}
+		TextureResource(std::unique_ptr<Texture>&& _texture, std::shared_ptr<Sampler> _sampler)
+			: texture(std::move(_texture)), sampler(_sampler)
+		{
+			imgui_descriptor_set = ImGui_ImplVulkan_AddTexture(sampler->GetVkSampler(), texture->GetView()->view, texture->GetView()->GetLayout());
+		}
 	};
 
 	struct MeshResource
@@ -128,8 +133,8 @@ namespace Renderer
 		std::unique_ptr<Buffer> index_buffer = nullptr;
 
 		MeshResource() = default;
-		MeshResource(std::unique_ptr<Buffer>&& vertex_buffer, std::unique_ptr<Buffer>&& index_buffer)
-			: vertex_buffer(std::move(vertex_buffer)), index_buffer(std::move(index_buffer)) {}
+		MeshResource(std::unique_ptr<Buffer>&& _vertex_buffer, std::unique_ptr<Buffer>&& _index_buffer)
+			: vertex_buffer(std::move(_vertex_buffer)), index_buffer(std::move(_index_buffer)) {}
 	};
 
 	struct Data
@@ -206,6 +211,12 @@ namespace Renderer
 		TextureHandle_t default_normal_texture_handle;
 
 		std::shared_ptr<Sampler> default_sampler;
+		std::shared_ptr<Sampler> hdr_equirect_sampler;
+		std::shared_ptr<Sampler> hdr_cube_sampler;
+		std::shared_ptr<Sampler> irradiance_cube_sampler;
+		std::shared_ptr<Sampler> prefiltered_cube_sampler;
+		std::shared_ptr<Sampler> brdf_lut_sampler;
+
 		std::unique_ptr<Buffer> unit_cube_vb;
 		std::unique_ptr<Buffer> unit_cube_ib;
 
@@ -337,6 +348,7 @@ namespace Renderer
 	
 	static void CreateDefaultSamplers()
 	{
+		// Create default sampler
 		SamplerCreateInfo sampler_info = {};
 
 		sampler_info.address_u = SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
@@ -355,6 +367,23 @@ namespace Renderer
 		sampler_info.name = "Default Sampler";
 
 		data->default_sampler = Sampler::Create(sampler_info);
+		
+		// Create IBL samplers
+		sampler_info.enable_anisotropy = VK_FALSE;
+		sampler_info.name = "HDR Equirectangular Sampler";
+		data->hdr_equirect_sampler = Sampler::Create(sampler_info);
+
+		sampler_info.name = "Irradiance Cubemap Sampler";
+		data->irradiance_cube_sampler = Sampler::Create(sampler_info);
+
+		sampler_info.name = "BRDF LUT Sampler";
+		data->brdf_lut_sampler = Sampler::Create(sampler_info);
+
+		sampler_info.name = "HDR Cubemap Sampler";
+		data->hdr_cube_sampler = Sampler::Create(sampler_info);
+
+		sampler_info.name = "Prefiltered Cubemap Sampler";
+		data->prefiltered_cube_sampler = Sampler::Create(sampler_info);
 	}
 
 	static void CreateDefaultTextures()
@@ -579,7 +608,7 @@ namespace Renderer
 			data->render_passes.lighting.SetAttachmentInfos(attachment_infos);
 
 			std::vector<VkPushConstantRange> push_ranges(1);
-			push_ranges[0].size = 5 * sizeof(uint32_t);
+			push_ranges[0].size = 8 * sizeof(uint32_t);
 			push_ranges[0].offset = 0;
 			push_ranges[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
@@ -962,13 +991,13 @@ namespace Renderer
 
 		for (uint32_t mip = 0; mip < num_cube_mips; ++mip)
 		{
-			// Render current face to the offscreen render target
-			RenderPass::BeginInfo begin_info = {};
-			begin_info.render_width = static_cast<float>(IBL_IRRADIANCE_CUBEMAP_RESOLUTION) * std::pow(0.5f, mip);
-			begin_info.render_height = static_cast<float>(IBL_IRRADIANCE_CUBEMAP_RESOLUTION) * std::pow(0.5f, mip);
-
 			for (uint32_t face = 0; face < 6; ++face)
 			{
+				// Render current face to the offscreen render target
+				RenderPass::BeginInfo begin_info = {};
+				begin_info.render_width = static_cast<float>(IBL_IRRADIANCE_CUBEMAP_RESOLUTION) * std::pow(0.5f, mip);
+				begin_info.render_height = static_cast<float>(IBL_IRRADIANCE_CUBEMAP_RESOLUTION) * std::pow(0.5f, mip);
+
 				// TODO: Should we delete these temporary views after we are done generating?
 				TextureView* face_view = irradiance_cubemap->GetView(TextureViewCreateInfo{ .type = VK_IMAGE_VIEW_TYPE_2D,
 					.base_mip = mip, .num_mips = 1, .base_layer = face, .num_layers = 1 });
@@ -989,7 +1018,7 @@ namespace Renderer
 					data->render_passes.gen_irradiance_cube.PushConstants(command_buffer, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &push_consts);
 					data->render_passes.gen_irradiance_cube.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 64, 2 * sizeof(uint32_t) + 2 * sizeof(float), &push_consts.src_texture_index);
 
-					vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)descriptor_buffer_binding_info.size(), descriptor_buffer_binding_info.data()); 
+					vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)descriptor_buffer_binding_info.size(), descriptor_buffer_binding_info.data());
 					data->render_passes.gen_irradiance_cube.SetDescriptorBufferOffsets(command_buffer, 0, 5, &data->descriptor_buffer_indices[0], &data->descriptor_buffer_offsets[0]);
 
 					VkBuffer vertex_buffers = { data->unit_cube_vb->GetVkBuffer() };
@@ -1113,10 +1142,9 @@ namespace Renderer
 			.num_layers = 1,
 			.name = "BRDF LUT",
 		};
-		data->ibl.brdf_lut_handle = data->texture_slotmap.Insert(TextureResource(Texture::Create(texture_info), data->default_sampler));
-		const TextureResource* brdf_lut = data->texture_slotmap.Find(data->ibl.brdf_lut_handle);
 
-		TextureView* brdf_lut_view = brdf_lut->texture->GetView();
+		std::unique_ptr<Texture> brdf_lut = Texture::Create(texture_info);
+		TextureView* brdf_lut_view = brdf_lut->GetView();
 		brdf_lut_view->WriteDescriptorInfo(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 		
 		VkViewport viewport = {};
@@ -1158,8 +1186,10 @@ namespace Renderer
 		}
 		END_PASS(command_buffer, data->render_passes.gen_brdf_lut);
 
-		brdf_lut->texture->TransitionLayout(command_buffer, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+		brdf_lut->TransitionLayout(command_buffer, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 		Vulkan::EndImmediateCommand(command_buffer);
+
+		data->ibl.brdf_lut_handle = data->texture_slotmap.Insert(TextureResource(std::move(brdf_lut), data->brdf_lut_sampler));
 	}
 
 	void Init(::GLFWwindow* window)
@@ -1366,18 +1396,24 @@ namespace Renderer
 			struct PushConsts
 			{
 				uint32_t irradiance_cubemap_index;
+				uint32_t irradiance_sampler_index;
 				uint32_t prefiltered_cubemap_index;
+				uint32_t prefiltered_sampler_index;
 				uint32_t num_prefiltered_mips;
 				uint32_t brdf_lut_index;
+				uint32_t brdf_lut_sampler_index;
 				uint32_t mat_index;
 			} push_consts;
 
 			push_consts.irradiance_cubemap_index = irradiance_cubemap.GetView()->descriptor.GetIndex();
+			push_consts.irradiance_sampler_index = data->irradiance_cube_sampler->GetIndex();
 			push_consts.prefiltered_cubemap_index = prefiltered_cubemap.GetView()->descriptor.GetIndex();
+			push_consts.prefiltered_sampler_index = data->prefiltered_cube_sampler->GetIndex();
 			push_consts.num_prefiltered_mips = prefiltered_cubemap.GetView()->create_info.num_mips - 1;
 			push_consts.brdf_lut_index = data->texture_slotmap.Find(data->ibl.brdf_lut_handle)->texture->GetView()->descriptor.GetIndex();
+			push_consts.brdf_lut_sampler_index = data->texture_slotmap.Find(data->ibl.brdf_lut_handle)->sampler->GetIndex();
 
-			data->render_passes.lighting.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 4 * sizeof(uint32_t), &push_consts);
+			data->render_passes.lighting.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 7 * sizeof(uint32_t), &push_consts);
 
 			// Bind descriptor buffers
 			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)descriptor_buffer_binding_info.size(), descriptor_buffer_binding_info.data());
@@ -1398,7 +1434,7 @@ namespace Renderer
 				}
 				VK_ASSERT(mesh && "Tried to render a mesh with an invalid mesh handle");
 
-				data->render_passes.lighting.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 16, sizeof(uint32_t), &i);
+				data->render_passes.lighting.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 28, sizeof(uint32_t), &i);
 
 				// Vertex and index buffers
 				VkBuffer vertex_buffers[] = { mesh->vertex_buffer->GetVkBuffer(), instance_buffer.GetVkBuffer() };
@@ -1657,22 +1693,15 @@ namespace Renderer
 		// Generate irradiance cube map for IBL
 		if (args.is_environment_map)
 		{
-			// TODO: Use proper samplers and not always the default one
-			// TODO: Change 0 to actual default sampler index
 			// Generate a cubemap from the equirectangular hdr environment map
-			texture = GenerateCubeMapFromEquirectangular(texture_view->descriptor.GetIndex(), 0);
-			texture_view = texture->GetView();
+			texture = GenerateCubeMapFromEquirectangular(texture_view->descriptor.GetIndex(), data->hdr_equirect_sampler->GetIndex());
 
 			// Generate the irradiance cubemap from the hdr cubemap, and append it to the base environment map
-			texture->AppendToChain(GenerateIrradianceCube(texture_view->descriptor.GetIndex(), 0));
+			texture->AppendToChain(GenerateIrradianceCube(texture->GetView()->descriptor.GetIndex(), data->hdr_cube_sampler->GetIndex()));
 
 			// Generate the prefiltered cubemap from the hdr cubemap, and append it to the base environment map
-			texture->AppendToChain(GeneratePrefilteredEnvMap(texture_view->descriptor.GetIndex(), 0));
+			texture->AppendToChain(GeneratePrefilteredEnvMap(texture->GetView()->descriptor.GetIndex(), data->hdr_cube_sampler->GetIndex()));
 		}
-
-		// TODO: FIX
-		// Create ImGui descriptor set
-		//reserved.resource->imgui_descriptor_set = ImGui_ImplVulkan_AddTexture(data->default_sampler, reserved.resource->view.view, reserved.resource->view.layout);
 
 		return data->texture_slotmap.Insert(TextureResource(std::move(texture), data->default_sampler));
 	}
@@ -1692,9 +1721,8 @@ namespace Renderer
 			std::min((float)vk_inst.swapchain.extent.width / 8.0f, ImGui::GetWindowSize().y)
 		);
 
-		// TODO: FIX
-		//const TextureResource* texture = data->texture_slotmap.Find(handle);
-		//ImGui::Image(texture->imgui_descriptor_set, size);
+		const TextureResource* texture_resource = data->texture_slotmap.Find(handle);
+		ImGui::Image(texture_resource->imgui_descriptor_set, size);
 	}
 
 	MeshHandle_t CreateMesh(const CreateMeshArgs& args)
@@ -1777,9 +1805,7 @@ namespace Renderer
 		entry.material_data.clearcoat_roughness_factor = material.clearcoat_roughness_factor;
 
 		// Default sampler
-		// TODO: Take actual default sampler
-		// TODO: Materials should be able to specify samplers
-		entry.material_data.sampler_index = 0;
+		entry.material_data.sampler_index = data->default_sampler->GetIndex();
 
 		// Write material data to the material ubo for the currently active frame
 		frame->ubos.material_ubo->Write(sizeof(MaterialData), &entry.material_data, 0, sizeof(MaterialData) * entry.index);

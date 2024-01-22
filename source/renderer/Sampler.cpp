@@ -49,6 +49,8 @@ static VkFilter ToVkFilter(SamplerFilter filter)
 		return VK_FILTER_NEAREST;
 	case SAMPLER_FILTER_LINEAR:
 		return VK_FILTER_LINEAR;
+	case SAMPLER_FILTER_CUBIC:
+		return VK_FILTER_CUBIC_EXT;
 	}
 }
 
@@ -60,6 +62,8 @@ static VkSamplerMipmapMode ToVkSamplerMipmapMode(SamplerFilter filter)
 		return VK_SAMPLER_MIPMAP_MODE_NEAREST;
 	case SAMPLER_FILTER_LINEAR:
 		return VK_SAMPLER_MIPMAP_MODE_LINEAR;
+	case SAMPLER_FILTER_CUBIC:
+		VK_ASSERT(false && "Cannot enable trilinear filtering for mipmap sampler mode");
 	}
 }
 
@@ -102,4 +106,9 @@ Sampler::~Sampler()
 		Vulkan::FreeDescriptors(m_descriptor);
 
 	Vulkan::DestroySampler(m_vk_sampler);
+}
+
+uint32_t Sampler::GetIndex() const
+{
+	return m_descriptor.GetIndex();
 }
