@@ -15,6 +15,7 @@ typedef glm::mat4 mat4;
 
 #endif
 
+// Bindless descriptor set bindings
 const uint DESCRIPTOR_SET_UBO = 0;
 const uint DESCRIPTOR_SET_STORAGE_BUFFER = 1;
 const uint DESCRIPTOR_SET_STORAGE_IMAGE = 2;
@@ -34,6 +35,7 @@ const uint RESERVED_DESCRIPTOR_STORAGE_IMAGE_COUNT = 2;
 const uint RESERVED_DESCRIPTOR_STORAGE_IMAGE_HDR = 0;
 const uint RESERVED_DESCRIPTOR_STORAGE_IMAGE_SDR = 1;
 
+// Max values
 const uint MAX_UNIQUE_MATERIALS = 1000;
 const uint MAX_LIGHT_SOURCES = 100;
 
@@ -51,9 +53,7 @@ const uint DEBUG_RENDER_MODE_IBL_BRDF_LUT = 9;
 const uint DEBUG_RENDER_MODE_NUM_MODES = 10;
 
 #ifdef __cplusplus
-
 #include <vector>
-
 const std::vector<const char*> DEBUG_RENDER_MODE_LABELS =
 {
 	"None",
@@ -61,7 +61,18 @@ const std::vector<const char*> DEBUG_RENDER_MODE_LABELS =
 	"Clearcoat alpha", "Clearcoat normal", "Clearcoat roughness",
 	"IBL indirect diffuse", "IBL indirect specular", "IBL BRDF LUT"
 };
+#endif
 
+const uint DIFFUSE_BRDF_MODEL_LAMBERTIAN = 0;
+const uint DIFFUSE_BRDF_MODEL_BURLEY = 1;
+const uint DIFFUSE_BRDF_MODEL_OREN_NAYAR = 2;
+const uint DIFFUSE_BRDF_MODEL_NUM_MODELS = 3;
+
+#ifdef __cplusplus
+const std::vector<const char*> DIFFUSE_BRDF_MODEL_LABELS =
+{
+	"Lambertian", "Burley", "Oren-Nayar"
+};
 #endif
 
 DECLARE_STRUCT(RenderSettings)
@@ -71,6 +82,8 @@ DECLARE_STRUCT(RenderSettings)
 	uint use_clearcoat;
 	uint use_ibl;
 	uint use_clearcoat_specular_ibl;
+
+	uint diffuse_brdf_model;
 
 	float exposure;
 	float gamma;

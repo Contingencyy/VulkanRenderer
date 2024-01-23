@@ -434,19 +434,6 @@ namespace Vulkan
 		return default_format;
 	}
 
-	static VkPresentModeKHR ChooseSwapChainPresentMode(const std::vector<VkPresentModeKHR>& available_present_modes)
-	{
-		for (const auto& available_present_mode : available_present_modes)
-		{
-			if (available_present_mode == VK_PRESENT_MODE_MAILBOX_KHR)
-			{
-				return available_present_mode;
-			}
-		}
-
-		return VK_PRESENT_MODE_FIFO_KHR;
-	}
-
 	static VkExtent2D ChooseSwapChainExtent(const VkSurfaceCapabilitiesKHR& capabilities)
 	{
 		if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max())
@@ -474,9 +461,8 @@ namespace Vulkan
 	static void CreateSwapChain()
 	{
 		SwapChainSupportDetails swapchain_support = QuerySwapChainSupport(vk_inst.physical_device);
-
+		
 		VkSurfaceFormatKHR surface_format = ChooseSwapChainFormat(swapchain_support.formats);
-		VkPresentModeKHR present_mode = ChooseSwapChainPresentMode(swapchain_support.present_modes);
 		VkExtent2D extent = ChooseSwapChainExtent(swapchain_support.capabilities);
 
 		uint32_t image_count = swapchain_support.capabilities.minImageCount;
@@ -514,11 +500,19 @@ namespace Vulkan
 
 		create_info.preTransform = swapchain_support.capabilities.currentTransform;
 		create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-		create_info.presentMode = present_mode;
+		create_info.presentMode = vk_inst.swapchain.desired_present_mode;
 		create_info.clipped = VK_TRUE;
 		create_info.oldSwapchain = VK_NULL_HANDLE;
 
+		std::vector<VkPresentModeKHR> present_modes = { VK_PRESENT_MODE_FIFO_KHR, VK_PRESENT_MODE_MAILBOX_KHR };
+		VkSwapchainPresentModesCreateInfoEXT present_modes_create_info = { VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_MODES_CREATE_INFO_EXT };
+		present_modes_create_info.presentModeCount = static_cast<uint32_t>(present_modes.size());
+		present_modes_create_info.pPresentModes = present_modes.data();
+		
+		create_info.pNext = &present_modes_create_info;
+
 		VkCheckResult(vkCreateSwapchainKHR(vk_inst.device, &create_info, nullptr, &vk_inst.swapchain.swapchain));
+		// If pSwapchainImages is nullptr, it will instead return the pSwapchainImageCount, so we query this first
 		VkCheckResult(vkGetSwapchainImagesKHR(vk_inst.device, vk_inst.swapchain.swapchain, &image_count, nullptr));
 
 		vk_inst.swapchain.images.resize(image_count);
@@ -770,7 +764,12 @@ namespace Vulkan
 		present_info.swapchainCount = 1;
 		present_info.pSwapchains = &vk_inst.swapchain.swapchain;
 		present_info.pImageIndices = &vk_inst.swapchain.current_image;
-		present_info.pResults = nullptr;
+
+		VkSwapchainPresentModeInfoEXT present_mode_info = { VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_MODE_INFO_EXT };
+		present_mode_info.swapchainCount = 1;
+		present_mode_info.pPresentModes = &vk_inst.swapchain.desired_present_mode;
+
+		present_info.pNext = &present_mode_info;
 
 		VkResult present_result = vkQueuePresentKHR(vk_inst.queues.graphics, &present_info);
 		vk_inst.current_frame = (vk_inst.current_frame + 1) % VulkanInstance::MAX_FRAMES_IN_FLIGHT;
@@ -822,6 +821,26 @@ namespace Vulkan
 			swapchain_image, VulkanResourceTracker::GetImageLayout(swapchain_image),
 			1, &blit_region, VK_FILTER_NEAREST
 		);
+	}
+
+	void SetVSyncEnabled(bool enabled)
+	{
+		bool changed = vk_inst.swapchain.vsync_enabled != enabled;
+		
+		if (changed)
+		{
+			vk_inst.swapchain.vsync_enabled = enabled;
+
+			if (vk_inst.swapchain.vsync_enabled)
+				vk_inst.swapchain.desired_present_mode = VK_PRESENT_MODE_FIFO_KHR;
+			else
+				vk_inst.swapchain.desired_present_mode = VK_PRESENT_MODE_MAILBOX_KHR;
+		}
+	}
+
+	bool IsVSyncEnabled()
+	{
+		return vk_inst.swapchain.vsync_enabled;
 	}
 
 	void DebugNameObject(uint64_t object, VkDebugReportObjectTypeEXT object_type, const char* debug_name)

@@ -7,6 +7,27 @@ const float INV_PI = 1.0 / 3.1415926535897932384626433832795;
 const float TWO_PI = 3.1415926535897932384626433832795 * 2.0;
 const float HALF_PI = 3.1415926535897932384626433832795 * 0.5;
 
+layout(set = DESCRIPTOR_SET_UBO, binding = RESERVED_DESCRIPTOR_UBO_SETTINGS) uniform SettingsUBO
+{
+	RenderSettings settings;
+};
+
+layout(set = DESCRIPTOR_SET_UBO, binding = RESERVED_DESCRIPTOR_UBO_CAMERA) uniform CameraUBO
+{
+	CameraData camera;
+};
+
+layout(set = DESCRIPTOR_SET_UBO, binding = RESERVED_DESCRIPTOR_UBO_LIGHTS) uniform LightUBO
+{
+	PointlightData pointlights[MAX_LIGHT_SOURCES];
+	uint num_pointlights;
+};
+
+layout(set = DESCRIPTOR_SET_UBO, binding = RESERVED_DESCRIPTOR_UBO_MATERIALS) uniform MaterialUBO
+{
+	MaterialData materials[MAX_UNIQUE_MATERIALS];
+};
+
 layout(set = DESCRIPTOR_SET_SAMPLED_IMAGE, binding = 0) uniform texture2D g_textures[];
 layout(set = DESCRIPTOR_SET_SAMPLED_IMAGE, binding = 0) uniform textureCube g_cube_textures[];
 layout(set = DESCRIPTOR_SET_SAMPLER, binding = 0) uniform sampler g_samplers[];

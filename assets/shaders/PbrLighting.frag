@@ -4,27 +4,6 @@
 
 #include "BRDF.glsl"
 
-layout(set = DESCRIPTOR_SET_UBO, binding = RESERVED_DESCRIPTOR_UBO_SETTINGS) uniform SettingsUBO
-{
-	RenderSettings settings;
-};
-
-layout(set = DESCRIPTOR_SET_UBO, binding = RESERVED_DESCRIPTOR_UBO_CAMERA) uniform CameraUBO
-{
-	CameraData camera;
-};
-
-layout(set = DESCRIPTOR_SET_UBO, binding = RESERVED_DESCRIPTOR_UBO_LIGHTS) uniform LightUBO
-{
-	PointlightData pointlights[MAX_LIGHT_SOURCES];
-	uint num_pointlights;
-};
-
-layout(set = DESCRIPTOR_SET_UBO, binding = RESERVED_DESCRIPTOR_UBO_MATERIALS) uniform MaterialUBO
-{
-	MaterialData materials[MAX_UNIQUE_MATERIALS];
-};
-
 layout(std140, push_constant) uniform constants
 {
 	layout(offset = 0) uint irradiance_cubemap_index;
@@ -84,9 +63,9 @@ vec3 RadianceAtFragment(vec3 V, vec3 N, vec3 world_pos,
 		vec2 env_brdf = SampleTexture(push_consts.brdf_lut_index, push_consts.brdf_lut_sampler_index, vec2(max(dot(N, V), 0.0), roughness)).rg;
 		vec3 reflection = SampleTextureCubeLod(push_consts.prefiltered_cubemap_index, push_consts.prefiltered_sampler_index, R, roughness * push_consts.num_prefiltered_mips).rgb;
 		vec3 irradiance = SampleTextureCube(push_consts.irradiance_cubemap_index, push_consts.irradiance_sampler_index, N).rgb;
-
-		vec3 diffuse = irradiance * albedo * INV_PI;
 	
+		vec3 diffuse = irradiance * albedo * INV_PI;
+
 		vec3 F = F_SchlickRoughness(max(dot(N, V), 0.0), f0, roughness);
 		vec3 specular = reflection * (F * env_brdf.x + env_brdf.y);
 	

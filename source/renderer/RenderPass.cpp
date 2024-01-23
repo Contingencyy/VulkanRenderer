@@ -48,7 +48,7 @@ void RenderPass::Begin(VkCommandBuffer command_buffer, const BeginInfo& begin_in
 		rendering_info.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
 		rendering_info.colorAttachmentCount = (uint32_t)color_attachment_infos.size();
 		rendering_info.pColorAttachments = color_attachment_infos.data();
-		rendering_info.pDepthAttachment = &depth_attachment_info;
+		rendering_info.pDepthAttachment = m_attachments[ATTACHMENT_SLOT_DEPTH_STENCIL].info.slot == ATTACHMENT_SLOT_INVALID ? nullptr : &depth_attachment_info;
 		rendering_info.viewMask = 0;
 		rendering_info.renderArea = { 0, 0, begin_info.render_width, begin_info.render_height };
 		rendering_info.layerCount = 1;

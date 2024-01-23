@@ -18,6 +18,8 @@ namespace Vulkan
 	VkResult SwapChainPresent(const std::vector<VkSemaphore>& wait_semaphores);
 	void RecreateSwapChain();
 	void CopyToSwapchain(VkCommandBuffer command_buffer, VkImage src_image);
+	void SetVSyncEnabled(bool enabled);
+	bool IsVSyncEnabled();
 
 	void DebugNameObject(uint64_t object, VkDebugReportObjectTypeEXT object_type, const char* debug_name);
 
@@ -135,6 +137,9 @@ struct VulkanInstance
 		VkFormat format = VK_FORMAT_UNDEFINED;
 		VkExtent2D extent = { 0, 0 };
 		uint32_t current_image = 0;
+
+		VkPresentModeKHR desired_present_mode = VK_PRESENT_MODE_FIFO_KHR;
+		bool vsync_enabled = true;
 
 		std::vector<VkImage> images;
 		std::vector<VkSemaphore> image_available_semaphores;

@@ -116,9 +116,11 @@ namespace Application
 		Renderer::Init(data.window);
 
 		Assets::Init();
-		//Assets::LoadTexture("assets/textures/hdr/Env_Plaza.hdr", "Env", TEXTURE_FORMAT_RGBA32_SFLOAT, false, true);
-		//Assets::LoadTexture("assets/textures/hdr/Env_Rocky_Hills.hdr", "Env", TEXTURE_FORMAT_RGBA32_SFLOAT, false, true);
-		Assets::LoadTexture("assets/textures/hdr/Env_Victorian_Hall.hdr", "Env", TEXTURE_FORMAT_RGBA32_SFLOAT, false, true);
+		//Assets::LoadTexture("assets/textures/hdr/Env_Plaza.hdr", "Env", TEXTURE_FORMAT_RGBA32_SFLOAT, true, true);
+		//Assets::LoadTexture("assets/textures/hdr/Env_Rocky_Hills.hdr", "Env", TEXTURE_FORMAT_RGBA32_SFLOAT, true, true);
+		//Assets::LoadTexture("assets/textures/hdr/Env_Victorian_Hall.hdr", "Env", TEXTURE_FORMAT_RGBA32_SFLOAT, true, true);
+		//Assets::LoadTexture("assets/textures/hdr/Env_Golden_Bay.hdr", "Env", TEXTURE_FORMAT_RGBA32_SFLOAT, true, true);
+		Assets::LoadTexture("assets/textures/hdr/Env_Belfast_Sunset.hdr", "Env", TEXTURE_FORMAT_RGBA32_SFLOAT, true, true);
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatToyCar/ToyCar.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatTest/ClearCoatTest.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatRing/ClearCoatRing.gltf", "model");

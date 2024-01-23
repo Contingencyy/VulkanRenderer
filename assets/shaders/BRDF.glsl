@@ -40,12 +40,34 @@ float Fd_Lambert()
 	return INV_PI;
 }
 
-float Fd_Burley(float NoV, float NoL, float LoH, float roughness)
+float Fd_Burley(vec3 L, vec3 V, vec3 N, float roughness)
 {
+	vec3 H = normalize(V + L);
+
+	float NoV = clamp(dot(N, V), 0.0, 1.0);
+	float NoL = clamp(dot(N, L), 0.0, 1.0);
+	float LoH = clamp(dot(L, H), 0.0, 1.0);
+
 	float f90 = 0.5f + 2.0f * roughness * LoH * LoH;
 	float light_scatter = F_Schlick90(NoL, 1.0, f90);
 	float view_scatter = F_Schlick90(NoV, 1.0, f90);
 	return light_scatter * view_scatter * (1.0 * INV_PI);
+}
+
+float Fd_OrenNayar(vec3 L, vec3 V, vec3 N, float roughness)
+{
+	float NoV = clamp(dot(N, V), 0.0, 1.0);
+	float NoL = clamp(dot(N, L), 0.0, 1.0);
+	float LoV = clamp(dot(L, V), 0.0, 1.0);
+
+	float s = LoV - NoL * NoV;
+	
+	float sigma2 = roughness * roughness;
+	float A = 1.0 - 0.5 * (sigma2 / ((sigma2 + 0.33) + 0.000001));
+	float B = 0.45 * sigma2 / ((sigma2 + 0.09) + 0.0001);
+
+	float ga = dot(V - N * NoV, N - N * NoL);
+	return max(0.0, NoL) * (A + B * max(0.0, ga) * sqrt(max((1.0 - NoV * NoV) * (1.0 - NoL * NoL), 0.0)) / max(NoL, NoV));
 }
 
 void BaseContribution(vec3 L, vec3 V, vec3 N, vec3 f0, vec3 albedo, float metallic, float roughness, inout vec3 brdf_diffuse, inout vec3 brdf_specular)
@@ -56,6 +78,7 @@ void BaseContribution(vec3 L, vec3 V, vec3 N, vec3 f0, vec3 albedo, float metall
 	float NoL = clamp(dot(N, L), 0.0, 1.0);
 	float LoH = clamp(dot(L, H), 0.0, 1.0);
 	float NoH = clamp(dot(N, H), 0.0, 1.0);
+	float LoV = clamp(dot(L, V), 0.0, 1.0);
 
 	//roughness = max(0.05, roughness);
 
@@ -68,7 +91,19 @@ void BaseContribution(vec3 L, vec3 V, vec3 N, vec3 f0, vec3 albedo, float metall
 		vec3 kD = (1.0 - F) * (1.0 - metallic);
 
 		brdf_specular = (D * G) * F;
-		brdf_diffuse = kD * albedo * Fd_Burley(NoV, NoL, LoH, roughness);
+		
+		switch (settings.diffuse_brdf_model)
+		{
+			case DIFFUSE_BRDF_MODEL_LAMBERTIAN:
+				brdf_diffuse = kD * albedo * Fd_Lambert();
+				break;
+			case DIFFUSE_BRDF_MODEL_BURLEY:
+				brdf_diffuse = kD * albedo * Fd_Burley(L, V, N, roughness);
+				break;
+			case DIFFUSE_BRDF_MODEL_OREN_NAYAR:
+				brdf_diffuse = kD * albedo * Fd_OrenNayar(L, V, N, roughness);
+				break;
+		}
 	}
 }
 

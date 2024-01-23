@@ -28,8 +28,9 @@ namespace Renderer
 	static constexpr uint32_t MAX_DRAW_LIST_ENTRIES = 10000;
 	static constexpr uint32_t IBL_HDR_CUBEMAP_RESOLUTION = 1024;
 	static constexpr uint32_t IBL_IRRADIANCE_CUBEMAP_RESOLUTION = 64;
+	static constexpr uint32_t IBL_IRRADIANCE_CUBEMAP_SAMPLE_MULTIPLIER = 4;
 	static constexpr uint32_t IBL_PREFILTERED_CUBEMAP_RESOLUTION = 1024;
-	static constexpr uint32_t IBL_PREFILTERED_CUBEMAP_NUM_SAMPLES = 1024;
+	static constexpr uint32_t IBL_PREFILTERED_CUBEMAP_NUM_SAMPLES = 32;
 	static constexpr uint32_t IBL_BRDF_LUT_RESOLUTION = 1024;
 	static constexpr uint32_t IBL_BRDF_LUT_SAMPLES = 1024;
 
@@ -341,10 +342,10 @@ namespace Renderer
 		// Create default sampler
 		SamplerCreateInfo sampler_info = {};
 
-		sampler_info.address_u = SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-		sampler_info.address_v = SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-		sampler_info.address_w = SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-		sampler_info.border_color = SAMPLER_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+		sampler_info.address_u = SAMPLER_ADDRESS_MODE_REPEAT;
+		sampler_info.address_v = SAMPLER_ADDRESS_MODE_REPEAT;
+		sampler_info.address_w = SAMPLER_ADDRESS_MODE_REPEAT;
+		sampler_info.border_color = SAMPLER_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
 		
 		sampler_info.filter_min = SAMPLER_FILTER_LINEAR; // Undersampling
 		sampler_info.filter_mag = SAMPLER_FILTER_LINEAR; // Oversampling
@@ -359,7 +360,11 @@ namespace Renderer
 		data->default_sampler = Sampler::Create(sampler_info);
 		
 		// Create IBL samplers
-		sampler_info.enable_anisotropy = VK_FALSE;
+		sampler_info.address_u = SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+		sampler_info.address_v = SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+		sampler_info.address_w = SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+		sampler_info.border_color = SAMPLER_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+		//sampler_info.enable_anisotropy = VK_FALSE;
 		sampler_info.name = "HDR Equirectangular Sampler";
 		data->hdr_equirect_sampler = Sampler::Create(sampler_info);
 
@@ -724,7 +729,7 @@ namespace Renderer
 			info.color_attachment_formats = data->render_passes.gen_irradiance_cube.GetColorAttachmentFormats();
 			info.vs_path = "assets/shaders/Cube.vert";
 			info.fs_path = "assets/shaders/IrradianceCube.frag";
-
+			
 			data->render_passes.gen_irradiance_cube.Build(descriptor_buffer_layouts, push_ranges, info);
 		}
 
@@ -974,6 +979,9 @@ namespace Renderer
 			float delta_theta = (0.5f * glm::pi<float>()) / 64.0f;
 		} push_consts;
 
+		push_consts.delta_phi /= IBL_IRRADIANCE_CUBEMAP_SAMPLE_MULTIPLIER;
+		push_consts.delta_theta /= IBL_IRRADIANCE_CUBEMAP_SAMPLE_MULTIPLIER;
+
 		push_consts.src_texture_index = src_texture_index;
 		push_consts.src_sampler_index = src_sampler_index;
 
@@ -1211,8 +1219,10 @@ namespace Renderer
 		data->settings.use_ibl = true;
 		data->settings.use_clearcoat_specular_ibl = true;
 
+		data->settings.diffuse_brdf_model = DIFFUSE_BRDF_MODEL_OREN_NAYAR;
+
 		data->settings.exposure = 1.5f;
-		data->settings.gamma = 2.4f;
+		data->settings.gamma = 2.2f;
 
 		data->settings.debug_render_mode = DEBUG_RENDER_MODE_NONE;
 	}
@@ -1220,7 +1230,7 @@ namespace Renderer
 	void Exit()
 	{
 		// Wait for GPU to be idle before we start the cleanup
-		vkDeviceWaitIdle(vk_inst.device);
+		VkCheckResult(vkDeviceWaitIdle(vk_inst.device));
 
 		ExitDearImGui();
 
@@ -1243,6 +1253,7 @@ namespace Renderer
 		const Data::Frame* frame = GetFrameCurrent();
 
 		// Wait for timeline semaphore to reach 
+		frame = GetFrameCurrent();
 		VkSemaphoreWaitInfo wait_info = { VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO };
 		wait_info.semaphoreCount = 1;
 		wait_info.pSemaphores = &data->sync.in_flight_semaphore_timeline;
@@ -1471,6 +1482,12 @@ namespace Renderer
 		{
 			ImGui::Indent(10.0f);
 
+			bool vsync = Vulkan::IsVSyncEnabled();
+			if (ImGui::Checkbox("VSync", &vsync))
+			{
+				Vulkan::SetVSyncEnabled(vsync);
+			}
+
 			// ------------------------------------------------------------------------------------------------------
 			// Debug settings
 
@@ -1519,6 +1536,25 @@ namespace Renderer
 				ImGui::Checkbox("Use clearcoat", (bool*)&data->settings.use_clearcoat);
 				ImGui::Checkbox("Use image-based lighting", (bool*)&data->settings.use_ibl);
 				ImGui::Checkbox("Clearcoat specular IBL", (bool*)&data->settings.use_clearcoat_specular_ibl);
+
+				if (ImGui::BeginCombo("Diffuse BRDF Model", DIFFUSE_BRDF_MODEL_LABELS[data->settings.diffuse_brdf_model]))
+				{
+					for (uint32_t i = 0; i < DIFFUSE_BRDF_MODEL_NUM_MODELS; ++i)
+					{
+						bool is_selected = i == data->settings.diffuse_brdf_model;
+						if (ImGui::Selectable(DIFFUSE_BRDF_MODEL_LABELS[i], is_selected))
+						{
+							data->settings.diffuse_brdf_model = i;
+						}
+
+						if (is_selected)
+						{
+							ImGui::SetItemDefaultFocus();
+						}
+					}
+
+					ImGui::EndCombo();
+				}
 
 				ImGui::Unindent(10.0f);
 			}
