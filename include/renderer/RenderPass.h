@@ -1,9 +1,6 @@
 #pragma once
 #include "renderer/VulkanBackend.h"
 
-#include <vector>
-#include <array>
-
 class TextureView;
 
 enum RenderPassType

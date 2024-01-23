@@ -1,3 +1,4 @@
+#include "Precomp.h"
 #include "renderer/Renderer.h"
 #include "renderer/VulkanBackend.h"
 #include "renderer/VulkanResourceTracker.h"
@@ -6,7 +7,6 @@
 #include "renderer/Texture.h"
 #include "renderer/Buffer.h"
 #include "renderer/Sampler.h"
-#include "Common.h"
 #include "Shared.glsl.h"
 #include "Assets.h"
 
@@ -18,16 +18,6 @@
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_glfw.h"
 #include "imgui/imgui_impl_vulkan.h"
-
-#include <array>
-#include <optional>
-#include <assert.h>
-#include <cstring>
-#include <set>
-#include <algorithm>
-#include <exception>
-#include <numeric>
-#include <string>
 
 namespace Renderer
 {

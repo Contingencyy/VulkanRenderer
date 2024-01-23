@@ -1,3 +1,4 @@
+#include "Precomp.h"
 #include "renderer/DescriptorBuffer.h"
 #include "renderer/DescriptorAllocation.h"
 #include "renderer/VulkanBackend.h"

@@ -3,7 +3,7 @@
 
 #define DECLARE_STRUCT(x) struct alignas(16) x
 
-#include "Common.h"
+#include "Precomp.h"
 typedef uint32_t uint;
 typedef glm::vec3 vec3;
 typedef glm::vec4 vec4;

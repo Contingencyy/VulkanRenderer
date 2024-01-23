@@ -1,3 +1,4 @@
+#include "Precomp.h"
 #include "renderer/RenderPass.h"
 #include "renderer/RenderTypes.h"
 #include "renderer/Texture.h"

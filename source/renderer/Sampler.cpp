@@ -1,3 +1,4 @@
+#include "Precomp.h"
 #include "renderer/Sampler.h"
 
 std::unique_ptr<Sampler> Sampler::Create(const SamplerCreateInfo& create_info)

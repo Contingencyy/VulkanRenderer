@@ -128,6 +128,8 @@
       <WarningLevel>Level4</WarningLevel>
       <AdditionalIncludeDirectories>$(SolutionDir)extern;$(SolutionDir)extern/glm;$(SolutionDir)assets/shaders/;$(SolutionDir)include;C:\VulkanSDK\1.3.261.1\Include;$(SolutionDir)extern/glfw-3.3.8-win64/include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>Precomp.h</PrecompiledHeaderFile>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -146,13 +148,27 @@
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="extern\imgui\imgui.cpp" />
-    <ClCompile Include="extern\imgui\imgui_draw.cpp" />
-    <ClCompile Include="extern\imgui\imgui_impl_glfw.cpp" />
-    <ClCompile Include="extern\imgui\imgui_impl_vulkan.cpp" />
-    <ClCompile Include="extern\imgui\imgui_tables.cpp" />
-    <ClCompile Include="extern\imgui\imgui_widgets.cpp" />
-    <ClCompile Include="extern\mikkt\mikktspace.c" />
+    <ClCompile Include="extern\imgui\imgui.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="extern\imgui\imgui_draw.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="extern\imgui\imgui_impl_glfw.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="extern\imgui\imgui_impl_vulkan.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="extern\imgui\imgui_tables.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="extern\imgui\imgui_widgets.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="extern\mikkt\mikktspace.c">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="source\Application.cpp" />
     <ClCompile Include="source\Assets.cpp" />
     <ClCompile Include="source\Camera.cpp" />
@@ -160,6 +176,9 @@
     <ClCompile Include="source\Input.cpp" />
     <ClCompile Include="source\Logger.cpp" />
     <ClCompile Include="source\Main.cpp" />
+    <ClCompile Include="source\Precomp.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="source\renderer\Buffer.cpp" />
     <ClCompile Include="source\renderer\DescriptorAllocation.cpp" />
     <ClCompile Include="source\renderer\DescriptorBuffer.cpp" />
@@ -179,10 +198,10 @@
     <ClInclude Include="include\Application.h" />
     <ClInclude Include="include\Assets.h" />
     <ClInclude Include="include\Camera.h" />
-    <ClInclude Include="include\Common.h" />
     <ClInclude Include="include\Entity.h" />
     <ClInclude Include="include\Input.h" />
     <ClInclude Include="include\Logger.h" />
+    <ClInclude Include="include\Precomp.h" />
     <ClInclude Include="include\renderer\Buffer.h" />
     <ClInclude Include="include\renderer\DescriptorAllocation.h" />
     <ClInclude Include="include\renderer\DescriptorBuffer.h" />

@@ -1,7 +1,4 @@
 #pragma once
-#include "Common.h"
-
-#include <type_traits>
 
 template<typename TResource>
 class ResourceSlotmap

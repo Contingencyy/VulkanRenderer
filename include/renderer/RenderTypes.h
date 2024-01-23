@@ -1,5 +1,4 @@
 #pragma once
-#include "Common.h"
 
 using TextureHandle_t = ResourceHandle_t;
 using MeshHandle_t = ResourceHandle_t;

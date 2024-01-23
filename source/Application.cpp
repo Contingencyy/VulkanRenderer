@@ -1,3 +1,4 @@
+#include "Precomp.h"
 #include "Application.h"
 #include "renderer/Renderer.h"
 #include "Logger.h"
@@ -9,8 +10,6 @@
 
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_glfw.h"
-
-#include <chrono>
 
 namespace Application
 {

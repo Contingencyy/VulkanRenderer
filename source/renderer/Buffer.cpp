@@ -1,3 +1,4 @@
+#include "Precomp.h"
 #include "renderer/Buffer.h"
 
 std::unique_ptr<Buffer> Buffer::Create(const BufferCreateInfo& create_info)

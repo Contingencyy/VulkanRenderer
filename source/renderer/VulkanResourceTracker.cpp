@@ -1,7 +1,5 @@
+#include "Precomp.h"
 #include "renderer/VulkanResourceTracker.h"
-
-#include <unordered_map>
-#include <functional>
 
 namespace VulkanResourceTracker
 {

@@ -1,5 +1,5 @@
+#include "Precomp.h"
 #include "Assets.h"
-#include "Common.h"
 #include "renderer/Renderer.h"
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -9,8 +9,6 @@
 #include "cgltf/cgltf.h"
 
 #include "mikkt/mikktspace.h"
-
-#include <unordered_map>
 
 class TangentCalculator
 {
@@ -109,8 +107,6 @@ private:
 	SMikkTSpaceContext m_mikkt_context = {};
 
 };
-
-#include "renderer/ResourceSlotmap.h"
 
 namespace Assets
 {

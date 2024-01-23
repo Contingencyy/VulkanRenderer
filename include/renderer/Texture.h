@@ -2,9 +2,6 @@
 #include "renderer/VulkanBackend.h"
 #include "renderer/RenderTypes.h"
 
-#include <unordered_map>
-#include <functional>
-
 struct TextureViewCreateInfo
 {
 	VkImageViewType type = VK_IMAGE_VIEW_TYPE_MAX_ENUM;

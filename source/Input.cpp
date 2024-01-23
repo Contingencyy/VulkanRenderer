@@ -1,12 +1,10 @@
+#include "Precomp.h"
 #include "Input.h"
 
 #include "GLFW/glfw3.h"
 
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_glfw.h"
-
-#include <vector>
-#include <unordered_map>
 
 namespace Input
 {

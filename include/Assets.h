@@ -1,8 +1,6 @@
 #pragma once
 #include "renderer/RenderTypes.h"
 
-#include <vector>
-
 namespace Assets
 {
 

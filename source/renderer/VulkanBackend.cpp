@@ -1,16 +1,11 @@
+#include "Precomp.h"
 #include "renderer/VulkanBackend.h"
 #include "renderer/VulkanResourceTracker.h"
 #include "renderer/DescriptorBuffer.h"
-#include "Common.h"
 
 #include "shaderc/shaderc.hpp"
 
 #include "GLFW/glfw3.h"
-
-#include <assert.h>
-#include <set>
-#include <algorithm>
-#include <fstream>
 
 VulkanInstance vk_inst;
 

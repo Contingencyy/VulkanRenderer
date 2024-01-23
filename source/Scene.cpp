@@ -1,3 +1,4 @@
+#include "Precomp.h"
 #include "Scene.h"
 #include "Entity.h"
 

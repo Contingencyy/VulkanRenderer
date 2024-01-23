@@ -1,10 +1,9 @@
+#include "Precomp.h"
 #include "renderer/Texture.h"
 #include "renderer/Buffer.h"
 #include "renderer/VulkanResourceTracker.h"
 
 #include "imgui/imgui_impl_vulkan.h"
-
-#include <vector>
 
 std::unique_ptr<Texture> Texture::Create(const TextureCreateInfo& create_info)
 {

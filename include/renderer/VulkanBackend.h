@@ -4,8 +4,6 @@
 #include "renderer/DescriptorAllocation.h"
 #include "Shared.glsl.h"
 
-#include <vector>
-
 typedef struct GLFWwindow;
 
 inline void VkCheckResult(VkResult result);

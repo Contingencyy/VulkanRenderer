@@ -1,3 +1,4 @@
+#include "Precomp.h"
 #include "Entity.h"
 #include "renderer/Renderer.h"
 

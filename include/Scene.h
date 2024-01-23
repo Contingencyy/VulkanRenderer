@@ -2,8 +2,6 @@
 #include "Camera.h"
 #include "Entity.h"
 
-#include <vector>
-
 class Scene
 {
 public:
