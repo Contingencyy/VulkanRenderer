@@ -70,7 +70,7 @@ float Fd_OrenNayar(vec3 L, vec3 V, vec3 N, float roughness)
 	return max(0.0, NoL) * (A + B * max(0.0, ga) * sqrt(max((1.0 - NoV * NoV) * (1.0 - NoL * NoL), 0.0)) / max(NoL, NoV));
 }
 
-void BaseContribution(vec3 L, vec3 V, vec3 N, vec3 f0, vec3 albedo, float metallic, float roughness, inout vec3 brdf_diffuse, inout vec3 brdf_specular)
+void EvaluateBRDFBase(vec3 L, vec3 V, vec3 N, vec3 f0, vec3 albedo, float metallic, float roughness, inout vec3 brdf_diffuse, inout vec3 brdf_specular)
 {
 	vec3 H = normalize(V + L);
 
@@ -107,19 +107,6 @@ void BaseContribution(vec3 L, vec3 V, vec3 N, vec3 f0, vec3 albedo, float metall
 	}
 }
 
-vec3 BRDF(vec3 L, vec3 light_color, vec3 V, vec3 N, vec3 f0, vec3 albedo, float metallic, float roughness)
-{
-	float NoL = clamp(dot(N, L), 0.0, 1.0);
-
-	vec3 brdf_diffuse = vec3(0.0);
-	vec3 brdf_specular = vec3(0.0);
-	BaseContribution(L, V, N, f0, albedo, metallic, roughness, brdf_diffuse, brdf_specular);
-
-	vec3 color = (brdf_diffuse + brdf_specular);
-	color *= light_color * NoL;
-	return color;
-}
-
 /*
 	This implementation of clear coat materials is very simple and does not model the following effects:
 	- The clearcoat layer is assumed infinitely thin, which means that there is no refraction
@@ -129,7 +116,7 @@ vec3 BRDF(vec3 L, vec3 light_color, vec3 V, vec3 N, vec3 f0, vec3 albedo, float 
 	- Clearcoat layer is always assumed to have an IOR of 1.5
 */
 
-void ClearCoatContribution(vec3 L, vec3 V, vec3 N, vec3 f0, float roughness, inout vec3 Fc, inout vec3 brdf_clearcoat)
+void EvaluateBRDFClearCoat(vec3 L, vec3 V, vec3 N, vec3 f0, float roughness, inout vec3 Fc, inout vec3 brdf_clearcoat)
 {
 	vec3 H = normalize(V + L);
 
@@ -146,22 +133,4 @@ void ClearCoatContribution(vec3 L, vec3 V, vec3 N, vec3 f0, float roughness, ino
 
 		brdf_clearcoat = (D * G) * F;
 	}
-}
-
-vec3 BRDFClearCoat(vec3 L, vec3 light_color, vec3 V, vec3 N, vec3 f0, vec3 albedo, float metallic, float roughness,
-	float coat_alpha, vec3 coat_normal, float coat_roughness)
-{
-	float NoL = clamp(dot(N, L), 0.0, 1.0);
-
-	vec3 Fc = vec3(0.0);
-	vec3 brdf_clearcoat = vec3(0.0);
-	ClearCoatContribution(L, V, coat_normal, f0, coat_roughness, Fc, brdf_clearcoat);
-
-	vec3 brdf_diffuse = vec3(0.0);
-	vec3 brdf_specular = vec3(0.0);
-	BaseContribution(L, V, N, f0, albedo, metallic, roughness, brdf_diffuse, brdf_specular);
-
-	vec3 color = (brdf_diffuse + brdf_specular) * (1.0 - coat_alpha * Fc) + coat_alpha * brdf_clearcoat;
-	color *= light_color * NoL;
-	return color;
 }

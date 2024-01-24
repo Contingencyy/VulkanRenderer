@@ -1843,7 +1843,7 @@ namespace Renderer
 		VK_ASSERT(data->num_pointlights < MAX_LIGHT_SOURCES && "Exceeded the maximum amount of light sources");
 
 		PointlightData pointlight = {
-			.position = pos,
+			.pos = pos,
 			.intensity = intensity,
 			.color = color
 		};

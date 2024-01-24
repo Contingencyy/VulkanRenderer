@@ -27,19 +27,33 @@ layout(location = 1) out vec4 debug_color;
 
 const vec3 falloff = vec3(1.0f, 0.007f, 0.0002f);
 
-vec3 RadianceAtFragment(vec3 V, vec3 N, vec3 world_pos,
-	vec3 albedo, float metallic, float roughness)
+struct ViewInfo
 {
-	// Remapping of roughness to be visually more linear
-	if (settings.use_squared_roughness == 1)
-	{
-		roughness = roughness * roughness;
-	}
+	vec3 pos;
+	vec3 dir;
+};
 
-	vec3 f0 = mix(vec3(0.04), albedo, metallic);
+struct GeometryInfo
+{
+	vec3 pos_world;
+
+	vec3 albedo;
+	vec3 normal;
+	float metallic;
+	float roughness;
+
+	bool has_coat;
+	float alpha_coat;
+	vec3 normal_coat;
+	float roughness_coat;
+};
+
+vec3 EvaluateLighting(ViewInfo view, GeometryInfo geo)
+{
+	vec3 f0 = mix(vec3(0.04), geo.albedo, geo.metallic);
 	vec3 Lo = vec3(0.0);
-	
-	// Evaluate direct lighting
+
+	// Direct lighting
 	if (settings.use_direct_light == 1)
 	{
 		for (uint i = 0; i < num_pointlights; ++i)
@@ -47,117 +61,65 @@ vec3 RadianceAtFragment(vec3 V, vec3 N, vec3 world_pos,
 			PointlightData pointlight = pointlights[i];
 			vec3 light_color = pointlight.color * pointlight.intensity;
 
-			vec3 L = normalize(pointlight.position - world_pos.xyz);
-			vec3 dist_to_light = vec3(length(pointlight.position - world_pos.xyz));
+			vec3 light_dir = normalize(pointlight.pos - geo.pos_world);
+			vec3 dist_to_light = vec3(length(pointlight.pos - geo.pos_world));
 			vec3 dist_attenuation = clamp(1.0 / (falloff.x + (falloff.y * dist_to_light) + (falloff.z * (dist_to_light * dist_to_light))), 0.0, 1.0);
+			float NoL = clamp(dot(geo.normal, light_dir), 0.0, 1.0);
+			
+			vec3 Fc = vec3(0.0);
+			vec3 brdf_clearcoat = vec3(0.0);
 
-			Lo += BRDF(L, light_color, V, N, f0, albedo, metallic, roughness) * dist_attenuation;
+			if (geo.has_coat)
+			{
+				EvaluateBRDFClearCoat(light_dir, view.dir, geo.normal_coat, f0, geo.roughness_coat, Fc, brdf_clearcoat);
+			}
+
+			vec3 brdf_diffuse = vec3(0.0);
+			vec3 brdf_specular = vec3(0.0);
+			EvaluateBRDFBase(light_dir, view.dir, geo.normal, f0, geo.albedo, geo.metallic, geo.roughness, brdf_diffuse, brdf_specular);
+
+			if (geo.has_coat)
+			{
+				Lo = (brdf_diffuse + brdf_specular) * (1.0 - geo.alpha_coat * Fc) + geo.alpha_coat * brdf_clearcoat;
+			}
+			else
+			{
+				Lo += (brdf_diffuse + brdf_specular) * light_color * NoL * dist_attenuation;
+			}
 		}
 	}
-	
-	// Evaluate indirect lighting from HDR environment
+
+	// Indirect lighting from HDR environment
 	if (settings.use_ibl == 1)
 	{
-		vec3 R = reflect(-V, N);
+		vec3 R = reflect(-view.dir, geo.normal);
 
-		vec2 env_brdf = SampleTexture(push_consts.brdf_lut_index, push_consts.brdf_lut_sampler_index, vec2(max(dot(N, V), 0.0), roughness)).rg;
-		vec3 reflection = SampleTextureCubeLod(push_consts.prefiltered_cubemap_index, push_consts.prefiltered_sampler_index, R, roughness * push_consts.num_prefiltered_mips).rgb;
-		vec3 irradiance = SampleTextureCube(push_consts.irradiance_cubemap_index, push_consts.irradiance_sampler_index, N).rgb;
-	
-		vec3 diffuse = irradiance * albedo * INV_PI;
+		vec2 env_brdf = SampleTexture(push_consts.brdf_lut_index, push_consts.brdf_lut_sampler_index, vec2(max(dot(geo.normal, view.dir), 0.0), geo.roughness)).rg;
+		vec3 reflection = SampleTextureCubeLod(push_consts.prefiltered_cubemap_index, push_consts.prefiltered_sampler_index, R, geo.roughness * push_consts.num_prefiltered_mips).rgb;
+		vec3 irradiance = SampleTextureCube(push_consts.irradiance_cubemap_index, push_consts.irradiance_sampler_index, geo.normal).rgb;
 
-		vec3 F = F_SchlickRoughness(max(dot(N, V), 0.0), f0, roughness);
-		vec3 specular = reflection * (F * env_brdf.x + env_brdf.y);
-	
-		vec3 kD = (1.0 - F) * (1.0 - metallic);
-		vec3 ambient = (kD * diffuse + specular);
-		Lo += ambient;
+		// TODO: Pick between lambertian, Burley, and Oren-Nayar
+		vec3 diffuse = irradiance * geo.albedo * INV_PI;
 
-		if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_INDIRECT_DIFFUSE)
-		{
-			Lo = kD * diffuse;
-		}
-		else if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_INDIRECT_SPECULAR)
-		{
-			Lo = specular;
-		}
-		else if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_BRDF_LUT)
-		{
-			Lo = vec3(env_brdf, 0.0);
-		}
-	}
-	else
-	{
-		if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_INDIRECT_DIFFUSE ||
-			settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_INDIRECT_SPECULAR ||
-			settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_BRDF_LUT)
-		{
-			Lo = vec3(0.0);
-		}
-	}
-
-	return Lo;
-}
-
-vec3 RadianceAtFragmentClearCoat(vec3 V, vec3 N, vec3 world_pos,
-	vec3 albedo, float metallic, float roughness,
-	float coat_alpha, vec3 coat_normal, float coat_roughness)
-{
-	// Remapping of roughness to be visually more linear
-	if (settings.use_squared_roughness == 1)
-	{
-		roughness = roughness * roughness;
-		coat_roughness = clamp(coat_roughness, 0.089f, 1.0f);
-		coat_roughness = coat_roughness * coat_roughness;
-	}
-
-	vec3 f0 = mix(vec3(0.04), albedo, metallic);
-	vec3 Lo = vec3(0.0);
-
-	// Evaluate direct lighting
-	if (settings.use_direct_light == 1)
-	{
-		for (uint i = 0; i < num_pointlights; ++i)
-		{
-			PointlightData pointlight = pointlights[i];
-			vec3 light_color = pointlight.color * pointlight.intensity;
-		
-			vec3 L = normalize(pointlight.position - world_pos.xyz);
-			vec3 dist_to_light = vec3(length(pointlight.position - world_pos.xyz));
-			vec3 dist_attenuation = clamp(1.0 / (falloff.x + (falloff.y * dist_to_light) + (falloff.z * (dist_to_light * dist_to_light))), 0.0, 1.0);
-
-			Lo += BRDFClearCoat(L, light_color, V, N, f0, albedo, metallic, roughness, coat_alpha, coat_normal, coat_roughness) * dist_attenuation;
-		}
-	}
-	
-	// Evaluate indirect lighting from HDR environment
-	if (settings.use_ibl == 1)
-	{
-		vec3 R = reflect(-V, N);
-
-		vec2 env_brdf = SampleTexture(push_consts.brdf_lut_index, push_consts.brdf_lut_sampler_index, vec2(max(dot(N, V), 0.0), roughness)).rg;
-		vec3 reflection = SampleTextureCubeLod(push_consts.prefiltered_cubemap_index, push_consts.prefiltered_sampler_index, R, roughness * push_consts.num_prefiltered_mips).rgb;
-		vec3 irradiance = SampleTextureCube(push_consts.irradiance_cubemap_index, push_consts.irradiance_sampler_index, N).rgb;
-
-		vec3 diffuse = irradiance * albedo * INV_PI;
-
-		vec3 F = F_SchlickRoughness(max(dot(N, V), 0.0), f0, roughness);
+		vec3 F = F_SchlickRoughness(max(dot(geo.normal, view.dir), 0.0), f0, geo.roughness);
 		vec3 specular = reflection * (F * env_brdf.x + env_brdf.y);
 
 		// Take into account clearcoat layer for IBL
-		if (settings.use_clearcoat_specular_ibl == 1)
+		if (settings.use_clearcoat_specular_ibl == 1 && geo.has_coat)
 		{
-			vec3 Fc = F_SchlickRoughness(max(dot(coat_normal, V), 0.0), f0, coat_roughness);
+			vec3 Fc = F_SchlickRoughness(max(dot(geo.normal_coat, view.dir), 0.0), f0, geo.roughness_coat);
+			// Take into account energy lost in the clearcoat layer by adjusting the base layer
 			diffuse *= 1.0 - Fc;
-			specular *= pow(1.0 - coat_alpha * Fc, vec3(2.0));
+			specular *= pow(1.0 - geo.alpha_coat * Fc, vec3(2.0));
 
-			vec3 Rc = reflect(-V, coat_normal);
-			vec3 coat_reflection = SampleTextureCubeLod(push_consts.prefiltered_cubemap_index, push_consts.prefiltered_sampler_index, Rc, coat_roughness * push_consts.num_prefiltered_mips).rgb;
-			vec2 coat_env_brdf = SampleTexture(push_consts.brdf_lut_index, push_consts.brdf_lut_sampler_index, vec2(max(dot(coat_normal, V), 0.0), coat_roughness)).rg;
-			specular += coat_alpha * coat_reflection * (Fc * coat_env_brdf.x + coat_env_brdf.y);
+			vec3 Rc = reflect(-view.dir, geo.normal_coat);
+
+			vec3 reflection_coat = SampleTextureCubeLod(push_consts.prefiltered_cubemap_index, push_consts.prefiltered_sampler_index, Rc, geo.roughness_coat * push_consts.num_prefiltered_mips).rgb;
+			vec2 env_brdf_coat = SampleTexture(push_consts.brdf_lut_index, push_consts.brdf_lut_sampler_index, vec2(max(dot(geo.normal_coat, view.dir), 0.0), geo.roughness_coat)).rg;
+			specular += geo.alpha_coat * reflection_coat * (Fc * env_brdf_coat.x + env_brdf_coat.y);
 		}
 	
-		vec3 kD = (1.0 - F) * (1.0 - metallic);
+		vec3 kD = (1.0 - F) * (1.0 - geo.metallic);
 		vec3 ambient = (kD * diffuse + specular);
 		Lo += ambient;
 
@@ -190,80 +152,98 @@ vec3 RadianceAtFragmentClearCoat(vec3 V, vec3 N, vec3 world_pos,
 void main()
 {
 	MaterialData material = materials[push_consts.mat_index];
-	vec3 albedo = SampleTexture(material.albedo_texture_index, material.sampler_index, frag_tex_coord).rgb * material.albedo_factor.rgb;
-	vec3 normal = SampleTexture(material.normal_texture_index, material.sampler_index, frag_tex_coord).rgb;
-	vec2 metallic_roughness = SampleTexture(material.metallic_roughness_texture_index, material.sampler_index, frag_tex_coord).bg * vec2(material.metallic_factor, material.roughness_factor);
 
-	// Create the rotation matrix to bring the sampled normal from tangent space to world space
+	GeometryInfo geo_info;
+	geo_info.has_coat = false;
+	geo_info.alpha_coat = 0.0;
+	geo_info.normal_coat = vec3(0.0);
+	geo_info.roughness_coat = 0.0;
+
+	// Sample default material values
+	geo_info.pos_world = frag_pos.xyz;
+	geo_info.albedo = SampleTexture(material.albedo_texture_index, material.sampler_index, frag_tex_coord).rgb * material.albedo_factor.rgb;
+	vec3 sampled_normal = SampleTexture(material.normal_texture_index, material.sampler_index, frag_tex_coord).rgb;
+	vec2 sampled_metallic_roughness = SampleTexture(material.metallic_roughness_texture_index, material.sampler_index, frag_tex_coord).bg * vec2(material.metallic_factor, material.roughness_factor);
+	geo_info.metallic = sampled_metallic_roughness.x;
+	geo_info.roughness = sampled_metallic_roughness.y;
+
+	// Bring sampled normal from tangent to world space
 	mat3 TBN = mat3(frag_tangent, frag_bitangent, frag_normal);
-	normal = normal * 2.0 - 1.0;
-	normal = normalize(TBN * normal);
-
-	vec3 view_pos = camera.view_pos.xyz;
-	vec3 view_dir = normalize(view_pos - frag_pos.xyz);
-
-	vec3 color = vec3(0.0);
+	sampled_normal = sampled_normal * 2.0 - 1.0;
+	geo_info.normal = normalize(TBN * sampled_normal);
 
 	if (material.has_clearcoat == 1 && settings.use_clearcoat == 1)
 	{
-		float clearcoat_alpha = SampleTexture(material.clearcoat_alpha_texture_index, material.sampler_index, frag_tex_coord).r * material.clearcoat_alpha_factor;
-		vec3 clearcoat_normal = SampleTexture(material.clearcoat_normal_texture_index, material.sampler_index, frag_tex_coord).rgb;
-		float clearcoat_roughness = SampleTexture(material.clearcoat_roughness_texture_index, material.sampler_index, frag_tex_coord).g * material.clearcoat_roughness_factor;
+		geo_info.has_coat = true;
 
-		clearcoat_normal = clearcoat_normal * 2.0 - 1.0;
-		clearcoat_normal = normalize(TBN * clearcoat_normal);
-
-		color = RadianceAtFragmentClearCoat(
-			view_dir, normal, frag_pos.xyz,
-			albedo, metallic_roughness.x, metallic_roughness.y,
-			clearcoat_alpha, clearcoat_normal, clearcoat_roughness
-		);
-
-		if (settings.debug_render_mode == DEBUG_RENDER_MODE_CLEARCOAT_ALPHA)
-		{
-			color = vec3(clearcoat_alpha);
-		}
-		else if (settings.debug_render_mode == DEBUG_RENDER_MODE_CLEARCOAT_NORMAL)
-		{
-			color = abs(clearcoat_normal);
-		}
-		else if (settings.debug_render_mode == DEBUG_RENDER_MODE_CLEARCOAT_ROUGHNESS)
-		{
-			color = vec3(0.0, clearcoat_roughness, 0.0);
-		}
+		// Sample clearcoat material values
+		geo_info.alpha_coat = SampleTexture(material.clearcoat_alpha_texture_index, material.sampler_index, frag_tex_coord).r * material.clearcoat_alpha_factor;
+		vec3 sampled_normal_coat = SampleTexture(material.clearcoat_normal_texture_index, material.sampler_index, frag_tex_coord).rgb;
+		geo_info.roughness_coat = SampleTexture(material.clearcoat_roughness_texture_index, material.sampler_index, frag_tex_coord).g * material.clearcoat_roughness_factor;
+		
+		// Bring sampled clearcoat normal from tangent to world space
+		sampled_normal_coat = sampled_normal_coat * 2.0 - 1.0;
+		geo_info.normal_coat = normalize(TBN * sampled_normal_coat);
 	}
-	else
+
+	// View info for lighting
+	ViewInfo view_info;
+	view_info.pos = camera.view_pos.xyz;
+	view_info.dir = normalize(view_info.pos - frag_pos.xyz);
+
+	// Square the roughness to be perceptually more linear, if the setting is enabled
+	if (settings.use_squared_roughness == 1)
 	{
-		color = RadianceAtFragment(
-			view_dir, normal, frag_pos.xyz,
-			albedo, metallic_roughness.x, metallic_roughness.y
-		);
-
-		// If this is not a clearcoat material and we want a clearcoat debug view,
-		// simply write debug pink to indicate that this is not a clearcoat material
-		if (settings.debug_render_mode == DEBUG_RENDER_MODE_CLEARCOAT_ALPHA ||
-			settings.debug_render_mode == DEBUG_RENDER_MODE_CLEARCOAT_NORMAL ||
-			settings.debug_render_mode == DEBUG_RENDER_MODE_CLEARCOAT_ROUGHNESS)
-		{
-			color = vec3(1.0, 0.0, 1.0);
-		}
+		geo_info.roughness = pow(geo_info.roughness, 2.0);
+		geo_info.roughness_coat = clamp(geo_info.roughness_coat, 0.089f, 1.0f);
+		geo_info.roughness_coat = pow(geo_info.roughness_coat, 2.0);
 	}
 
-	switch(settings.debug_render_mode)
+	// Write final color
+	vec3 color = EvaluateLighting(view_info, geo_info);
+
+	// Debug render modes
+	switch (settings.debug_render_mode)
 	{
 		case DEBUG_RENDER_MODE_ALBEDO:
 		{
-			color = albedo.xyz;
-		} break;
+			color = geo_info.albedo;
+			break;
+		}
 		case DEBUG_RENDER_MODE_NORMAL:
 		{
-			color = abs(normal);
-		} break;
+			color = geo_info.normal;
+			break;
+		}
 		case DEBUG_RENDER_MODE_METALLIC_ROUGHNESS:
 		{
-			// In source textures, metallic is blue, roughness is green, we mimic that
-			color = vec3(0.0, metallic_roughness.yx);
-		} break;
+			color = vec3(0.0, geo_info.metallic, geo_info.roughness);
+			break;
+		}
+		case DEBUG_RENDER_MODE_CLEARCOAT_ALPHA:
+		{
+			if (material.has_clearcoat == 1)
+				color = vec3(geo_info.alpha_coat);
+			else
+				color = vec3(1.0, 0.0, 1.0);
+			break;
+		}
+		case DEBUG_RENDER_MODE_CLEARCOAT_NORMAL:
+		{
+			if (material.has_clearcoat == 1)
+				color = geo_info.normal_coat;
+			else
+				color = vec3(1.0, 0.0, 1.0);
+			break;
+		}
+		case DEBUG_RENDER_MODE_CLEARCOAT_ROUGHNESS:
+		{
+			if (material.has_clearcoat == 1)
+				color = vec3(0.0, geo_info.roughness_coat, 0.0);
+			else
+				color = vec3(1.0, 0.0, 1.0);
+			break;
+		}
 	}
 
 	out_color = vec4(color, 1.0);

@@ -120,7 +120,7 @@ DECLARE_STRUCT(MaterialData)
 
 DECLARE_STRUCT(PointlightData)
 {
-	vec3 position;
+	vec3 pos;
 	float intensity;
 	vec3 color;
 };
