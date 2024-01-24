@@ -1214,12 +1214,14 @@ namespace Renderer
 
 		// Set default render settings
 		data->settings.use_direct_light = true;
-		data->settings.use_squared_roughness = true;
-		data->settings.use_clearcoat = true;
-		data->settings.use_ibl = true;
-		data->settings.use_clearcoat_specular_ibl = true;
 
-		data->settings.diffuse_brdf_model = DIFFUSE_BRDF_MODEL_OREN_NAYAR;
+		data->settings.use_pbr_squared_roughness = true;
+		data->settings.use_pbr_clearcoat = true;
+		data->settings.pbr_diffuse_brdf_model = DIFFUSE_BRDF_MODEL_OREN_NAYAR;
+
+		data->settings.use_ibl = true;
+		data->settings.use_ibl_specular_clearcoat = true;
+		data->settings.use_ibl_specular_multiscatter = true;
 
 		data->settings.exposure = 1.5f;
 		data->settings.gamma = 2.2f;
@@ -1527,33 +1529,51 @@ namespace Renderer
 				ImGui::Indent(10.0f);
 
 				ImGui::Checkbox("Use direct light", (bool*)&data->settings.use_direct_light);
-				ImGui::Checkbox("Use squared roughness (more linear perceptually)", (bool*)&data->settings.use_squared_roughness);
-				if (ImGui::IsItemHovered())
-				{
-					ImGui::SetTooltip("Squares the roughness before doing any lighting calculations, which makes it perceptually more linear");
-				}
 
-				ImGui::Checkbox("Use clearcoat", (bool*)&data->settings.use_clearcoat);
-				ImGui::Checkbox("Use image-based lighting", (bool*)&data->settings.use_ibl);
-				ImGui::Checkbox("Clearcoat specular IBL", (bool*)&data->settings.use_clearcoat_specular_ibl);
-
-				if (ImGui::BeginCombo("Diffuse BRDF Model", DIFFUSE_BRDF_MODEL_LABELS[data->settings.diffuse_brdf_model]))
+				ImGui::SetNextItemOpen(true, ImGuiCond_Once);
+				if (ImGui::CollapsingHeader("General"))
 				{
-					for (uint32_t i = 0; i < DIFFUSE_BRDF_MODEL_NUM_MODELS; ++i)
+					ImGui::Indent(10.0f);
+
+					ImGui::Checkbox("Use squared roughness (more linear perceptually)", (bool*)&data->settings.use_pbr_squared_roughness);
+					if (ImGui::IsItemHovered())
 					{
-						bool is_selected = i == data->settings.diffuse_brdf_model;
-						if (ImGui::Selectable(DIFFUSE_BRDF_MODEL_LABELS[i], is_selected))
+						ImGui::SetTooltip("Squares the roughness before doing any lighting calculations, which makes it perceptually more linear");
+					}
+					ImGui::Checkbox("Use clearcoat", (bool*)&data->settings.use_pbr_clearcoat);
+
+					if (ImGui::BeginCombo("Diffuse BRDF Model", DIFFUSE_BRDF_MODEL_LABELS[data->settings.pbr_diffuse_brdf_model]))
+					{
+						for (uint32_t i = 0; i < DIFFUSE_BRDF_MODEL_NUM_MODELS; ++i)
 						{
-							data->settings.diffuse_brdf_model = i;
+							bool is_selected = i == data->settings.pbr_diffuse_brdf_model;
+							if (ImGui::Selectable(DIFFUSE_BRDF_MODEL_LABELS[i], is_selected))
+							{
+								data->settings.pbr_diffuse_brdf_model = i;
+							}
+
+							if (is_selected)
+							{
+								ImGui::SetItemDefaultFocus();
+							}
 						}
 
-						if (is_selected)
-						{
-							ImGui::SetItemDefaultFocus();
-						}
+						ImGui::EndCombo();
 					}
 
-					ImGui::EndCombo();
+					ImGui::Unindent(10.0f);
+				}
+
+				ImGui::SetNextItemOpen(true, ImGuiCond_Once);
+				if (ImGui::CollapsingHeader("IBL"))
+				{
+					ImGui::Indent(10.0f);
+
+					ImGui::Checkbox("Use image-based lighting", (bool*)&data->settings.use_ibl);
+					ImGui::Checkbox("Use specular clearcoat", (bool*)&data->settings.use_ibl_specular_clearcoat);
+					ImGui::Checkbox("Use specular multiscatter", (bool*)&data->settings.use_ibl_specular_multiscatter);
+					
+					ImGui::Unindent(10.0f);
 				}
 
 				ImGui::Unindent(10.0f);

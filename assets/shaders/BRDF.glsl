@@ -92,7 +92,7 @@ void EvaluateBRDFBase(vec3 L, vec3 V, vec3 N, vec3 f0, vec3 albedo, float metall
 
 		brdf_specular = (D * G) * F;
 		
-		switch (settings.diffuse_brdf_model)
+		switch (settings.pbr_diffuse_brdf_model)
 		{
 			case DIFFUSE_BRDF_MODEL_LAMBERTIAN:
 				brdf_diffuse = kD * albedo * Fd_Lambert();

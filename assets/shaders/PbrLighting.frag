@@ -99,13 +99,15 @@ vec3 EvaluateLighting(ViewInfo view, GeometryInfo geo)
 		vec3 irradiance = SampleTextureCube(push_consts.irradiance_cubemap_index, push_consts.irradiance_sampler_index, geo.normal).rgb;
 
 		// TODO: Pick between lambertian, Burley, and Oren-Nayar
+		vec3 diffuse_color = geo.albedo * INV_PI;
 		vec3 diffuse = irradiance * geo.albedo * INV_PI;
 
 		vec3 F = F_SchlickRoughness(max(dot(geo.normal, view.dir), 0.0), f0, geo.roughness);
-		vec3 specular = reflection * (F * env_brdf.x + env_brdf.y);
+		vec3 FssEss = F * env_brdf.x + env_brdf.y;
+		vec3 specular = reflection * FssEss;
 
 		// Take into account clearcoat layer for IBL
-		if (settings.use_clearcoat_specular_ibl == 1 && geo.has_coat)
+		if (settings.use_ibl_specular_clearcoat == 1 && geo.has_coat)
 		{
 			vec3 Fc = F_SchlickRoughness(max(dot(geo.normal_coat, view.dir), 0.0), f0, geo.roughness_coat);
 			// Take into account energy lost in the clearcoat layer by adjusting the base layer
@@ -118,10 +120,24 @@ vec3 EvaluateLighting(ViewInfo view, GeometryInfo geo)
 			vec2 env_brdf_coat = SampleTexture(push_consts.brdf_lut_index, push_consts.brdf_lut_sampler_index, vec2(max(dot(geo.normal_coat, view.dir), 0.0), geo.roughness_coat)).rg;
 			specular += geo.alpha_coat * reflection_coat * (Fc * env_brdf_coat.x + env_brdf_coat.y);
 		}
-	
-		vec3 kD = (1.0 - F) * (1.0 - geo.metallic);
-		vec3 ambient = (kD * diffuse + specular);
-		Lo += ambient;
+
+		vec3 kD = vec3(0.0);
+		// Source (Fdez-Agüera): https://www.jcgt.org/published/0008/01/03/paper.pdf
+		if (settings.use_ibl_specular_multiscatter == 1)
+		{
+			float Ems = (1.0 - (env_brdf.x + env_brdf.y));
+			
+			vec3 F_avg = f0 + (1.0 - f0) / 21.0;
+			vec3 FmsEms = Ems * FssEss * F_avg / (1.0 - F_avg * Ems);
+			kD = diffuse_color * (1.0 - FssEss - FmsEms);
+
+			Lo += (FmsEms + kD) * irradiance + FssEss * reflection;
+		}
+		else
+		{
+			kD = (1.0 - F) * (1.0 - geo.metallic);
+			Lo += kD * diffuse + specular;
+		}
 
 		if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_INDIRECT_DIFFUSE)
 		{
@@ -172,7 +188,7 @@ void main()
 	sampled_normal = sampled_normal * 2.0 - 1.0;
 	geo_info.normal = normalize(TBN * sampled_normal);
 
-	if (settings.use_clearcoat == 1 && material.has_clearcoat == 1)
+	if (settings.use_pbr_clearcoat == 1 && material.has_clearcoat == 1)
 	{
 		geo_info.has_coat = true;
 
@@ -192,7 +208,7 @@ void main()
 	view_info.dir = normalize(view_info.pos - frag_pos.xyz);
 
 	// Square the roughness to be perceptually more linear, if the setting is enabled
-	if (settings.use_squared_roughness == 1)
+	if (settings.use_pbr_squared_roughness == 1)
 	{
 		geo_info.roughness = pow(geo_info.roughness, 2.0);
 		geo_info.roughness_coat = clamp(geo_info.roughness_coat, 0.089f, 1.0f);
