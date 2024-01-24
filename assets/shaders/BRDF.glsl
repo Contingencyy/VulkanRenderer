@@ -129,8 +129,8 @@ void EvaluateBRDFClearCoat(vec3 L, vec3 V, vec3 N, vec3 f0, float roughness, ino
 	{
 		float D = D_GGX(NoH, roughness);
 		float G = G_SmithGGXCorrelated(NoV, NoL, roughness);
-		vec3 F = F_Schlick(LoH, f0);
+		Fc = F_Schlick(LoH, f0);
 
-		brdf_clearcoat = (D * G) * F;
+		brdf_clearcoat = (D * G) * Fc;
 	}
 }

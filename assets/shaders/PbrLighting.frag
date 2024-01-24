@@ -80,7 +80,7 @@ vec3 EvaluateLighting(ViewInfo view, GeometryInfo geo)
 
 			if (geo.has_coat)
 			{
-				Lo = (brdf_diffuse + brdf_specular) * (1.0 - geo.alpha_coat * Fc) + geo.alpha_coat * brdf_clearcoat;
+				Lo += ((brdf_diffuse + brdf_specular) * (1.0 - geo.alpha_coat * Fc) + geo.alpha_coat * brdf_clearcoat) * light_color * NoL * dist_attenuation;
 			}
 			else
 			{
@@ -111,7 +111,7 @@ vec3 EvaluateLighting(ViewInfo view, GeometryInfo geo)
 		{
 			vec3 Fc = F_SchlickRoughness(max(dot(geo.normal_coat, view.dir), 0.0), f0, geo.roughness_coat);
 			// Take into account energy lost in the clearcoat layer by adjusting the base layer
-			diffuse *= 1.0 - Fc;
+			diffuse *= 1.0 - geo.alpha_coat * Fc;
 			specular *= pow(1.0 - geo.alpha_coat * Fc, vec3(2.0));
 
 			vec3 Rc = reflect(-view.dir, geo.normal_coat);
