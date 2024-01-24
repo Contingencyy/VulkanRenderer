@@ -210,8 +210,9 @@ void main()
 	// Square the roughness to be perceptually more linear, if the setting is enabled
 	if (settings.use_pbr_squared_roughness == 1)
 	{
+		geo_info.roughness = clamp(geo_info.roughness, 0.089, 1.0);
 		geo_info.roughness = pow(geo_info.roughness, 2.0);
-		geo_info.roughness_coat = clamp(geo_info.roughness_coat, 0.089f, 1.0f);
+		geo_info.roughness_coat = clamp(geo_info.roughness_coat, 0.089, 1.0);
 		geo_info.roughness_coat = pow(geo_info.roughness_coat, 2.0);
 	}
 
