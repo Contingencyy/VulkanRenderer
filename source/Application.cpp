@@ -48,6 +48,7 @@ namespace Application
 		glfwSetKeyCallback(data.window, Input::GLFWKeyCallback);
 		glfwSetMouseButtonCallback(data.window, Input::GLFWMouseButtonCallback);
 		glfwSetCursorPosCallback(data.window, Input::GLFWCursorPosCallback);
+		glfwSetScrollCallback(data.window, Input::GLTFMouseScrollCollback);
 		glfwSetInputMode(data.window, GLFW_LOCK_KEY_MODS, GLFW_TRUE);
 	}
 
@@ -116,24 +117,29 @@ namespace Application
 		Renderer::Init(data.window);
 
 		Assets::Init();
-		//Assets::LoadTexture("assets/textures/hdr/Env_Plaza.hdr", "Env", TEXTURE_FORMAT_RGBA32_SFLOAT, true, true);
+		Assets::LoadTexture("assets/textures/hdr/Env_Plaza.hdr", "Env", TEXTURE_FORMAT_RGBA32_SFLOAT, true, true);
 		//Assets::LoadTexture("assets/textures/hdr/Env_Rocky_Hills.hdr", "Env", TEXTURE_FORMAT_RGBA32_SFLOAT, true, true);
 		//Assets::LoadTexture("assets/textures/hdr/Env_Victorian_Hall.hdr", "Env", TEXTURE_FORMAT_RGBA32_SFLOAT, true, true);
 		//Assets::LoadTexture("assets/textures/hdr/Env_Golden_Bay.hdr", "Env", TEXTURE_FORMAT_RGBA32_SFLOAT, true, true);
-		Assets::LoadTexture("assets/textures/hdr/Env_Belfast_Sunset.hdr", "Env", TEXTURE_FORMAT_RGBA32_SFLOAT, true, true);
+		//Assets::LoadTexture("assets/textures/hdr/Env_Belfast_Sunset.hdr", "Env", TEXTURE_FORMAT_RGBA32_SFLOAT, true, true);
+
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatToyCar/ToyCar.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatTest/ClearCoatTest.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatRing/ClearCoatRing.gltf", "model");
-		//Assets::LoadGLTF("assets/models/gltf/ClearCoatSphere/ClearCoatSphere.gltf", "model");
+		Assets::LoadGLTF("assets/models/gltf/ClearCoatSphere/ClearCoatSphere.gltf", "model");
+		//Assets::LoadGLTF("assets/models/gltf/ClearCoatCarPaint/ClearCoatCarPaint.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/SponzaOld/Sponza.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/Sponza/NewSponza_Main_glTF_002.gltf", "model");
-		//Assets::LoadGLTF("assets/models/gltf/ClearCoatCarPaint/ClearCoatCarPaint.gltf", "model");
-		Assets::LoadGLTF("assets/models/gltf/MetalRoughSpheres/MetalRoughSpheres.gltf", "model");
+		//Assets::LoadGLTF("assets/models/gltf/MetalRoughSpheres/MetalRoughSpheres.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/ABeautifulGame/ABeautifulGame.gltf", "model");
-		//Assets::LoadGLTF("assets/models/gltf/BMW_M6/scene.gltf", "model");
-		//Assets::LoadGLTF("assets/models/gltf/BMW_M8/scene.gltf", "model");
+		//Assets::LoadGLTF("assets/models/gltf/Car_Destroyed/scene.gltf", "model");
+		//Assets::LoadGLTF("assets/models/gltf/Car_Old_Rusty/scene.gltf", "model");
+		//Assets::LoadGLTF("assets/models/gltf/Car_Porsche/scene.gltf", "model");
+		//Assets::LoadGLTF("assets/models/gltf/Knight_Artorias/scene.gltf", "model");
+		//Assets::LoadGLTF("assets/models/gltf/Mask_Venice/scene.gltf", "model");
+		//Assets::LoadGLTF("assets/models/gltf/Skull_Salazar/scene.gltf", "model");
 
-		glm::mat4 transform = glm::scale(glm::identity<glm::mat4>(), glm::vec3(10.0f));
+		glm::mat4 transform = glm::scale(glm::identity<glm::mat4>(), glm::vec3(1.0f));
 		SpawnModelEntity("model", transform);
 
 		data.active_scene.AddEntity<Pointlight>(glm::vec3(50.0f, 50.0f, -50.0f), glm::vec3(1.0f), 25.0f, "Pointlight1");

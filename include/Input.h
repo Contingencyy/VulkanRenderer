@@ -21,6 +21,7 @@ namespace Input
 	void GLFWKeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
 	void GLFWMouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
 	void GLFWCursorPosCallback(GLFWwindow* window, double xpos, double ypos);
+	void GLTFMouseScrollCollback(GLFWwindow* window, double xoffset, double yoffset);
 
 	void Init(GLFWwindow* window);
 	void Exit();
@@ -33,6 +34,9 @@ namespace Input
 	
 	void GetMousePositionAbs(double& x, double& y);
 	void GetMousePositionRel(double& x, double& y);
+
+	void GetScrollAbs(double& x, double& y);
+	void GetScrollRel(double& x, double& y);
 
 	bool IsCursorDisabled();
 

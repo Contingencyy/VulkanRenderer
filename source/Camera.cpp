@@ -36,6 +36,15 @@ void Camera::Update(float dt)
 		m_rotation.x = std::max(m_rotation.x, glm::radians(-90.0f));
 	}
 
+	// Scroll wheel speed
+	if (Input::IsCursorDisabled())
+	{
+		double scroll_x, scroll_y;
+		Input::GetScrollRel(scroll_x, scroll_y);
+
+		m_speed += scroll_y * 10.0;
+	}
+
 	// Make view projection matrices
 	glm::mat4 translation_matrix = glm::translate(glm::identity<glm::mat4>(), m_translation);
 	glm::mat4 rotation_matrix = glm::mat4_cast(glm::quat(m_rotation));

@@ -1720,7 +1720,8 @@ namespace Renderer
 		if (args.is_environment_map)
 		{
 			// Generate a cubemap from the equirectangular hdr environment map
-			texture = GenerateCubeMapFromEquirectangular(texture_view->descriptor.GetIndex(), data->hdr_equirect_sampler->GetIndex());
+			//texture = GenerateCubeMapFromEquirectangular(texture_view->descriptor.GetIndex(), data->hdr_equirect_sampler->GetIndex());
+			texture = GenerateCubeMapFromEquirectangular(data->texture_slotmap.Find(data->default_white_texture_handle)->texture->GetView()->descriptor.GetIndex(), data->hdr_equirect_sampler->GetIndex());
 
 			// Generate the irradiance cubemap from the hdr cubemap, and append it to the base environment map
 			texture->AppendToChain(GenerateIrradianceCube(texture->GetView()->descriptor.GetIndex(), data->hdr_cube_sampler->GetIndex()));

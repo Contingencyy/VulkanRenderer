@@ -39,6 +39,9 @@ namespace Input
 
 		MousePosition mouse_pos_prev;
 		MousePosition mouse_pos_curr;
+
+		MousePosition scroll_prev;
+		MousePosition scroll_curr;
 	} static data;
 
 	void GLFWKeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
@@ -81,6 +84,18 @@ namespace Input
 		data.mouse_pos_curr.y = ypos;
 	}
 
+	void GLTFMouseScrollCollback(GLFWwindow* window, double xoffset, double yoffset)
+	{
+		if (ImGui::GetIO().WantCaptureMouse)
+		{
+			return;
+		}
+
+		data.scroll_prev = data.scroll_curr;
+		data.scroll_curr.x += xoffset;
+		data.scroll_curr.y += yoffset;
+	}
+
 	void Init(GLFWwindow* window)
 	{
 		data.window = window;
@@ -103,6 +118,7 @@ namespace Input
 	void Update()
 	{
 		data.mouse_pos_prev = data.mouse_pos_curr;
+		data.scroll_prev = data.scroll_curr;
 	}
 
 	bool IsKeyPressed(Key key)
@@ -130,6 +146,18 @@ namespace Input
 	{
 		x = data.mouse_pos_curr.x - data.mouse_pos_prev.x;
 		y = data.mouse_pos_curr.y - data.mouse_pos_prev.y;
+	}
+
+	void GetScrollAbs(double& x, double& y)
+	{
+		x = data.scroll_curr.x;
+		y = data.scroll_prev.y;
+	}
+
+	void GetScrollRel(double& x, double& y)
+	{
+		x = data.scroll_curr.x - data.scroll_prev.x;
+		y = data.scroll_curr.y - data.scroll_prev.y;
 	}
 
 	bool IsCursorDisabled()

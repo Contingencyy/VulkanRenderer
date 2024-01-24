@@ -5,8 +5,12 @@
 
 assets/models/gltf/Sponza
 assets/models/gltf/SponzaOld
-assets/models/gltf/Bmw_M6
-assets/models/gltf/Bmw_M8
+assets/models/gltf/Car_Destroyed
+assets/models/gltf/Car_Old_Rusty
+assets/models/gltf/Car_Porsche
+assets/models/gltf/Knight_Artorias
+assets/models/gltf/Mask_Venice
+assets/models/gltf/Skull_Salazar
 
 # User-specific files
 *.rsuser
