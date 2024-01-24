@@ -100,7 +100,7 @@ vec3 EvaluateLighting(ViewInfo view, GeometryInfo geo)
 
 		// TODO: Pick between lambertian, Burley, and Oren-Nayar
 		vec3 diffuse_color = geo.albedo * INV_PI;
-		vec3 diffuse = irradiance * geo.albedo * INV_PI;
+		vec3 diffuse = irradiance * diffuse_color;
 
 		vec3 F = F_SchlickRoughness(max(dot(geo.normal, view.dir), 0.0), f0, geo.roughness);
 		vec3 FssEss = F * env_brdf.x + env_brdf.y;
