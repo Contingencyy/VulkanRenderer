@@ -172,7 +172,7 @@ void main()
 	sampled_normal = sampled_normal * 2.0 - 1.0;
 	geo_info.normal = normalize(TBN * sampled_normal);
 
-	if (material.has_clearcoat == 1 && settings.use_clearcoat == 1)
+	if (settings.use_clearcoat == 1 && material.has_clearcoat == 1)
 	{
 		geo_info.has_coat = true;
 
