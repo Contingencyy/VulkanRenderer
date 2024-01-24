@@ -3,14 +3,14 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/main/VisualStudio.gitignore
 
-assets/models/gltf/Sponza
-assets/models/gltf/SponzaOld
-assets/models/gltf/Car_Destroyed
-assets/models/gltf/Car_Old_Rusty
-assets/models/gltf/Car_Porsche
-assets/models/gltf/Knight_Artorias
-assets/models/gltf/Mask_Venice
-assets/models/gltf/Skull_Salazar
+assets/models
+!assets/models/gltf/ABeautifulGame
+!assets/models/gltf/ClearCoatCarPaint
+!assets/models/gltf/ClearCoatRing
+!assets/models/gltf/ClearCoatSphere
+!assets/models/gltf/ClearCoatTest
+!assets/models/gltf/ClearCoatToyCar
+!assets/models/gltf/SponzaOld
 
 # User-specific files
 *.rsuser

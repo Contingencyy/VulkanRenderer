@@ -42,7 +42,8 @@ void Camera::Update(float dt)
 		double scroll_x, scroll_y;
 		Input::GetScrollRel(scroll_x, scroll_y);
 
-		m_speed += scroll_y * 10.0;
+		m_speed += scroll_y * std::max(std::sqrtf(m_speed), 0.01f);
+		m_speed = std::max(m_speed, 0.0f);
 	}
 
 	// Make view projection matrices

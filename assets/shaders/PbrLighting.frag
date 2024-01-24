@@ -103,30 +103,31 @@ vec3 EvaluateLighting(ViewInfo view, GeometryInfo geo)
 		vec3 diffuse = irradiance * diffuse_color;
 
 		vec3 F = F_SchlickRoughness(max(dot(geo.normal, view.dir), 0.0), f0, geo.roughness);
+		float Ems = (1.0 - (env_brdf.x + env_brdf.y));
 		vec3 FssEss = F * env_brdf.x + env_brdf.y;
-		vec3 specular = reflection * FssEss;
 
 		// Take into account clearcoat layer for IBL
 		if (settings.use_ibl_specular_clearcoat == 1 && geo.has_coat)
 		{
 			vec3 Fc = F_SchlickRoughness(max(dot(geo.normal_coat, view.dir), 0.0), f0, geo.roughness_coat);
+			
 			// Take into account energy lost in the clearcoat layer by adjusting the base layer
 			diffuse *= 1.0 - geo.alpha_coat * Fc;
-			specular *= pow(1.0 - geo.alpha_coat * Fc, vec3(2.0));
+			FssEss *= 1.0 - geo.alpha_coat * Fc;
 
 			vec3 Rc = reflect(-view.dir, geo.normal_coat);
-
 			vec3 reflection_coat = SampleTextureCubeLod(push_consts.prefiltered_cubemap_index, push_consts.prefiltered_sampler_index, Rc, geo.roughness_coat * push_consts.num_prefiltered_mips).rgb;
 			vec2 env_brdf_coat = SampleTexture(push_consts.brdf_lut_index, push_consts.brdf_lut_sampler_index, vec2(max(dot(geo.normal_coat, view.dir), 0.0), geo.roughness_coat)).rg;
-			specular += geo.alpha_coat * reflection_coat * (Fc * env_brdf_coat.x + env_brdf_coat.y);
+			
+			FssEss += geo.alpha_coat * (Fc * env_brdf_coat.x + env_brdf_coat.y);
+			reflection *= reflection_coat;
+			Ems = (1.0 - (mix(env_brdf.x, env_brdf_coat.x, geo.alpha_coat) + mix(env_brdf.y, env_brdf_coat.y, geo.alpha_coat)));
 		}
 
 		vec3 kD = vec3(0.0);
 		// Source (Fdez-Agüera): https://www.jcgt.org/published/0008/01/03/paper.pdf
 		if (settings.use_ibl_specular_multiscatter == 1)
 		{
-			float Ems = (1.0 - (env_brdf.x + env_brdf.y));
-			
 			vec3 F_avg = f0 + (1.0 - f0) / 21.0;
 			vec3 FmsEms = Ems * FssEss * F_avg / (1.0 - F_avg * Ems);
 			kD = diffuse_color * (1.0 - FssEss - FmsEms);
@@ -136,7 +137,7 @@ vec3 EvaluateLighting(ViewInfo view, GeometryInfo geo)
 		else
 		{
 			kD = (1.0 - F) * (1.0 - geo.metallic);
-			Lo += kD * diffuse + specular;
+			Lo += kD * diffuse + FssEss * reflection;
 		}
 
 		if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_INDIRECT_DIFFUSE)
@@ -145,7 +146,7 @@ vec3 EvaluateLighting(ViewInfo view, GeometryInfo geo)
 		}
 		else if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_INDIRECT_SPECULAR)
 		{
-			Lo = specular;
+			Lo = FssEss * reflection;
 		}
 		else if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_BRDF_LUT)
 		{
