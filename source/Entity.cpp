@@ -80,18 +80,18 @@ void MeshObject::RenderUI()
 
 			if (VK_RESOURCE_HANDLE_VALID(m_material.metallic_roughness_texture_handle))
 				Renderer::ImGuiRenderTexture(m_material.metallic_roughness_texture_handle);
-			ImGui::DragFloat("Metallic factor", &m_material.metallic_factor, 0.001f, 0.0f, 1.0f);
-			ImGui::DragFloat("Roughness factor", &m_material.roughness_factor, 0.001f, 0.0f, 1.0f);
+			ImGui::SliderFloat("Metallic factor", &m_material.metallic_factor, 0.0f, 1.0f);
+			ImGui::SliderFloat("Roughness factor", &m_material.roughness_factor, 0.0f, 1.0f);
 
 			ImGui::Checkbox("Clearcoat", &m_material.has_clearcoat);
 			if (VK_RESOURCE_HANDLE_VALID(m_material.clearcoat_alpha_texture_handle))
 				Renderer::ImGuiRenderTexture(m_material.clearcoat_alpha_texture_handle);
-			ImGui::DragFloat("Clearcoat alpha factor", &m_material.clearcoat_alpha_factor, 0.001f, 0.0f, 1.0f);
+			ImGui::SliderFloat("Clearcoat alpha factor", &m_material.clearcoat_alpha_factor, 0.0f, 1.0f);
 			if (VK_RESOURCE_HANDLE_VALID(m_material.clearcoat_normal_texture_handle))
 				Renderer::ImGuiRenderTexture(m_material.clearcoat_normal_texture_handle);
 			if (VK_RESOURCE_HANDLE_VALID(m_material.clearcoat_roughness_texture_handle))
 				Renderer::ImGuiRenderTexture(m_material.clearcoat_roughness_texture_handle);
-			ImGui::DragFloat("Clearcoat roughness factor", &m_material.clearcoat_roughness_factor, 0.001f, 0.0f, 1.0f);
+			ImGui::SliderFloat("Clearcoat roughness factor", &m_material.clearcoat_roughness_factor, 0.0f, 1.0f);
 
 			ImGui::Unindent(10.0f);
 		}

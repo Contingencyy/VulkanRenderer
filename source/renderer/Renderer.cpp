@@ -200,6 +200,7 @@ namespace Renderer
 		// Default resources
 		TextureHandle_t default_white_texture_handle;
 		TextureHandle_t default_normal_texture_handle;
+		TextureHandle_t white_furnace_skybox_handle;
 
 		std::shared_ptr<Sampler> default_sampler;
 		std::shared_ptr<Sampler> hdr_equirect_sampler;
@@ -395,9 +396,16 @@ namespace Renderer
 
 		data->default_white_texture_handle = CreateTexture(texture_args);
 
+		texture_args.generate_mips = true;
+		texture_args.is_environment_map = true;
+
+		data->white_furnace_skybox_handle = CreateTexture(texture_args);
+
 		// Default normal texture
 		std::vector<uint8_t> normal_pixel = { 127, 127, 255, 255 };
 		texture_args.pixels = normal_pixel;
+		texture_args.generate_mips = false;
+		texture_args.is_environment_map = false;
 
 		data->default_normal_texture_handle = CreateTexture(texture_args);
 	}
@@ -1207,9 +1215,9 @@ namespace Renderer
 		CreateUniformBuffers();
 		CreateInstanceBuffers();
 
+		CreateUnitCubeBuffers();
 		CreateDefaultSamplers();
 		CreateDefaultTextures();
-		CreateUnitCubeBuffers();
 		GenerateBRDF_LUT();
 
 		// Set default render settings
@@ -1218,6 +1226,7 @@ namespace Renderer
 		data->settings.use_pbr_squared_roughness = true;
 		data->settings.use_pbr_clearcoat = true;
 		data->settings.pbr_diffuse_brdf_model = DIFFUSE_BRDF_MODEL_OREN_NAYAR;
+		data->settings.white_furnace_test = false;
 
 		data->settings.use_ibl = true;
 		data->settings.use_ibl_specular_clearcoat = true;
@@ -1299,8 +1308,11 @@ namespace Renderer
 		frame->ubos.camera_ubo->Write(sizeof(camera_data), &camera_data);
 		frame->ubos.settings_ubo->Write(sizeof(data->settings), &data->settings);
 
-		// Update the skybox texture handle to the skybox texture handle passed by the frame info
-		data->skybox_texture_handle = frame_info.skybox_texture_handle;
+		// If white furnace test is enabled, we want to use the white furnace environment map to render instead of the one passed in
+		if (data->settings.white_furnace_test)
+			data->skybox_texture_handle = data->white_furnace_skybox_handle;
+		else
+			data->skybox_texture_handle = frame_info.skybox_texture_handle;
 	}
 
 	void RenderFrame()
@@ -1392,6 +1404,7 @@ namespace Renderer
 			{
 				VK_EXCEPT("Renderer::RenderFrame", "HDR environment map is missing a skybox cubemap");
 			}
+
 			Texture& irradiance_cubemap = skybox_texture->texture->GetChainned(0);
 			Texture& prefiltered_cubemap = skybox_texture->texture->GetChainned(1);
 
@@ -1576,7 +1589,7 @@ namespace Renderer
 					ImGui::Checkbox("White furnace test", (bool*)&data->settings.white_furnace_test);
 					if (ImGui::IsItemHovered())
 					{
-						ImGui::SetTooltip("CURRENTLY NOT WORKING");
+						ImGui::SetTooltip("If enabled, switches the HDR environment for a purely white uniformly lit environment");
 					}
 
 					ImGui::Unindent(10.0f);
@@ -1771,8 +1784,6 @@ namespace Renderer
 		{
 			// Generate a cubemap from the equirectangular hdr environment map
 			texture = GenerateCubeMapFromEquirectangular(texture_view->descriptor.GetIndex(), data->hdr_equirect_sampler->GetIndex());
-			// Used for IBL white furnace test
-			//texture = GenerateCubeMapFromEquirectangular(data->texture_slotmap.Find(data->default_white_texture_handle)->texture->GetView()->descriptor.GetIndex(), data->hdr_equirect_sampler->GetIndex());
 
 			// Generate the irradiance cubemap from the hdr cubemap, and append it to the base environment map
 			texture->AppendToChain(GenerateIrradianceCube(texture->GetView()->descriptor.GetIndex(), data->hdr_cube_sampler->GetIndex()));
