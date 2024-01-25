@@ -120,12 +120,12 @@ vec3 EvaluateLighting(ViewInfo view, GeometryInfo geo)
 			vec2 env_brdf_coat = SampleTexture(push_consts.brdf_lut_index, push_consts.brdf_lut_sampler_index, vec2(max(dot(geo.normal_coat, view.dir), 0.0), geo.roughness_coat)).rg;
 			
 			// Take into account energy lost in the clearcoat layer by adjusting the base layer
-			diffuse *= 1.0 - Fc;
+			diffuse *= 1.0 - geo.alpha_coat * Fc;
 
-			FssEss *= 1.0 - geo.alpha_coat;
+			FssEss *= 1.0 - geo.alpha_coat * Fc;
 			FssEss += geo.alpha_coat * (Fc * env_brdf_coat.x + env_brdf_coat.y);
 
-			reflection *= 1.0 - geo.alpha_coat;
+			reflection *= 1.0 - geo.alpha_coat * Fc;
 			reflection += geo.alpha_coat * reflection_coat;
 
 			env_brdf *= 1.0 - geo.alpha_coat;

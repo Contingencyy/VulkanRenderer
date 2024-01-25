@@ -126,7 +126,7 @@ namespace Application
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatToyCar/ToyCar.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatTest/ClearCoatTest.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatRing/ClearCoatRing.gltf", "model");
-		Assets::LoadGLTF("assets/models/gltf/ClearCoatSphere/ClearCoatSphere.gltf", "model");
+		//Assets::LoadGLTF("assets/models/gltf/ClearCoatSphere/ClearCoatSphere.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatCarPaint/ClearCoatCarPaint.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/SponzaOld/Sponza.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/Sponza/NewSponza_Main_glTF_002.gltf", "model");
@@ -135,7 +135,7 @@ namespace Application
 		//Assets::LoadGLTF("assets/models/gltf/Car_Destroyed/scene.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/Car_Old_Rusty/scene.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/Car_Porsche/scene.gltf", "model");
-		//Assets::LoadGLTF("assets/models/gltf/Mask_Venice/scene.gltf", "model");
+		Assets::LoadGLTF("assets/models/gltf/Mask_Venice/scene.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/Skull_Salazar/scene.gltf", "model");
 
 		glm::mat4 transform = glm::scale(glm::identity<glm::mat4>(), glm::vec3(1.0f));
