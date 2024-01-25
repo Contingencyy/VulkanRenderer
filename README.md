@@ -10,7 +10,14 @@ This is my study project, starting from September 2023, for a whole semester. Th
   - Energy conserving indirect specular (both normal and clear-coat specular)
 - Basic post-processing (Tonemap, gamma correction, exposure)
 
-![PBR_Chess_Normal_Mapping](https://github.com/Contingencyy/VulkanRenderer/assets/34250026/89f9537e-288e-4d17-8f7b-b4fd9d43663a)
+PBR Chess scene, with image-based lighting
+![PBR_Chess_IBL](https://github.com/Contingencyy/VulkanRenderer/assets/34250026/e74f3845-098a-4d7c-9d36-b01cc0242c84)
+
+Toy car with clear-coat enabled
+![Toy_Car_Clear_Coat](https://github.com/Contingencyy/VulkanRenderer/assets/34250026/6960c37d-0111-487a-ac05-f4bde05b1733)
+
+Toy car with clear-coat disabled
+![Toy_Car_No_Clear_Coat](https://github.com/Contingencyy/VulkanRenderer/assets/34250026/2673da23-093d-4262-a59a-ca93fc59d18e)
 
 ## Planned features
 - Raytraced soft shadows
@@ -22,6 +29,5 @@ This is my study project, starting from September 2023, for a whole semester. Th
 - (Convolution) Bloom
 - Dithering
 - Lens flare
-- Bigger scenes
-- Data streaming
 - LODding
+- Mesh shaders (and meshlet builder)
