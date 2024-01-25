@@ -1,6 +1,6 @@
 # VulkanRenderer
 
-This is my study project, starting from September 2023, for a whole semester. The goal is to utilize the Vulkan graphics API to create a renderer that creates realistic and stunning real-time renders of cars and other objects with clear-coat pbr materials, utilizing raytraced shadows and reflections, but rasterization will be used for the rest of the rendering.
+This is my study project, starting from September 2023, for a whole semester. The goal is to utilize the Vulkan graphics API to create a renderer that creates realistic and stunning real-time renders of cars and other objects with clear-coat pbr materials, utilizing raytraced shadows and reflections, rasterization will be used for everything else.
 
 ## Current features
 - Physically-based rendering
