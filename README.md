@@ -10,7 +10,7 @@ This is my study project, starting from September 2023, for a whole semester. Th
 - Image-based lighting
   - Generated BRDF LUT
   - Generates from equirectangular to cubemaps
-  - Energy conserving indirect specular (both normal and clear-coat specular)
+  - Energy conserving indirect specular (works for clear-coat specular too)
 - Basic post-processing (Tonemap, gamma correction, exposure)
 
 ### PBR Chess scene, with image-based lighting
