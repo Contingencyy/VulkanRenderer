@@ -4,9 +4,12 @@ This is my study project, starting from September 2023, for a whole semester. Th
 
 ## Current features
 - Physically-based rendering
+  - Lambertian/Burley/Oren-Nayar Diffuse BRDF
   - Clear-coat materials
   - Normal mapping
 - Image-based lighting
+  - Generated BRDF LUT
+  - Generates from equirectangular to cubemaps
   - Energy conserving indirect specular (both normal and clear-coat specular)
 - Basic post-processing (Tonemap, gamma correction, exposure)
 
