@@ -21,6 +21,7 @@ namespace Application
 		bool is_running = false;
 		bool should_close = false;
 		bool window_focused = true;
+		bool render_ui = true;
 
 		std::chrono::duration<float> delta_time = std::chrono::duration<float>(0.0f);
 
@@ -123,11 +124,11 @@ namespace Application
 		//Assets::LoadTexture("assets/textures/hdr/Env_Golden_Bay.hdr", "Env", TEXTURE_FORMAT_RGBA32_SFLOAT, true, true);
 		//Assets::LoadTexture("assets/textures/hdr/Env_Belfast_Sunset.hdr", "Env", TEXTURE_FORMAT_RGBA32_SFLOAT, true, true);
 
-		Assets::LoadGLTF("assets/models/gltf/ClearCoatToyCar/ToyCar.gltf", "model");
+		//Assets::LoadGLTF("assets/models/gltf/ClearCoatToyCar/ToyCar.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatTest/ClearCoatTest.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatRing/ClearCoatRing.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatSphere/ClearCoatSphere.gltf", "model");
-		//Assets::LoadGLTF("assets/models/gltf/ClearCoatCarPaint/ClearCoatCarPaint.gltf", "model");
+		Assets::LoadGLTF("assets/models/gltf/ClearCoatCarPaint/ClearCoatCarPaint.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/SponzaOld/Sponza.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/Sponza/NewSponza_Main_glTF_002.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/MetalRoughSpheres/MetalRoughSpheres.gltf", "model");
@@ -166,15 +167,24 @@ namespace Application
 
 	static void RenderUI()
 	{
-		data.active_scene.RenderUI();
-		Renderer::RenderUI();
+		if (Input::IsKeyPressed(Input::Key_F1, true))
+		{
+			data.render_ui = !data.render_ui;
+		}
 
-		ImGui::Begin("General");
-		float delta_time_ms = data.delta_time.count() * 1000.0f;
+		if (data.render_ui)
+		{
+			data.active_scene.RenderUI();
+			Renderer::RenderUI();
 
-		ImGui::Text("FPS: %u", (uint32_t)(1000.0f / delta_time_ms));
-		ImGui::Text("Frametime: %.3fms", delta_time_ms);
-		ImGui::End();
+			ImGui::Begin("General");
+
+			float delta_time_ms = data.delta_time.count() * 1000.0f;
+			ImGui::Text("FPS: %u", (uint32_t)(1000.0f / delta_time_ms));
+			ImGui::Text("Frametime: %.3fms", delta_time_ms);
+
+			ImGui::End();
+		}
 	}
 
 	static void Render()

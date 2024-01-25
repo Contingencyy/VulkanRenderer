@@ -1539,7 +1539,7 @@ namespace Renderer
 				{
 					ImGui::Indent(10.0f);
 
-					ImGui::Checkbox("Use squared roughness (more linear perceptually)", (bool*)&data->settings.use_pbr_squared_roughness);
+					ImGui::Checkbox("Use squared roughness", (bool*)&data->settings.use_pbr_squared_roughness);
 					if (ImGui::IsItemHovered())
 					{
 						ImGui::SetTooltip("If enabled, squares the roughness before doing any lighting calculations, which makes it perceptually more linear");
