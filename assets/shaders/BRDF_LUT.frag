@@ -40,11 +40,8 @@ float G_SchlicksmithGGX(float NoL, float NoV, float roughness)
 
 vec2 IntegrateBRDF(float NoV, float roughness)
 {
-	// In our BRDF implementation we use a squared roughness for perceptually more linear results, so we also square it here
-	roughness = roughness * roughness;
-
 	const vec3 N = vec3(0.0, 0.0, 1.0);
-	vec3 V = vec3(sqrt(1.0 - NoV*NoV), 0.0, NoV);
+	vec3 V = vec3(sqrt(1.0 - NoV * NoV), 0.0, NoV);
 
 	vec2 LUT = vec2(0.0);
 	for(uint i = 0u; i < push_consts.num_samples; ++i)
