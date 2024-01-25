@@ -34,9 +34,7 @@ https://github.com/Contingencyy/VulkanRenderer/assets/34250026/6fc2cafc-1dc9-411
 - Raytraced ambient occlusion
 
 ## Stretch features
-- Global illumination
 - (Convolution) Bloom
 - Dithering
-- Lens flare
 - LODding
 - Mesh shaders (and meshlet builder)
