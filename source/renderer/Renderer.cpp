@@ -1529,6 +1529,10 @@ namespace Renderer
 				ImGui::Indent(10.0f);
 
 				ImGui::Checkbox("Use direct light", (bool*)&data->settings.use_direct_light);
+				if (ImGui::IsItemHovered())
+				{
+					ImGui::SetTooltip("If enabled, evaluates direct lighting from light sources");
+				}
 
 				ImGui::SetNextItemOpen(true, ImGuiCond_Once);
 				if (ImGui::CollapsingHeader("General"))
@@ -1538,9 +1542,13 @@ namespace Renderer
 					ImGui::Checkbox("Use squared roughness (more linear perceptually)", (bool*)&data->settings.use_pbr_squared_roughness);
 					if (ImGui::IsItemHovered())
 					{
-						ImGui::SetTooltip("Squares the roughness before doing any lighting calculations, which makes it perceptually more linear");
+						ImGui::SetTooltip("If enabled, squares the roughness before doing any lighting calculations, which makes it perceptually more linear");
 					}
 					ImGui::Checkbox("Use clearcoat", (bool*)&data->settings.use_pbr_clearcoat);
+					if (ImGui::IsItemHovered())
+					{
+						ImGui::SetTooltip("Global toggle for clearcoat materials");
+					}
 
 					if (ImGui::BeginCombo("Diffuse BRDF Model", DIFFUSE_BRDF_MODEL_LABELS[data->settings.pbr_diffuse_brdf_model]))
 					{
@@ -1560,6 +1568,16 @@ namespace Renderer
 
 						ImGui::EndCombo();
 					}
+					if (ImGui::IsItemHovered())
+					{
+						ImGui::SetTooltip("Select which diffuse BRDF term to use for direct diffuse lighting");
+					}
+
+					ImGui::Checkbox("White furnace test", (bool*)&data->settings.white_furnace_test);
+					if (ImGui::IsItemHovered())
+					{
+						ImGui::SetTooltip("CURRENTLY NOT WORKING");
+					}
 
 					ImGui::Unindent(10.0f);
 				}
@@ -1570,8 +1588,20 @@ namespace Renderer
 					ImGui::Indent(10.0f);
 
 					ImGui::Checkbox("Use image-based lighting", (bool*)&data->settings.use_ibl);
+					if (ImGui::IsItemHovered())
+					{
+						ImGui::SetTooltip("Toggle image-based lighting");
+					}
 					ImGui::Checkbox("Use specular clearcoat", (bool*)&data->settings.use_ibl_specular_clearcoat);
+					if (ImGui::IsItemHovered())
+					{
+						ImGui::SetTooltip("If enabled, clearcoat materials will have their own specular lobe when evaluating specular indirect lighting");
+					}
 					ImGui::Checkbox("Use specular multiscatter", (bool*)&data->settings.use_ibl_specular_multiscatter);
+					if (ImGui::IsItemHovered())
+					{
+						ImGui::SetTooltip("If enabled, specular indirect lighting will be energy conserving, taking multiscatter specular bounces between microfacets into account");
+					}
 					
 					ImGui::Unindent(10.0f);
 				}
@@ -1740,9 +1770,9 @@ namespace Renderer
 		if (args.is_environment_map)
 		{
 			// Generate a cubemap from the equirectangular hdr environment map
-			//texture = GenerateCubeMapFromEquirectangular(texture_view->descriptor.GetIndex(), data->hdr_equirect_sampler->GetIndex());
+			texture = GenerateCubeMapFromEquirectangular(texture_view->descriptor.GetIndex(), data->hdr_equirect_sampler->GetIndex());
 			// Used for IBL white furnace test
-			texture = GenerateCubeMapFromEquirectangular(data->texture_slotmap.Find(data->default_white_texture_handle)->texture->GetView()->descriptor.GetIndex(), data->hdr_equirect_sampler->GetIndex());
+			//texture = GenerateCubeMapFromEquirectangular(data->texture_slotmap.Find(data->default_white_texture_handle)->texture->GetView()->descriptor.GetIndex(), data->hdr_equirect_sampler->GetIndex());
 
 			// Generate the irradiance cubemap from the hdr cubemap, and append it to the base environment map
 			texture->AppendToChain(GenerateIrradianceCube(texture->GetView()->descriptor.GetIndex(), data->hdr_cube_sampler->GetIndex()));

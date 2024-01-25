@@ -82,6 +82,7 @@ DECLARE_STRUCT(RenderSettings)
 	uint use_pbr_squared_roughness;
 	uint use_pbr_clearcoat;
 	uint pbr_diffuse_brdf_model;
+	uint white_furnace_test;
 
 	uint use_ibl;
 	uint use_ibl_specular_clearcoat;
