@@ -25,8 +25,8 @@ This is my study project, starting from September 2023, for a whole semester. Th
 
 ![Toy_Car_No_Clear_Coat](https://github.com/Contingencyy/VulkanRenderer/assets/34250026/2673da23-093d-4262-a59a-ca93fc59d18e)
 
-### Energy conservation in indirect specular (works for clear-coat specular too)
-https://github.com/Contingencyy/VulkanRenderer/assets/34250026/c601a629-0510-4cf0-836e-0bb6769c17cc
+### Energy conservation in indirect specular (works for clear-coat specular too) - White Furnace Test
+https://github.com/Contingencyy/VulkanRenderer/assets/34250026/6fc2cafc-1dc9-4111-a021-353d2a8c9426
 
 ## Planned features
 - Raytraced soft shadows
