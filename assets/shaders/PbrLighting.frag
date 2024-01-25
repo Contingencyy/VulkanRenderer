@@ -72,6 +72,8 @@ vec3 EvaluateLighting(ViewInfo view, GeometryInfo geo)
 			if (geo.has_coat)
 			{
 				EvaluateBRDFClearCoat(light_dir, view.dir, geo.normal_coat, f0, geo.roughness_coat, Fc, brdf_clearcoat);
+				Fc *= geo.alpha_coat;
+				brdf_clearcoat *= geo.alpha_coat;
 			}
 
 			vec3 brdf_diffuse = vec3(0.0);
@@ -80,7 +82,7 @@ vec3 EvaluateLighting(ViewInfo view, GeometryInfo geo)
 
 			if (geo.has_coat)
 			{
-				Lo += ((brdf_diffuse + brdf_specular) * (1.0 - geo.alpha_coat * Fc) + geo.alpha_coat * brdf_clearcoat) * light_color * NoL * dist_attenuation;
+				Lo += ((brdf_diffuse + brdf_specular * (1.0 - Fc)) * (1.0 - Fc) + brdf_clearcoat) * light_color * NoL * dist_attenuation;
 			}
 			else
 			{
@@ -98,36 +100,44 @@ vec3 EvaluateLighting(ViewInfo view, GeometryInfo geo)
 		vec3 reflection = SampleTextureCubeLod(push_consts.prefiltered_cubemap_index, push_consts.prefiltered_sampler_index, R, geo.roughness * push_consts.num_prefiltered_mips).rgb;
 		vec3 irradiance = SampleTextureCube(push_consts.irradiance_cubemap_index, push_consts.irradiance_sampler_index, geo.normal).rgb;
 
-		// TODO: Pick between lambertian, Burley, and Oren-Nayar
+		// Using a different diffuse BRDF here other than lambertian will mess with the irradiance conversion,
+		// since we generate the irradiance cubemap as if it was a lambertian diffuse (uniform samples over hemisphere)
+		// If we wanted to use a different one, we would have to convolute the irradiance cubemap with that diffuse BRDF,
+		// which proves impractical because Burley and Oren-Nayar are dependent on more variables (light dir, view dir, normal, roughness)
 		vec3 diffuse_color = geo.albedo * INV_PI;
 		vec3 diffuse = irradiance * diffuse_color;
 
 		vec3 F = F_SchlickRoughness(max(dot(geo.normal, view.dir), 0.0), f0, geo.roughness);
-		float Ems = (1.0 - (env_brdf.x + env_brdf.y));
 		vec3 FssEss = F * env_brdf.x + env_brdf.y;
 
 		// Take into account clearcoat layer for IBL
 		if (settings.use_ibl_specular_clearcoat == 1 && geo.has_coat)
 		{
 			vec3 Fc = F_SchlickRoughness(max(dot(geo.normal_coat, view.dir), 0.0), f0, geo.roughness_coat);
-			
-			// Take into account energy lost in the clearcoat layer by adjusting the base layer
-			diffuse *= 1.0 - geo.alpha_coat * Fc;
-			FssEss *= 1.0 - geo.alpha_coat * Fc;
 
 			vec3 Rc = reflect(-view.dir, geo.normal_coat);
 			vec3 reflection_coat = SampleTextureCubeLod(push_consts.prefiltered_cubemap_index, push_consts.prefiltered_sampler_index, Rc, geo.roughness_coat * push_consts.num_prefiltered_mips).rgb;
 			vec2 env_brdf_coat = SampleTexture(push_consts.brdf_lut_index, push_consts.brdf_lut_sampler_index, vec2(max(dot(geo.normal_coat, view.dir), 0.0), geo.roughness_coat)).rg;
 			
+			// Take into account energy lost in the clearcoat layer by adjusting the base layer
+			diffuse *= 1.0 - Fc;
+
+			FssEss *= 1.0 - geo.alpha_coat;
 			FssEss += geo.alpha_coat * (Fc * env_brdf_coat.x + env_brdf_coat.y);
-			reflection *= reflection_coat;
-			Ems = (1.0 - (mix(env_brdf.x, env_brdf_coat.x, geo.alpha_coat) + mix(env_brdf.y, env_brdf_coat.y, geo.alpha_coat)));
+
+			reflection *= 1.0 - geo.alpha_coat;
+			reflection += geo.alpha_coat * reflection_coat;
+
+			env_brdf *= 1.0 - geo.alpha_coat;
+			env_brdf += geo.alpha_coat * env_brdf_coat;
 		}
 
 		vec3 kD = vec3(0.0);
 		// Source (Fdez-Agüera): https://www.jcgt.org/published/0008/01/03/paper.pdf
 		if (settings.use_ibl_specular_multiscatter == 1)
 		{
+			float Ems = (1.0 - (env_brdf.x + env_brdf.y));
+
 			vec3 F_avg = f0 + (1.0 - f0) / 21.0;
 			vec3 FmsEms = Ems * FssEss * F_avg / (1.0 - F_avg * Ems);
 			kD = diffuse_color * (1.0 - FssEss - FmsEms);
@@ -209,6 +219,7 @@ void main()
 	view_info.dir = normalize(view_info.pos - frag_pos.xyz);
 
 	// Square the roughness to be perceptually more linear, if the setting is enabled
+	// https://google.github.io/filament/Filament.md.html#materialsystem/parameterization/remapping 4.8.3.3
 	if (settings.use_pbr_squared_roughness == 1)
 	{
 		geo_info.roughness = clamp(geo_info.roughness, 0.089, 1.0);

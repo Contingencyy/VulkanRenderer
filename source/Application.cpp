@@ -135,7 +135,6 @@ namespace Application
 		//Assets::LoadGLTF("assets/models/gltf/Car_Destroyed/scene.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/Car_Old_Rusty/scene.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/Car_Porsche/scene.gltf", "model");
-		//Assets::LoadGLTF("assets/models/gltf/Knight_Artorias/scene.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/Mask_Venice/scene.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/Skull_Salazar/scene.gltf", "model");
 

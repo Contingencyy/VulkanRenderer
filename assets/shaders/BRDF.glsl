@@ -74,19 +74,16 @@ void EvaluateBRDFBase(vec3 L, vec3 V, vec3 N, vec3 f0, vec3 albedo, float metall
 {
 	vec3 H = normalize(V + L);
 
-	float NoV = clamp(dot(N, V), 0.0, 1.0);
+	float NoV = abs(dot(N, V)) + 1e-5;
 	float NoL = clamp(dot(N, L), 0.0, 1.0);
 	float LoH = clamp(dot(L, H), 0.0, 1.0);
 	float NoH = clamp(dot(N, H), 0.0, 1.0);
-	float LoV = clamp(dot(L, V), 0.0, 1.0);
-
-	//roughness = max(0.05, roughness);
 
 	if (NoL > 0.0)
 	{
 		float D = D_GGX(NoH, roughness);
 		float G = G_SmithGGXCorrelated(NoV, NoL, roughness);
-		vec3 F = F_Schlick(NoV, f0);
+		vec3 F = F_Schlick(LoH, f0);
 		
 		vec3 kD = (1.0 - F) * (1.0 - metallic);
 
