@@ -1,5 +1,8 @@
 #include "Common.glsl"
 
+// Determines what the probability is for finding the normal that would
+// reflect the specular from the view direction towards the light direction (PDF)
+// The halfway vector (H) is that normal that would reflect towards the light
 float D_GGX(float NoH, float a)
 {
 	float a2 = a * a;
@@ -7,6 +10,8 @@ float D_GGX(float NoH, float a)
     return a2 / (PI * f * f);
 }
 
+// Reflectivity based on incident angle
+// Jacco: Do not use for glass!
 vec3 F_Schlick(float u, vec3 f0)
 {
 	return f0 + (vec3(1.0f) - f0) * pow(1.0f - u, 5.0f);
@@ -22,6 +27,7 @@ vec3 F_SchlickRoughness(float u, vec3 f0, float roughness)
 	return f0 + (max(vec3(1.0 - roughness), f0) - f0) * pow(clamp(1.0 - u, 0.0, 1.0), 5.0);
 }
 
+// Self shadowing and masking of the microfacets
 float G_SmithGGXCorrelated(float NoV, float NoL, float a)
 {
 	float a2 = a * a;
