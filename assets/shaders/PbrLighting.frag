@@ -254,7 +254,7 @@ void main()
 		}
 		case DEBUG_RENDER_MODE_METALLIC_ROUGHNESS:
 		{
-			color = vec3(0.0, pixel.metallic, pixel.roughness);
+			color = vec3(0.0, pixel.roughness, pixel.metallic);
 			break;
 		}
 		case DEBUG_RENDER_MODE_CLEARCOAT_ALPHA:

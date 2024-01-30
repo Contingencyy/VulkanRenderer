@@ -1223,7 +1223,7 @@ namespace Renderer
 		// Set default render settings
 		data->settings.use_direct_light = true;
 
-		data->settings.use_pbr_squared_roughness = true;
+		data->settings.use_pbr_squared_roughness = false;
 		data->settings.use_pbr_clearcoat = true;
 		data->settings.pbr_diffuse_brdf_model = DIFFUSE_BRDF_MODEL_OREN_NAYAR;
 		data->settings.white_furnace_test = false;
