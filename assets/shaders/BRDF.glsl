@@ -46,26 +46,16 @@ float Fd_Lambert()
 	return INV_PI;
 }
 
-float Fd_Burley(vec3 L, vec3 V, vec3 N, float roughness)
+float Fd_Burley(float roughness, float NoL, float NoV, float LoH)
 {
-	vec3 H = normalize(V + L);
-
-	float NoV = clamp(dot(N, V), 0.0, 1.0);
-	float NoL = clamp(dot(N, L), 0.0, 1.0);
-	float LoH = clamp(dot(L, H), 0.0, 1.0);
-
 	float f90 = 0.5f + 2.0f * roughness * LoH * LoH;
 	float light_scatter = F_Schlick90(NoL, 1.0, f90);
 	float view_scatter = F_Schlick90(NoV, 1.0, f90);
 	return light_scatter * view_scatter * (1.0 * INV_PI);
 }
 
-float Fd_OrenNayar(vec3 L, vec3 V, vec3 N, float roughness)
+float Fd_OrenNayar(float roughness, float NoL, float NoV, float LoV, vec3 N, vec3 V)
 {
-	float NoV = clamp(dot(N, V), 0.0, 1.0);
-	float NoL = clamp(dot(N, L), 0.0, 1.0);
-	float LoV = clamp(dot(L, V), 0.0, 1.0);
-
 	float s = LoV - NoL * NoV;
 	
 	float sigma2 = roughness * roughness;
@@ -76,37 +66,26 @@ float Fd_OrenNayar(vec3 L, vec3 V, vec3 N, float roughness)
 	return max(0.0, NoL) * (A + B * max(0.0, ga) * sqrt(max((1.0 - NoV * NoV) * (1.0 - NoL * NoL), 0.0)) / max(NoL, NoV));
 }
 
-void EvaluateBRDFBase(vec3 L, vec3 V, vec3 N, vec3 f0, vec3 albedo, float metallic, float roughness, inout vec3 brdf_diffuse, inout vec3 brdf_specular)
+vec3 SpecularLobe(float metallic, float roughness, vec3 f0, float NoL, float NoH, float NoV, float LoH, out vec3 kD)
 {
-	vec3 H = normalize(V + L);
+	float D = D_GGX(NoH, roughness);
+	float G = G_SmithGGXCorrelated(NoV, NoL, roughness);
+	vec3 F = F_Schlick(LoH, f0);
 
-	float NoV = abs(dot(N, V)) + 1e-5;
-	float NoL = clamp(dot(N, L), 0.0, 1.0);
-	float LoH = clamp(dot(L, H), 0.0, 1.0);
-	float NoH = clamp(dot(N, H), 0.0, 1.0);
+	kD = (1.0 - F) * (1.0 - metallic);
+	return (D * G) * F;
+}
 
-	if (NoL > 0.0)
+vec3 DiffuseLobe(float roughness, vec3 albedo, float NoL, float NoV, float LoH, float LoV, vec3 N, vec3 V)
+{
+	switch (settings.pbr_diffuse_brdf_model)
 	{
-		float D = D_GGX(NoH, roughness);
-		float G = G_SmithGGXCorrelated(NoV, NoL, roughness);
-		vec3 F = F_Schlick(LoH, f0);
-		
-		vec3 kD = (1.0 - F) * (1.0 - metallic);
-
-		brdf_specular = (D * G) * F;
-		
-		switch (settings.pbr_diffuse_brdf_model)
-		{
-			case DIFFUSE_BRDF_MODEL_LAMBERTIAN:
-				brdf_diffuse = kD * albedo * Fd_Lambert();
-				break;
-			case DIFFUSE_BRDF_MODEL_BURLEY:
-				brdf_diffuse = kD * albedo * Fd_Burley(L, V, N, roughness);
-				break;
-			case DIFFUSE_BRDF_MODEL_OREN_NAYAR:
-				brdf_diffuse = kD * albedo * Fd_OrenNayar(L, V, N, roughness);
-				break;
-		}
+		case DIFFUSE_BRDF_MODEL_LAMBERTIAN:
+			return albedo * Fd_Lambert();
+		case DIFFUSE_BRDF_MODEL_BURLEY:
+			return albedo * Fd_Burley(roughness, NoL, NoV, LoH);
+		case DIFFUSE_BRDF_MODEL_OREN_NAYAR:
+			return albedo * Fd_OrenNayar(roughness, NoL, NoV, LoV, N, V);
 	}
 }
 
@@ -119,21 +98,12 @@ void EvaluateBRDFBase(vec3 L, vec3 V, vec3 N, vec3 f0, vec3 albedo, float metall
 	- Clearcoat layer is always assumed to have an IOR of 1.5
 */
 
-void EvaluateBRDFClearCoat(vec3 L, vec3 V, vec3 N, vec3 f0, float roughness, inout vec3 Fc, inout vec3 brdf_clearcoat)
+vec3 ClearCoatLobe(float roughness, float clearcoat_alpha, vec3 f0, float NoL, float NoH, float NoV, float LoH, out vec3 Fcc)
 {
-	vec3 H = normalize(V + L);
+	float D = D_GGX(NoH, roughness);
+	float G = G_SmithGGXCorrelated(NoV, NoL, roughness);
+	vec3 F = F_Schlick(LoH, f0) * clearcoat_alpha;
 
-	float NoV = clamp(dot(N, V), 0.0, 1.0);
-	float NoL = clamp(dot(N, L), 0.0, 1.0);
-	float LoH = clamp(dot(L, H), 0.0, 1.0);
-	float NoH = clamp(dot(N, H), 0.0, 1.0);
-
-	if (NoL > 0.0)
-	{
-		float D = D_GGX(NoH, roughness);
-		float G = G_SmithGGXCorrelated(NoV, NoL, roughness);
-		Fc = F_Schlick(LoH, f0);
-
-		brdf_clearcoat = (D * G) * Fc;
-	}
+	Fcc = F;
+	return (D * G) * F;
 }

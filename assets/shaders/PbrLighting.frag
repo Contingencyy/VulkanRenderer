@@ -51,7 +51,7 @@ struct PixelInfo
 	vec3 energy_compensation;
 };
 
-vec3 EvaluateLighting(ViewInfo view, PixelInfo pixel)
+vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 {
 	vec3 Lo = vec3(0.0);
 
@@ -66,30 +66,43 @@ vec3 EvaluateLighting(ViewInfo view, PixelInfo pixel)
 			vec3 light_dir = normalize(pointlight.pos - pixel.pos_world);
 			vec3 dist_to_light = vec3(length(pointlight.pos - pixel.pos_world));
 			vec3 dist_attenuation = clamp(1.0 / (falloff.x + (falloff.y * dist_to_light) + (falloff.z * (dist_to_light * dist_to_light))), 0.0, 1.0);
-			float NoL = clamp(dot(pixel.normal, light_dir), 0.0, 1.0);
 			
-			vec3 Fc = vec3(0.0);
-			vec3 brdf_clearcoat = vec3(0.0);
+			float NoL = clamp(dot(pixel.normal, light_dir), 0.0, 1.0);
 
-			if (pixel.has_coat)
+			if (NoL > 0.0)
 			{
-				EvaluateBRDFClearCoat(light_dir, view.dir, pixel.normal_coat, pixel.f0, pixel.roughness_coat, Fc, brdf_clearcoat);
-				Fc *= pixel.alpha_coat;
-				brdf_clearcoat *= pixel.alpha_coat;
-			}
+				vec3 H = normalize(view.dir + light_dir);
+			
+				float NoH = clamp(dot(pixel.normal, H), 0.0, 1.0);
+				float NoV = abs(dot(pixel.normal, view.dir)) + 1e-5;
+				float LoH = clamp(dot(light_dir, H), 0.0, 1.0);
+				float LoV = clamp(dot(light_dir, view.dir), 0.0, 1.0);
 
-			vec3 brdf_diffuse = vec3(0.0);
-			vec3 brdf_specular = vec3(0.0);
-			EvaluateBRDFBase(light_dir, view.dir, pixel.normal, pixel.f0, pixel.albedo, pixel.metallic, pixel.roughness, brdf_diffuse, brdf_specular);
-			//brdf_specular *= pixel.energy_compensation;
+				vec3 kD = vec3(0.0);
+				vec3 Fr = SpecularLobe(pixel.metallic, pixel.roughness, pixel.f0, NoL, NoH, NoV, LoH, kD);
+				vec3 Fd = DiffuseLobe(pixel.roughness, pixel.albedo, NoL, NoV, LoH, LoV, pixel.normal, view.dir);
 
-			if (pixel.has_coat)
-			{
-				Lo += ((brdf_diffuse + brdf_specular * (1.0 - Fc)) * (1.0 - Fc) + brdf_clearcoat) * light_color * NoL * dist_attenuation;
-			}
-			else
-			{
-				Lo += (brdf_diffuse + brdf_specular) * light_color * NoL * dist_attenuation;
+				vec3 color = (kD * Fd) + Fr;
+
+				if (pixel.has_coat)
+				{
+					float NoLc = clamp(dot(pixel.normal_coat, light_dir), 0.0, 1.0);
+					float NoHc = clamp(dot(pixel.normal_coat, H), 0.0, 1.0);
+					float NoVc = abs(dot(pixel.normal_coat, view.dir)) + 1e-5;
+
+					vec3 Fcc = vec3(0.0);
+					vec3 Frc = ClearCoatLobe(pixel.roughness_coat, pixel.alpha_coat, pixel.f0, NoLc, NoHc, NoVc, LoH, Fcc);
+					vec3 attenuation = 1.0 - Fcc;
+
+					color *= attenuation * NoL;
+					color += Frc * NoLc;
+
+					Lo += color * light_color * dist_attenuation;
+				}
+				else
+				{
+					Lo += color * light_color * NoL * dist_attenuation;
+				}
 			}
 		}
 	}
@@ -246,7 +259,7 @@ void main()
 	pixel.energy_compensation = 1.0 + pixel.f0 * (1.0 / env_brdf.y - 1.0);
 
 	// Write final color
-	vec3 color = EvaluateLighting(view, pixel);
+	vec3 color = ShadePixel(view, pixel);
 
 	// Debug render modes
 	switch (settings.debug_render_mode)
