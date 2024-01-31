@@ -116,10 +116,6 @@ vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 		vec3 reflection = SampleTextureCubeLod(push_consts.prefiltered_cubemap_index, push_consts.prefiltered_sampler_index, R, pixel.roughness * push_consts.num_prefiltered_mips).rgb;
 		vec3 irradiance = SampleTextureCube(push_consts.irradiance_cubemap_index, push_consts.irradiance_sampler_index, pixel.normal).rgb;
 
-		// Using a different diffuse BRDF here other than lambertian will mess with the irradiance conversion,
-		// since we generate the irradiance cubemap as if it was a lambertian diffuse (uniform samples over hemisphere)
-		// If we wanted to use a different one, we would have to convolute the irradiance cubemap with that diffuse BRDF,
-		// which proves impractical because Burley and Oren-Nayar are dependent on more variables (light dir, view dir, normal, roughness)
 		vec3 diffuse_color = pixel.albedo * INV_PI;
 		vec3 diffuse = irradiance * diffuse_color;
 
