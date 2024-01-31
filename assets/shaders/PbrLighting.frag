@@ -111,6 +111,7 @@ vec3 EvaluateLighting(ViewInfo view, PixelInfo pixel)
 		vec3 diffuse = irradiance * diffuse_color;
 
 		vec3 F = F_SchlickRoughness(max(dot(pixel.normal, view.dir), 0.0), pixel.f0, pixel.roughness);
+		// Fss: Single scatter BRDF - Ess: Single scattering directional albedo
 		vec3 FssEss = F * env_brdf.x + env_brdf.y;
 
 		// Take into account clearcoat layer for IBL
@@ -137,14 +138,22 @@ vec3 EvaluateLighting(ViewInfo view, PixelInfo pixel)
 
 		vec3 kD = vec3(0.0);
 		// Source (Fdez-Agüera): https://www.jcgt.org/published/0008/01/03/paper.pdf
+		// After the first bounce, light will be randomly scattered in all directions.
+		// Therefore we can treat these secondary bounces as uniform energy in all directions
+		// so we represent this as an attenuated form of the cosine-weighted irradiance
 		if (settings.use_ibl_specular_multiscatter == 1)
 		{
+			// Energy lost due to single scattering
 			float Ems = (1.0 - (env_brdf.x + env_brdf.y));
 
+			// On each bounce we lose a fraction of energy due to it escaping the surface or being absorbed
+			// This means that only F_avg energy can participate in the next bounce
+			// F_Avg: Cosine-weighted average of the fresnel term
 			vec3 F_avg = pixel.f0 + (1.0 - pixel.f0) / 21.0;
 			vec3 FmsEms = Ems * FssEss * F_avg / (1.0 - F_avg * Ems);
-			kD = diffuse_color * (1.0 - FssEss - FmsEms);
 
+			// FmsEms + kD: Fixes energy conservation for dielectrics
+			kD = diffuse_color * (1.0 - FssEss - FmsEms);
 			Lo += (FmsEms + kD) * irradiance + FssEss * reflection;
 		}
 		else
