@@ -116,7 +116,7 @@ vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 		vec3 reflection = SampleTextureCubeLod(push_consts.prefiltered_cubemap_index, push_consts.prefiltered_sampler_index, R, pixel.roughness * push_consts.num_prefiltered_mips).rgb;
 		vec3 irradiance = SampleTextureCube(push_consts.irradiance_cubemap_index, push_consts.irradiance_sampler_index, pixel.normal).rgb;
 
-		vec3 diffuse_color = pixel.albedo * INV_PI;
+		vec3 diffuse_color = pixel.albedo * Fd_Lambert();
 		vec3 diffuse = irradiance * diffuse_color;
 
 		vec3 F = F_SchlickRoughness(max(dot(pixel.normal, view.dir), 0.0), pixel.f0, pixel.roughness);
@@ -127,18 +127,19 @@ vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 		if (settings.use_ibl_specular_clearcoat == 1 && pixel.has_coat)
 		{
 			vec3 Fc = F_SchlickRoughness(max(dot(pixel.normal_coat, view.dir), 0.0), pixel.f0, pixel.roughness_coat);
+			vec3 attenuation = 1.0 - pixel.alpha_coat * Fc;
 
 			vec3 Rc = reflect(-view.dir, pixel.normal_coat);
 			vec3 reflection_coat = SampleTextureCubeLod(push_consts.prefiltered_cubemap_index, push_consts.prefiltered_sampler_index, Rc, pixel.roughness_coat * push_consts.num_prefiltered_mips).rgb;
 			vec2 env_brdf_coat = SampleTexture(push_consts.brdf_lut_index, push_consts.brdf_lut_sampler_index, vec2(max(dot(pixel.normal_coat, view.dir), 0.0), pixel.roughness_coat)).rg;
 			
 			// Take into account energy lost in the clearcoat layer by adjusting the base layer
-			diffuse *= 1.0 - pixel.alpha_coat * Fc;
+			diffuse *= attenuation;
 
-			FssEss *= 1.0 - pixel.alpha_coat * Fc;
+			FssEss *= attenuation;
 			FssEss += pixel.alpha_coat * (Fc * env_brdf_coat.x + env_brdf_coat.y);
 
-			reflection *= 1.0 - pixel.alpha_coat * Fc;
+			reflection *= attenuation;
 			reflection += pixel.alpha_coat * reflection_coat;
 
 			env_brdf *= 1.0 - pixel.alpha_coat;
