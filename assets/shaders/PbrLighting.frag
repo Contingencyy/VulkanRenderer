@@ -48,7 +48,6 @@ struct PixelInfo
 	float roughness_coat;
 
 	vec3 f0;
-	vec3 energy_compensation;
 };
 
 vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
@@ -124,10 +123,10 @@ vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 		vec3 FssEss = F * env_brdf.x + env_brdf.y;
 
 		// Take into account clearcoat layer for IBL
-		if (settings.use_ibl_specular_clearcoat == 1 && pixel.has_coat)
+		if (settings.use_ibl_clearcoat == 1 && pixel.has_coat)
 		{
-			vec3 Fc = F_SchlickRoughness(max(dot(pixel.normal_coat, view.dir), 0.0), pixel.f0, pixel.roughness_coat);
-			vec3 attenuation = 1.0 - pixel.alpha_coat * Fc;
+			vec3 Fcc = F_SchlickRoughness(max(dot(pixel.normal_coat, view.dir), 0.0), pixel.f0, pixel.roughness_coat);
+			vec3 attenuation = 1.0 - pixel.alpha_coat * Fcc;
 
 			vec3 Rc = reflect(-view.dir, pixel.normal_coat);
 			vec3 reflection_coat = SampleTextureCubeLod(push_consts.prefiltered_cubemap_index, push_consts.prefiltered_sampler_index, Rc, pixel.roughness_coat * push_consts.num_prefiltered_mips).rgb;
@@ -137,7 +136,7 @@ vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 			diffuse *= attenuation;
 
 			FssEss *= attenuation;
-			FssEss += pixel.alpha_coat * (Fc * env_brdf_coat.x + env_brdf_coat.y);
+			FssEss += pixel.alpha_coat * (Fcc * env_brdf_coat.x + env_brdf_coat.y);
 
 			reflection *= attenuation;
 			reflection += pixel.alpha_coat * reflection_coat;
@@ -148,10 +147,12 @@ vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 
 		vec3 kD = vec3(0.0);
 		// Source (Fdez-Agüera): https://www.jcgt.org/published/0008/01/03/paper.pdf
-		// After the first bounce, light will be randomly scattered in all directions.
+		// This approach simulates the energy lost due do single scattering by adding a second specular lobe for the multiscatter.
+		// Fss + Fms = 1 - This should hold true to achieve the energy conservation we are after
+		// After the first bounce, we treat light as if it will be scattered randomly in all directions.
 		// Therefore we can treat these secondary bounces as uniform energy in all directions
 		// so we represent this as an attenuated form of the cosine-weighted irradiance
-		if (settings.use_ibl_specular_multiscatter == 1)
+		if (settings.use_ibl_multiscatter == 1)
 		{
 			// Energy lost due to single scattering
 			float Ems = (1.0 - (env_brdf.x + env_brdf.y));
@@ -160,9 +161,14 @@ vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 			// This means that only F_avg energy can participate in the next bounce
 			// F_Avg: Cosine-weighted average of the fresnel term
 			vec3 F_avg = pixel.f0 + (1.0 - pixel.f0) / 21.0;
-			vec3 FmsEms = Ems * FssEss * F_avg / (1.0 - F_avg * Ems);
 
-			// FmsEms + kD: Fixes energy conservation for dielectrics
+			// F_avg was not squared in the original paper, however it was later adjusted because the model includes
+			// single scattering events, which are already accounted for in Fss, and we do not want that here
+			// https://blog.selfshadow.com/2018/06/04/multi-faceted-part-2/
+			// https://blog.selfshadow.com/publications/s2017-shading-course/imageworks/s2017_pbs_imageworks_slides_v2.pdf
+			vec3 FmsEms = Ems * FssEss * pow(F_avg, vec3(2.0)) / (1.0 - F_avg * Ems);
+
+			// FmsEms + kD: Fixes energy conservation for dielectrics/non perfect mirrors
 			kD = diffuse_color * (1.0 - FssEss - FmsEms);
 			Lo += (FmsEms + kD) * irradiance + FssEss * reflection;
 		}
@@ -253,7 +259,6 @@ void main()
 	// Evaluate f0 and energy compensation for direct lighting
 	vec2 env_brdf = SampleTexture(push_consts.brdf_lut_index, push_consts.brdf_lut_sampler_index, vec2(max(dot(pixel.normal, view.dir), 0.0), pixel.roughness)).rg;
 	pixel.f0 = mix(vec3(0.04), pixel.albedo, pixel.metallic);
-	pixel.energy_compensation = 1.0 + pixel.f0 * (1.0 / env_brdf.y - 1.0);
 
 	// Write final color
 	vec3 color = ShadePixel(view, pixel);

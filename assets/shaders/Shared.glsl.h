@@ -78,20 +78,21 @@ const std::vector<const char*> DIFFUSE_BRDF_MODEL_LABELS =
 DECLARE_STRUCT(RenderSettings)
 {
 	uint use_direct_light;
+	uint use_multiscatter;
 
 	uint use_pbr_squared_roughness;
 	uint use_pbr_clearcoat;
 	uint pbr_diffuse_brdf_model;
-	uint white_furnace_test;
 
 	uint use_ibl;
-	uint use_ibl_specular_clearcoat;
-	uint use_ibl_specular_multiscatter;
+	uint use_ibl_clearcoat;
+	uint use_ibl_multiscatter;
 
 	float exposure;
 	float gamma;
 
 	uint debug_render_mode;
+	uint white_furnace_test;
 };
 
 DECLARE_STRUCT(CameraData)

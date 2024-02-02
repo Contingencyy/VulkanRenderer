@@ -1222,20 +1222,21 @@ namespace Renderer
 
 		// Set default render settings
 		data->settings.use_direct_light = true;
+		data->settings.use_multiscatter = true;
 
 		data->settings.use_pbr_squared_roughness = false;
 		data->settings.use_pbr_clearcoat = true;
 		data->settings.pbr_diffuse_brdf_model = DIFFUSE_BRDF_MODEL_OREN_NAYAR;
-		data->settings.white_furnace_test = false;
 
 		data->settings.use_ibl = true;
-		data->settings.use_ibl_specular_clearcoat = true;
-		data->settings.use_ibl_specular_multiscatter = true;
+		data->settings.use_ibl_clearcoat = true;
+		data->settings.use_ibl_multiscatter = true;
 
 		data->settings.exposure = 1.5f;
 		data->settings.gamma = 2.2f;
 
 		data->settings.debug_render_mode = DEBUG_RENDER_MODE_NONE;
+		data->settings.white_furnace_test = false;
 	}
 
 	void Exit()
@@ -1530,6 +1531,12 @@ namespace Renderer
 					ImGui::EndCombo();
 				}
 
+				ImGui::Checkbox("White furnace test", (bool*)&data->settings.white_furnace_test);
+				if (ImGui::IsItemHovered())
+				{
+					ImGui::SetTooltip("If enabled, switches the HDR environment for a purely white uniformly lit environment");
+				}
+
 				ImGui::Unindent(10.0f);
 			}
 
@@ -1545,6 +1552,12 @@ namespace Renderer
 				if (ImGui::IsItemHovered())
 				{
 					ImGui::SetTooltip("If enabled, evaluates direct lighting from light sources");
+				}
+				
+				ImGui::Checkbox("Use multiscatter", (bool*)&data->settings.use_multiscatter);
+				if (ImGui::IsItemHovered())
+				{
+					ImGui::SetTooltip("If enabled, specular direct lighting will be energy conserving, taking multiscatter specular bounces between microfacets into account");
 				}
 
 				ImGui::SetNextItemOpen(true, ImGuiCond_Once);
@@ -1586,12 +1599,6 @@ namespace Renderer
 						ImGui::SetTooltip("Select which diffuse BRDF term to use for direct diffuse lighting");
 					}
 
-					ImGui::Checkbox("White furnace test", (bool*)&data->settings.white_furnace_test);
-					if (ImGui::IsItemHovered())
-					{
-						ImGui::SetTooltip("If enabled, switches the HDR environment for a purely white uniformly lit environment");
-					}
-
 					ImGui::Unindent(10.0f);
 				}
 
@@ -1600,17 +1607,17 @@ namespace Renderer
 				{
 					ImGui::Indent(10.0f);
 
-					ImGui::Checkbox("Use image-based lighting", (bool*)&data->settings.use_ibl);
+					ImGui::Checkbox("Use IBL", (bool*)&data->settings.use_ibl);
 					if (ImGui::IsItemHovered())
 					{
 						ImGui::SetTooltip("Toggle image-based lighting");
 					}
-					ImGui::Checkbox("Use specular clearcoat", (bool*)&data->settings.use_ibl_specular_clearcoat);
+					ImGui::Checkbox("Use IBL clearcoat", (bool*)&data->settings.use_ibl_clearcoat);
 					if (ImGui::IsItemHovered())
 					{
 						ImGui::SetTooltip("If enabled, clearcoat materials will have their own specular lobe when evaluating specular indirect lighting");
 					}
-					ImGui::Checkbox("Use specular multiscatter", (bool*)&data->settings.use_ibl_specular_multiscatter);
+					ImGui::Checkbox("Use IBL multiscatter", (bool*)&data->settings.use_ibl_multiscatter);
 					if (ImGui::IsItemHovered())
 					{
 						ImGui::SetTooltip("If enabled, specular indirect lighting will be energy conserving, taking multiscatter specular bounces between microfacets into account");
