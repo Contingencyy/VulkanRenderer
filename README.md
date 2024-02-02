@@ -5,11 +5,19 @@
 To run this project yourself, simply download the source code from GitHub, as well as the latest Vulkan SDK here: https://vulkan.lunarg.com/sdk/home.
 The solution will automatically try to find the Vulkan SDK installation by its environment variable VULKAN_SDK. Last tested with Vulkan SDK version 1.3.275.0.
 
+! NOTE !
+The Release build currently experiences irregular crashes at startup or shutdown, which I am investigating. Could be related to timeline semaphores.
+
 ## Project
 
-This is my study project, starting from September 2023, for a whole semester. The goal is to utilize the Vulkan graphics API to create a renderer that creates realistic and stunning real-time renders of cars and other objects with clear-coat pbr materials, utilizing raytraced shadows and reflections, rasterization will be used for everything else.
+This is my study project, starting from September 2023, for a whole semester. The goal is to utilize the Vulkan graphics API to create a renderer that creates realistic and stunning real-time renders of cars and other objects with clear-coat pbr materials, utilizing raytraced shadows and reflections, rasterization will be used for everything else. This project uses the following Vulkan extensions:
+- Vulkan
+  - Vulkan EXT dynamic rendering
+  - Vulkan EXT descriptor buffer
+  - Vulkan EXT timeline semaphores
 
 ## Current features
+
 - Physically-based rendering
   - Lambertian/Burley/Oren-Nayar Diffuse BRDF
   - Clear-coat materials
