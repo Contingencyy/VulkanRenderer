@@ -1,5 +1,10 @@
 # VulkanRenderer
 
+## Installation
+
+To run this project yourself, simply download the source code from GitHub, as well as the latest Vulkan SDK here: https://vulkan.lunarg.com/sdk/home.
+The solution will automatically try to find the Vulkan SDK installation by its environment variable VULKAN_SDK. Last tested with Vulkan SDK version 1.3.275.0.
+
 This is my study project, starting from September 2023, for a whole semester. The goal is to utilize the Vulkan graphics API to create a renderer that creates realistic and stunning real-time renders of cars and other objects with clear-coat pbr materials, utilizing raytraced shadows and reflections, rasterization will be used for everything else.
 
 ## Current features
