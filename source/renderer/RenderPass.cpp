@@ -42,6 +42,10 @@ void RenderPass::Begin(VkCommandBuffer command_buffer, const BeginInfo& begin_in
 			attachment_info->loadOp = attachment.info.load_op;
 			attachment_info->storeOp = attachment.info.store_op;
 			attachment_info->clearValue = attachment.info.clear_value;
+			attachment_info->resolveImageView = VK_NULL_HANDLE;
+			attachment_info->resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+			attachment_info->resolveMode = VK_RESOLVE_MODE_NONE;
+			attachment_info->pNext = nullptr;
 		}
 
 		VkRenderingInfo rendering_info = {};
@@ -49,10 +53,12 @@ void RenderPass::Begin(VkCommandBuffer command_buffer, const BeginInfo& begin_in
 		rendering_info.colorAttachmentCount = (uint32_t)color_attachment_infos.size();
 		rendering_info.pColorAttachments = color_attachment_infos.data();
 		rendering_info.pDepthAttachment = m_attachments[ATTACHMENT_SLOT_DEPTH_STENCIL].info.slot == ATTACHMENT_SLOT_INVALID ? nullptr : &depth_attachment_info;
+		rendering_info.pStencilAttachment = nullptr;
 		rendering_info.viewMask = 0;
 		rendering_info.renderArea = { 0, 0, begin_info.render_width, begin_info.render_height };
 		rendering_info.layerCount = 1;
 		rendering_info.flags = 0;
+		rendering_info.pNext = nullptr;
 
 		// Begin rendering and bind the pipeline state
 		vkCmdBeginRendering(command_buffer, &rendering_info);

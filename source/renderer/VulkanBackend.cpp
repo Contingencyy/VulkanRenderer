@@ -151,38 +151,40 @@ namespace Vulkan
 
 	static void CreateInstance()
 	{
-		VkApplicationInfo app_info = {};
-		app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+		VkApplicationInfo app_info = { VK_STRUCTURE_TYPE_APPLICATION_INFO };
 		app_info.pApplicationName = "VulkanRenderer";
 		app_info.applicationVersion = VK_MAKE_VERSION(0, 0, 1);
 		app_info.pEngineName = "No Engine";
 		app_info.engineVersion = VK_MAKE_VERSION(0, 0, 1);
 		app_info.apiVersion = VK_API_VERSION_1_3;
+		app_info.pNext = nullptr;
 
-		VkInstanceCreateInfo instance_create_info = {};
-		instance_create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+		VkInstanceCreateInfo instance_create_info = { VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO };
 		instance_create_info.pApplicationInfo = &app_info;
+		instance_create_info.flags = 0;
+		instance_create_info.pNext = nullptr;
 
 		std::vector<const char*> required_extensions = GetRequiredExtensions();
 		instance_create_info.enabledExtensionCount = (uint32_t)required_extensions.size();
 		instance_create_info.ppEnabledExtensionNames = required_extensions.data();
 
-		if (VulkanInstance::ENABLE_VALIDATION_LAYERS)
-		{
-			instance_create_info.enabledLayerCount = (uint32_t)vk_inst.debug.validation_layers.size();
-			instance_create_info.ppEnabledLayerNames = vk_inst.debug.validation_layers.data();
+#ifdef ENABLE_GPU_VALIDATION
+		instance_create_info.enabledLayerCount = (uint32_t)vk_inst.debug.validation_layers.size();
+		instance_create_info.ppEnabledLayerNames = vk_inst.debug.validation_layers.data();
 
-			// Init debug messenger for vulkan instance creation
-			VkDebugUtilsMessengerCreateInfoEXT debug_messenger_create_info = {};
-			debug_messenger_create_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-			debug_messenger_create_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-				VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-			debug_messenger_create_info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-				VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-			debug_messenger_create_info.pfnUserCallback = VkDebugCallback;
-			debug_messenger_create_info.pUserData = nullptr;
-			instance_create_info.pNext = (VkDebugUtilsMessengerCreateInfoEXT*)&debug_messenger_create_info;
-		}
+		// Init debug messenger for vulkan instance creation
+		VkDebugUtilsMessengerCreateInfoEXT debug_messenger_create_info = { VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT };
+		debug_messenger_create_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+			VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+		debug_messenger_create_info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+			VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+		debug_messenger_create_info.pfnUserCallback = VkDebugCallback;
+		debug_messenger_create_info.pUserData = nullptr;
+		debug_messenger_create_info.pNext = nullptr;
+		debug_messenger_create_info.flags = 0;
+
+		instance_create_info.pNext = &debug_messenger_create_info;
+#endif
 
 		VkCheckResult(vkCreateInstance(&instance_create_info, nullptr, &vk_inst.instance));
 	}
@@ -192,7 +194,6 @@ namespace Vulkan
 		if (VulkanInstance::ENABLE_VALIDATION_LAYERS)
 		{
 			// Enable validation layers
-
 			uint32_t layer_count = 0;
 			VkCheckResult(vkEnumerateInstanceLayerProperties(&layer_count, nullptr));
 
@@ -288,6 +289,9 @@ namespace Vulkan
 			VkPhysicalDeviceTimelineSemaphoreFeatures timeline_semaphore_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES };
 			dynamic_rendering_features.pNext = &timeline_semaphore_features;
 
+			VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT swapchain_maintenance_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_EXT };
+			timeline_semaphore_features.pNext = &swapchain_maintenance_features;
+
 			VkPhysicalDeviceFeatures2 device_features2 = {};
 			device_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
 			device_features2.pNext = &descriptor_buffer_features;
@@ -302,7 +306,8 @@ namespace Vulkan
 				buffer_device_address_features.bufferDeviceAddressCaptureReplay &&
 				maintenance4_features.maintenance4 &&
 				dynamic_rendering_features.dynamicRendering &&
-				timeline_semaphore_features.timelineSemaphore)
+				timeline_semaphore_features.timelineSemaphore &&
+				swapchain_maintenance_features.swapchainMaintenance1)
 			{
 				vk_inst.physical_device = device;
 
@@ -349,6 +354,11 @@ namespace Vulkan
 		device_create_info.ppEnabledExtensionNames = vk_inst.extensions.data();
 		device_create_info.enabledExtensionCount = (uint32_t)vk_inst.extensions.size();
 
+#ifdef ENABLE_GPU_VALIDATION
+		device_create_info.enabledLayerCount = (uint32_t)vk_inst.debug.validation_layers.size();
+		device_create_info.ppEnabledLayerNames = vk_inst.debug.validation_layers.data();
+#endif
+
 		// Request additional features to be enabled
 		VkPhysicalDeviceDescriptorIndexingFeatures descriptor_indexing_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES };
 
@@ -369,6 +379,9 @@ namespace Vulkan
 
 		VkPhysicalDeviceTimelineSemaphoreFeatures timeline_semaphore_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES };
 		dynamic_rendering_features.pNext = &timeline_semaphore_features;
+
+		VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT swapchain_maintenance_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_EXT };
+		timeline_semaphore_features.pNext = &swapchain_maintenance_features;
 
 		VkPhysicalDeviceFeatures2 device_features2 = {};
 		device_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
@@ -770,7 +783,7 @@ namespace Vulkan
 		present_mode_info.pPresentModes = &vk_inst.swapchain.desired_present_mode;
 
 		present_info.pNext = &present_mode_info;
-
+		
 		VkResult present_result = vkQueuePresentKHR(vk_inst.queues.graphics, &present_info);
 		vk_inst.current_frame = (vk_inst.current_frame + 1) % VulkanInstance::MAX_FRAMES_IN_FLIGHT;
 
@@ -863,6 +876,7 @@ namespace Vulkan
 		VkMemoryAllocateInfo alloc_info = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
 		alloc_info.allocationSize = mem_req.size;
 		alloc_info.memoryTypeIndex = FindMemoryType(mem_req.memoryTypeBits, mem_flags);
+		alloc_info.pNext = nullptr;
 		
 		VkDeviceMemory device_memory = VK_NULL_HANDLE;
 		VkCheckResult(vkAllocateMemory(vk_inst.device, &alloc_info, nullptr, &device_memory));
@@ -879,6 +893,7 @@ namespace Vulkan
 		VkMemoryAllocateInfo alloc_info = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
 		alloc_info.allocationSize = mem_req.size;
 		alloc_info.memoryTypeIndex = FindMemoryType(mem_req.memoryTypeBits, mem_flags);
+		alloc_info.pNext = nullptr;
 
 		VkDeviceMemory device_memory = VK_NULL_HANDLE;
 		VkCheckResult(vkAllocateMemory(vk_inst.device, &alloc_info, nullptr, &device_memory));
