@@ -7,7 +7,7 @@ class Buffer
 public:
 	// Factory patterns will return a unique_ptr, which can be converted into a shared_ptr if necessary
 	// Factories should never own the memory themselves, and we can't make assumptions of the memory ownership
-	// of the callee, so we will return a unique_ptr
+	// that the caller has intended, so we will return a unique_ptr
 	static std::unique_ptr<Buffer> Create(const BufferCreateInfo& create_info);
 	static std::unique_ptr<Buffer> CreateStaging(size_t size_in_bytes, const std::string& name);
 	static std::unique_ptr<Buffer> CreateUniform(size_t size_in_bytes, const std::string& name);

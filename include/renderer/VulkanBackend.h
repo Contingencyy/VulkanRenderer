@@ -93,12 +93,6 @@ struct VulkanInstance
 {
 	static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
 
-#ifdef ENABLE_GPU_VALIDATION
-	static constexpr bool ENABLE_VALIDATION_LAYERS = true;
-#else
-	static constexpr bool ENABLE_VALIDATION_LAYERS = false;
-#endif
-
 	::GLFWwindow* window;
 
 	std::vector<const char*> extensions =

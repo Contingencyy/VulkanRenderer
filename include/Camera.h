@@ -26,7 +26,7 @@ private:
 	float m_fov = 60.0f;
 	float m_aspect = 16.0f / 9.0f;
 	float m_speed = 8.0f;
-	float m_near = 0.001f;
+	float m_near = 0.1f;
 	float m_far = 10000.0f;
 
 };

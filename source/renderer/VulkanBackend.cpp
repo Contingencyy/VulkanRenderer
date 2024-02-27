@@ -62,10 +62,9 @@ namespace Vulkan
 		glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extension_count);
 		std::vector<const char*> extensions(glfw_extensions, glfw_extensions + glfw_extension_count);
 
-		if (VulkanInstance::ENABLE_VALIDATION_LAYERS)
-		{
-			extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-		}
+#ifdef ENABLE_VK_DEBUG_LAYER
+		extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+#endif
 
 		return extensions;
 	}
@@ -168,7 +167,7 @@ namespace Vulkan
 		instance_create_info.enabledExtensionCount = (uint32_t)required_extensions.size();
 		instance_create_info.ppEnabledExtensionNames = required_extensions.data();
 
-#ifdef ENABLE_GPU_VALIDATION
+#ifdef ENABLE_VK_DEBUG_LAYER
 		instance_create_info.enabledLayerCount = (uint32_t)vk_inst.debug.validation_layers.size();
 		instance_create_info.ppEnabledLayerNames = vk_inst.debug.validation_layers.data();
 
@@ -191,46 +190,45 @@ namespace Vulkan
 
 	static void EnableValidationLayers()
 	{
-		if (VulkanInstance::ENABLE_VALIDATION_LAYERS)
+#ifdef ENABLE_VK_DEBUG_LAYER
+		// Enable validation layers
+		uint32_t layer_count = 0;
+		VkCheckResult(vkEnumerateInstanceLayerProperties(&layer_count, nullptr));
+
+		std::vector<VkLayerProperties> available_layers(layer_count);
+		VkCheckResult(vkEnumerateInstanceLayerProperties(&layer_count, available_layers.data()));
+
+		for (const auto& validation_layer : vk_inst.debug.validation_layers)
 		{
-			// Enable validation layers
-			uint32_t layer_count = 0;
-			VkCheckResult(vkEnumerateInstanceLayerProperties(&layer_count, nullptr));
+			bool layer_found = false;
 
-			std::vector<VkLayerProperties> available_layers(layer_count);
-			VkCheckResult(vkEnumerateInstanceLayerProperties(&layer_count, available_layers.data()));
-
-			for (const auto& validation_layer : vk_inst.debug.validation_layers)
+			for (const auto& available_layer : available_layers)
 			{
-				bool layer_found = false;
-
-				for (const auto& available_layer : available_layers)
+				if (strcmp(validation_layer, available_layer.layerName) == 0)
 				{
-					if (strcmp(validation_layer, available_layer.layerName) == 0)
-					{
-						layer_found = true;
-						break;
-					}
+					layer_found = true;
+					break;
 				}
-
-				VK_ASSERT(layer_found);
 			}
 
-			// Create debug messenger with custom message callback
-
-			VkDebugUtilsMessengerCreateInfoEXT create_info = {};
-			create_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-			create_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-				VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-			create_info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-				VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-			create_info.pfnUserCallback = VkDebugCallback;
-			create_info.pUserData = nullptr;
-
-			PFN_vkCreateDebugUtilsMessengerEXT func = {};
-			LoadVulkanFunction<PFN_vkCreateDebugUtilsMessengerEXT>("vkCreateDebugUtilsMessengerEXT", func);
-			VkCheckResult(func(vk_inst.instance, &create_info, nullptr, &vk_inst.debug.debug_messenger));
+			VK_ASSERT(layer_found);
 		}
+
+		// Create debug messenger with custom message callback
+
+		VkDebugUtilsMessengerCreateInfoEXT create_info = {};
+		create_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+		create_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+			VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+		create_info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+			VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+		create_info.pfnUserCallback = VkDebugCallback;
+		create_info.pUserData = nullptr;
+
+		PFN_vkCreateDebugUtilsMessengerEXT func = {};
+		LoadVulkanFunction<PFN_vkCreateDebugUtilsMessengerEXT>("vkCreateDebugUtilsMessengerEXT", func);
+		VkCheckResult(func(vk_inst.instance, &create_info, nullptr, &vk_inst.debug.debug_messenger));
+#endif
 	}
 
 	static void CreatePhysicalDevice()
@@ -354,7 +352,7 @@ namespace Vulkan
 		device_create_info.ppEnabledExtensionNames = vk_inst.extensions.data();
 		device_create_info.enabledExtensionCount = (uint32_t)vk_inst.extensions.size();
 
-#ifdef ENABLE_GPU_VALIDATION
+#ifdef ENABLE_VK_DEBUG_LAYER
 		device_create_info.enabledLayerCount = (uint32_t)vk_inst.debug.validation_layers.size();
 		device_create_info.ppEnabledLayerNames = vk_inst.debug.validation_layers.data();
 #endif
@@ -390,15 +388,12 @@ namespace Vulkan
 		vkGetPhysicalDeviceFeatures2(vk_inst.physical_device, &device_features2);
 		device_create_info.pNext = &device_features2;
 
-		if (VulkanInstance::ENABLE_VALIDATION_LAYERS)
-		{
-			device_create_info.enabledLayerCount = (uint32_t)vk_inst.debug.validation_layers.size();
-			device_create_info.ppEnabledLayerNames = vk_inst.debug.validation_layers.data();
-		}
-		else
-		{
-			device_create_info.enabledLayerCount = 0;
-		}
+#ifdef ENABLE_VK_DEBUG_LAYER
+		device_create_info.enabledLayerCount = (uint32_t)vk_inst.debug.validation_layers.size();
+		device_create_info.ppEnabledLayerNames = vk_inst.debug.validation_layers.data();
+#else
+		device_create_info.enabledLayerCount = 0;
+#endif
 
 		VkCheckResult(vkCreateDevice(vk_inst.physical_device, &device_create_info, nullptr, &vk_inst.device));
 
@@ -742,16 +737,15 @@ namespace Vulkan
 		DestroySwapChain();
 		vkDestroySurfaceKHR(vk_inst.instance, vk_inst.swapchain.surface, nullptr);
 
-		if (VulkanInstance::ENABLE_VALIDATION_LAYERS)
+#ifdef ENABLE_VK_DEBUG_LAYER
+		auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(vk_inst.instance, "vkDestroyDebugUtilsMessengerEXT");
+		if (!func)
 		{
-			auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(vk_inst.instance, "vkDestroyDebugUtilsMessengerEXT");
-			if (!func)
-			{
-				VK_EXCEPT("Vulkan", "Could not find function pointer vkDestroyDebugUtilsMessengerEXT");
-			}
-
-			func(vk_inst.instance, vk_inst.debug.debug_messenger, nullptr);
+			VK_EXCEPT("Vulkan", "Could not find function pointer vkDestroyDebugUtilsMessengerEXT");
 		}
+
+		func(vk_inst.instance, vk_inst.debug.debug_messenger, nullptr);
+#endif
 
 		vkDestroyDevice(vk_inst.device, nullptr);
 		vkDestroyInstance(vk_inst.instance, nullptr);
@@ -1384,12 +1378,12 @@ namespace Vulkan
 		{
 			color_blend_attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
 				VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-			color_blend_attachment.blendEnable = VK_FALSE;// VK_TRUE;
+			color_blend_attachment.blendEnable = VK_TRUE;
 			color_blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
 			color_blend_attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
 			color_blend_attachment.colorBlendOp = VK_BLEND_OP_ADD;
-			color_blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-			color_blend_attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+			color_blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+			color_blend_attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
 			color_blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD;
 		}
 

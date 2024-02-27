@@ -58,7 +58,7 @@ class Texture
 public:
 	// Factory patterns will return a unique_ptr, which can be converted into a shared_ptr if necessary
 	// Factories should never own the memory themselves, and we can't make assumptions of the memory ownership
-	// of the callee, so we will return a unique_ptr
+	// that the caller has intended, so we will return a unique_ptr
 	static std::unique_ptr<Texture> Create(const TextureCreateInfo& create_info);
 
 public:
