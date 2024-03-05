@@ -50,20 +50,24 @@ DescriptorBuffer::DescriptorBuffer(VkDescriptorType type, uint32_t num_descripto
 	VkCheckResult(vkCreateDescriptorSetLayout(vk_inst.device, &layout_info, nullptr, &m_layout));
 
 	// Create underlying buffer
-	VkDeviceSize buffer_size;
-	vk_inst.pFunc.get_descriptor_set_layout_size_ext(vk_inst.device, m_layout, &buffer_size);
+	VkDeviceSize size_in_bytes;
+	vk_inst.pFunc.get_descriptor_set_layout_size_ext(vk_inst.device, m_layout, &size_in_bytes);
 	
 	if (m_descriptor_type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
-		buffer_size *= VulkanInstance::MAX_FRAMES_IN_FLIGHT;
+		size_in_bytes *= VulkanInstance::MAX_FRAMES_IN_FLIGHT;
 
-	VkBufferUsageFlags buffer_flags = VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+	BufferCreateInfo buffer_info = {};
+	buffer_info.size_in_bytes = size_in_bytes;
+	buffer_info.usage_flags = BUFFER_USAGE_DESCRIPTOR;
+	buffer_info.memory_flags = GPU_MEMORY_HOST_VISIBLE | GPU_MEMORY_HOST_COHERENT;
+	buffer_info.name = "Descriptor Buffer";
 
-	m_buffer = Vulkan::CreateBuffer(buffer_size, buffer_flags);
-	m_buffer_memory = Vulkan::AllocateDeviceMemory(m_buffer, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-	m_current_ptr = Vulkan::MapMemory(m_buffer_memory, buffer_size, 0);
+	m_vk_buffer = Vulkan::CreateBuffer(buffer_info);
+	m_buffer_memory = Vulkan::AllocateDeviceMemory(m_vk_buffer, buffer_info);
+	m_current_ptr = Vulkan::MapMemory(m_buffer_memory, size_in_bytes, 0);
 
 #ifdef _DEBUG
-	Vulkan::DebugNameObject((uint64_t)m_buffer, VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_EXT, "Descriptor Buffer");
+	Vulkan::DebugNameObject((uint64_t)m_vk_buffer, VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_EXT, "Descriptor Buffer");
 	Vulkan::DebugNameObject((uint64_t)m_buffer_memory, VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_MEMORY_EXT, "Descriptor Buffer Memory");
 #endif
 }
@@ -72,7 +76,7 @@ DescriptorBuffer::~DescriptorBuffer()
 {
 	Vulkan::UnmapMemory(m_buffer_memory);
 	Vulkan::FreeDeviceMemory(m_buffer_memory);
-	Vulkan::DestroyBuffer(m_buffer);
+	Vulkan::DestroyBuffer(m_vk_buffer);
 	vkDestroyDescriptorSetLayout(vk_inst.device, m_layout, nullptr);
 }
 
@@ -105,7 +109,7 @@ VkDescriptorBufferBindingInfoEXT DescriptorBuffer::GetBindingInfo() const
 {
 	VkBufferDeviceAddressInfo address_info = {};
 	address_info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
-	address_info.buffer = m_buffer;
+	address_info.buffer = m_vk_buffer;
 
 	VkDescriptorBufferBindingInfoEXT binding_info = {};
 	binding_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT;

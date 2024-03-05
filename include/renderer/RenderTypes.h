@@ -82,6 +82,45 @@ struct TextureCreateInfo
 	std::string name = "Unnamed Texture";
 };
 
+struct TextureViewCreateInfo
+{
+	TextureFormat format = TEXTURE_FORMAT_UNDEFINED;
+	TextureDimension dimension = TEXTURE_DIMENSION_UNDEFINED;
+
+	uint32_t base_mip = 0;
+	uint32_t num_mips = UINT32_MAX;
+	uint32_t base_layer = 0;
+	uint32_t num_layers = UINT32_MAX;
+
+	bool operator==(const TextureViewCreateInfo& other) const
+	{
+		return (
+			format == other.format &&
+			dimension == other.dimension &&
+			base_mip == other.base_mip &&
+			num_mips == other.num_mips &&
+			base_layer == other.base_layer &&
+			num_layers == other.num_layers
+		);
+	}
+};
+
+template<>
+struct std::hash<TextureViewCreateInfo>
+{
+	std::size_t operator()(const TextureViewCreateInfo& view_info) const
+	{
+		return (
+			std::hash<uint32_t>()(view_info.format) ^
+			(std::hash<uint32_t>()(view_info.dimension) << 10) ^
+			(std::hash<uint32_t>()(view_info.base_mip) << 20) ^
+			(std::hash<uint32_t>()(view_info.num_mips) << 30) ^
+			(std::hash<uint32_t>()(view_info.base_layer) << 40) ^
+			(std::hash<uint32_t>()(view_info.num_layers) << 50)
+		);
+	}
+};
+
 /*
 	----------------------------------------------------------------------------------------------
 	--------------------------------------- Buffer -----------------------------------------------
@@ -107,7 +146,8 @@ enum BufferUsageFlags
 	BUFFER_USAGE_READ_ONLY = (1 << 4),
 	BUFFER_USAGE_READ_WRITE = (1 << 5),
 	BUFFER_USAGE_COPY_SRC = (1 << 6),
-	BUFFER_USAGE_COPY_DST = (1 << 7)
+	BUFFER_USAGE_COPY_DST = (1 << 7),
+	BUFFER_USAGE_DESCRIPTOR = (1 << 8)
 };
 
 struct BufferCreateInfo

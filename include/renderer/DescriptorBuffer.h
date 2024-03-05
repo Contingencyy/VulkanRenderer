@@ -22,7 +22,7 @@ private:
 	VkDescriptorType m_descriptor_type;
 	VkDescriptorSetLayout m_layout = VK_NULL_HANDLE;
 
-	VkBuffer m_buffer = VK_NULL_HANDLE;
+	VkBuffer m_vk_buffer = VK_NULL_HANDLE;
 	VkDeviceMemory m_buffer_memory = VK_NULL_HANDLE;
 
 	uint32_t m_num_descriptors = 0;

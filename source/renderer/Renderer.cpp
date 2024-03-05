@@ -7,6 +7,7 @@
 #include "renderer/Texture.h"
 #include "renderer/Buffer.h"
 #include "renderer/Sampler.h"
+#include "renderer/RingBuffer.h"
 #include "Shared.glsl.h"
 #include "Assets.h"
 
@@ -551,14 +552,14 @@ namespace Renderer
 		{
 			std::vector<RenderPass::AttachmentInfo> attachment_infos(2);
 			attachment_infos[0].slot = RenderPass::ATTACHMENT_SLOT_COLOR0;
-			attachment_infos[0].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+			attachment_infos[0].format = TEXTURE_FORMAT_RGBA16_SFLOAT;
 			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 			attachment_infos[0].load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
 			attachment_infos[0].store_op = VK_ATTACHMENT_STORE_OP_STORE;
 			attachment_infos[0].clear_value.color = { 0.0f, 0.0f, 0.0f, 1.0f };
 
 			attachment_infos[1].slot = RenderPass::ATTACHMENT_SLOT_DEPTH_STENCIL;
-			attachment_infos[1].format = VK_FORMAT_D32_SFLOAT;
+			attachment_infos[1].format = TEXTURE_FORMAT_D32_SFLOAT;
 			attachment_infos[1].expected_layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
 			attachment_infos[1].load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
 			attachment_infos[1].store_op = VK_ATTACHMENT_STORE_OP_STORE;
@@ -597,13 +598,13 @@ namespace Renderer
 		{
 			std::vector<RenderPass::AttachmentInfo> attachment_infos(2);
 			attachment_infos[0].slot = RenderPass::ATTACHMENT_SLOT_COLOR0;
-			attachment_infos[0].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+			attachment_infos[0].format = TEXTURE_FORMAT_RGBA16_SFLOAT;
 			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 			attachment_infos[0].load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
 			attachment_infos[0].store_op = VK_ATTACHMENT_STORE_OP_STORE;
 
 			attachment_infos[1].slot = RenderPass::ATTACHMENT_SLOT_DEPTH_STENCIL;
-			attachment_infos[1].format = VK_FORMAT_D32_SFLOAT;
+			attachment_infos[1].format = TEXTURE_FORMAT_D32_SFLOAT;
 			attachment_infos[1].expected_layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
 			attachment_infos[1].load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
 			attachment_infos[1].store_op = VK_ATTACHMENT_STORE_OP_STORE;
@@ -633,11 +634,11 @@ namespace Renderer
 		{
 			std::vector<RenderPass::AttachmentInfo> attachment_infos(2);
 			attachment_infos[0].slot = RenderPass::ATTACHMENT_SLOT_READ_ONLY0;
-			attachment_infos[0].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+			attachment_infos[0].format = TEXTURE_FORMAT_RGBA16_SFLOAT;
 			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_GENERAL;
 
 			attachment_infos[1].slot = RenderPass::ATTACHMENT_SLOT_READ_WRITE0;
-			attachment_infos[1].format = VK_FORMAT_R8G8B8A8_UNORM;
+			attachment_infos[1].format = TEXTURE_FORMAT_RGBA8_UNORM;
 			attachment_infos[1].expected_layout = VK_IMAGE_LAYOUT_GENERAL;
 			attachment_infos[1].load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
 			attachment_infos[1].store_op = VK_ATTACHMENT_STORE_OP_STORE;
@@ -660,7 +661,7 @@ namespace Renderer
 		{
 			std::vector<RenderPass::AttachmentInfo> attachment_infos(1);
 			attachment_infos[0].slot = RenderPass::ATTACHMENT_SLOT_COLOR0;
-			attachment_infos[0].format = VK_FORMAT_R8G8B8A8_UNORM;
+			attachment_infos[0].format = TEXTURE_FORMAT_RGBA8_UNORM;
 			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 			attachment_infos[0].load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
 			attachment_infos[0].store_op = VK_ATTACHMENT_STORE_OP_STORE;
@@ -672,7 +673,7 @@ namespace Renderer
 		{
 			std::vector<RenderPass::AttachmentInfo> attachment_infos(1);
 			attachment_infos[0].slot = RenderPass::ATTACHMENT_SLOT_COLOR0;
-			attachment_infos[0].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+			attachment_infos[0].format = TEXTURE_FORMAT_RGBA16_SFLOAT;
 			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 			attachment_infos[0].load_op = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 			attachment_infos[0].store_op = VK_ATTACHMENT_STORE_OP_STORE;
@@ -708,7 +709,7 @@ namespace Renderer
 		{
 			std::vector<RenderPass::AttachmentInfo> attachment_infos(1);
 			attachment_infos[0].slot = RenderPass::ATTACHMENT_SLOT_COLOR0;
-			attachment_infos[0].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+			attachment_infos[0].format = TEXTURE_FORMAT_RGBA16_SFLOAT;
 			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 			attachment_infos[0].load_op = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 			attachment_infos[0].store_op = VK_ATTACHMENT_STORE_OP_STORE;
@@ -745,7 +746,7 @@ namespace Renderer
 		{
 			std::vector<RenderPass::AttachmentInfo> attachment_infos(1);
 			attachment_infos[0].slot = RenderPass::ATTACHMENT_SLOT_COLOR0;
-			attachment_infos[0].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+			attachment_infos[0].format = TEXTURE_FORMAT_RGBA16_SFLOAT;
 			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 			attachment_infos[0].load_op = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 			attachment_infos[0].store_op = VK_ATTACHMENT_STORE_OP_STORE;
@@ -782,7 +783,7 @@ namespace Renderer
 		{
 			std::vector<RenderPass::AttachmentInfo> attachment_infos(1);
 			attachment_infos[0].slot = RenderPass::ATTACHMENT_SLOT_COLOR0;
-			attachment_infos[0].format = VK_FORMAT_R16G16_SFLOAT;
+			attachment_infos[0].format = TEXTURE_FORMAT_RG16_SFLOAT;
 			attachment_infos[0].expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 			attachment_infos[0].load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
 			attachment_infos[0].store_op = VK_ATTACHMENT_STORE_OP_STORE;
@@ -911,7 +912,7 @@ namespace Renderer
 				begin_info.render_height = static_cast<float>(IBL_HDR_CUBEMAP_RESOLUTION) * std::pow(0.5f, mip);
 
 				// TODO: Should we delete these temporary views after we are done generating?
-				TextureView* face_view = hdr_env_cubemap->GetView(TextureViewCreateInfo{ .type = VK_IMAGE_VIEW_TYPE_2D,
+				TextureView* face_view = hdr_env_cubemap->GetView(TextureViewCreateInfo{ .dimension = TEXTURE_DIMENSION_2D,
 					.base_mip = mip, .num_mips = 1, .base_layer = face, .num_layers = 1 });
 				data->render_passes.gen_cubemap.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, face_view);
 
@@ -1005,7 +1006,7 @@ namespace Renderer
 				begin_info.render_height = static_cast<float>(IBL_IRRADIANCE_CUBEMAP_RESOLUTION) * std::pow(0.5f, mip);
 
 				// TODO: Should we delete these temporary views after we are done generating?
-				TextureView* face_view = irradiance_cubemap->GetView(TextureViewCreateInfo{ .type = VK_IMAGE_VIEW_TYPE_2D,
+				TextureView* face_view = irradiance_cubemap->GetView(TextureViewCreateInfo{ .dimension = TEXTURE_DIMENSION_2D,
 					.base_mip = mip, .num_mips = 1, .base_layer = face, .num_layers = 1 });
 				data->render_passes.gen_irradiance_cube.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, face_view);
 
@@ -1094,7 +1095,7 @@ namespace Renderer
 			for (uint32_t face = 0; face < 6; ++face)
 			{
 				// TODO: Should we delete these temporary views after we are done generating?
-				TextureView* face_view = prefiltered_cubemap->GetView(TextureViewCreateInfo{ .type = VK_IMAGE_VIEW_TYPE_2D,
+				TextureView* face_view = prefiltered_cubemap->GetView(TextureViewCreateInfo{ .dimension = TEXTURE_DIMENSION_2D,
 					.base_mip = mip, .num_mips = 1, .base_layer = face, .num_layers = 1 });
 				data->render_passes.gen_prefiltered_cube.SetAttachment(RenderPass::ATTACHMENT_SLOT_COLOR0, face_view);
 
@@ -1774,7 +1775,7 @@ namespace Renderer
 		// Generate mips
 		if (num_mips > 1)
 		{
-			Vulkan::GenerateMips(texture->GetVkImage(), texture->GetVkFormat(), args.width, args.height, num_mips);
+			texture->GenerateMips();
 		}
 		else
 		{

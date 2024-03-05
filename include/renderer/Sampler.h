@@ -16,6 +16,7 @@ public:
 
 	uint32_t GetIndex() const;
 
+	// NOTE: Should probably be removed
 	VkSampler GetVkSampler() const { return m_vk_sampler; }
 
 private:

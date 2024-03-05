@@ -850,48 +850,66 @@ namespace Vulkan
 		return vk_inst.swapchain.vsync_enabled;
 	}
 
-	void DebugNameObject(uint64_t object, VkDebugReportObjectTypeEXT object_type, const char* debug_name)
+	void DebugNameObject(uint64_t object, VkDebugReportObjectTypeEXT object_type, const std::string& debug_name)
 	{
 #ifdef _DEBUG
 		VkDebugMarkerObjectNameInfoEXT debug_name_info = { VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT };
 		debug_name_info.objectType = object_type;
 		debug_name_info.object = object;
-		debug_name_info.pObjectName = debug_name;
+		debug_name_info.pObjectName = debug_name.c_str();
 
 		vk_inst.pFunc.debug_marker_set_object_name_ext(vk_inst.device, &debug_name_info);
 #endif
 	}
 
-	VkDeviceMemory AllocateDeviceMemory(VkBuffer buffer, VkMemoryPropertyFlags mem_flags)
+	static VkMemoryPropertyFlags ToVkMemoryPropertyFlags(Flags memory_flags)
+	{
+		VkMemoryPropertyFlags vk_mem_property_flags = 0;
+
+		if (memory_flags & GPU_MEMORY_DEVICE_LOCAL)
+			vk_mem_property_flags |= VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+		if (memory_flags & GPU_MEMORY_HOST_VISIBLE)
+			vk_mem_property_flags |= VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+		if (memory_flags & GPU_MEMORY_HOST_COHERENT)
+			vk_mem_property_flags |= VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+
+		return vk_mem_property_flags;
+	}
+
+	VkDeviceMemory AllocateDeviceMemory(VkBuffer buffer, const BufferCreateInfo& buffer_info)
 	{
 		VkMemoryRequirements mem_req = {};
 		vkGetBufferMemoryRequirements(vk_inst.device, buffer, &mem_req);
 
 		VkMemoryAllocateInfo alloc_info = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
 		alloc_info.allocationSize = mem_req.size;
-		alloc_info.memoryTypeIndex = FindMemoryType(mem_req.memoryTypeBits, mem_flags);
+		alloc_info.memoryTypeIndex = FindMemoryType(mem_req.memoryTypeBits, ToVkMemoryPropertyFlags(buffer_info.memory_flags));
 		alloc_info.pNext = nullptr;
 		
 		VkDeviceMemory device_memory = VK_NULL_HANDLE;
 		VkCheckResult(vkAllocateMemory(vk_inst.device, &alloc_info, nullptr, &device_memory));
 		VkCheckResult(vkBindBufferMemory(vk_inst.device, buffer, device_memory, 0));
 
+		Vulkan::DebugNameObject((uint64_t)device_memory, VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_MEMORY_EXT, buffer_info.name);
+
 		return device_memory;
 	}
 
-	VkDeviceMemory AllocateDeviceMemory(VkImage image, VkMemoryPropertyFlags mem_flags)
+	VkDeviceMemory AllocateDeviceMemory(VkImage image, const TextureCreateInfo& texture_info)
 	{
 		VkMemoryRequirements mem_req = {};
 		vkGetImageMemoryRequirements(vk_inst.device, image, &mem_req);
 
 		VkMemoryAllocateInfo alloc_info = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
 		alloc_info.allocationSize = mem_req.size;
-		alloc_info.memoryTypeIndex = FindMemoryType(mem_req.memoryTypeBits, mem_flags);
+		alloc_info.memoryTypeIndex = FindMemoryType(mem_req.memoryTypeBits, ToVkMemoryPropertyFlags(GPU_MEMORY_DEVICE_LOCAL));
 		alloc_info.pNext = nullptr;
 
 		VkDeviceMemory device_memory = VK_NULL_HANDLE;
 		VkCheckResult(vkAllocateMemory(vk_inst.device, &alloc_info, nullptr, &device_memory));
 		VkCheckResult(vkBindImageMemory(vk_inst.device, image, device_memory, 0));
+
+		Vulkan::DebugNameObject((uint64_t)device_memory, VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_MEMORY_EXT, texture_info.name);
 
 		return device_memory;
 	}
@@ -998,18 +1016,44 @@ namespace Vulkan
 		}
 	}
 
-	VkBuffer CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage_flags)
+	static VkBufferUsageFlags ToVkBufferUsageFlags(Flags usage_flags)
 	{
-		VkBufferCreateInfo buffer_info = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
-		buffer_info.size = size;
-		buffer_info.usage = usage_flags;
-		buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+		VkBufferUsageFlags vk_usage_flags = 0;
 
-		VkBuffer buffer = VK_NULL_HANDLE;
-		VkCheckResult(vkCreateBuffer(vk_inst.device, &buffer_info, nullptr, &buffer));
+		if (usage_flags & BUFFER_USAGE_STAGING)
+			vk_usage_flags |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+		if (usage_flags & BUFFER_USAGE_UNIFORM)
+			vk_usage_flags |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+		if (usage_flags & BUFFER_USAGE_VERTEX)
+			vk_usage_flags |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+		if (usage_flags & BUFFER_USAGE_INDEX)
+			vk_usage_flags |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+		if ((usage_flags & BUFFER_USAGE_READ_ONLY) || (usage_flags & BUFFER_USAGE_READ_WRITE))
+			vk_usage_flags |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+		if (usage_flags & BUFFER_USAGE_COPY_SRC)
+			vk_usage_flags |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+		if (usage_flags & BUFFER_USAGE_COPY_DST)
+			vk_usage_flags |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+		if (usage_flags & BUFFER_USAGE_DESCRIPTOR)
+			vk_usage_flags |= VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 
-		VulkanResourceTracker::TrackBuffer(buffer);
-		return buffer;
+		return vk_usage_flags;
+	}
+
+	VkBuffer CreateBuffer(const BufferCreateInfo& buffer_info)
+	{
+		VkBufferCreateInfo vk_buffer_info = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+		vk_buffer_info.size = buffer_info.size_in_bytes;
+		vk_buffer_info.usage = ToVkBufferUsageFlags(buffer_info.usage_flags);
+		vk_buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+		VkBuffer vk_buffer = VK_NULL_HANDLE;
+		VkCheckResult(vkCreateBuffer(vk_inst.device, &vk_buffer_info, nullptr, &vk_buffer));
+
+		Vulkan::DebugNameObject((uint64_t)vk_buffer, VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_EXT, buffer_info.name);
+		VulkanResourceTracker::TrackBuffer(vk_buffer);
+
+		return vk_buffer;
 	}
 
 	void DestroyBuffer(VkBuffer buffer)
@@ -1018,29 +1062,83 @@ namespace Vulkan
 		vkDestroyBuffer(vk_inst.device, buffer, nullptr);
 	}
 
-	VkImage CreateImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,
-		VkImageUsageFlags usage, uint32_t num_mips, uint32_t num_layers, VkImageCreateFlags create_flags)
+	static VkFormat ToVkFormat(TextureFormat format)
 	{
-		VkImageCreateInfo image_info = { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
-		image_info.imageType = VK_IMAGE_TYPE_2D;
-		image_info.extent.width = width;
-		image_info.extent.height = height;
-		image_info.extent.depth = 1;
-		image_info.mipLevels = num_mips;
-		image_info.arrayLayers = num_layers;
-		image_info.format = format;
-		image_info.tiling = tiling;
-		image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		image_info.usage = usage;
-		image_info.samples = VK_SAMPLE_COUNT_1_BIT;
-		image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-		image_info.flags = create_flags;
+		switch (format)
+		{
+		case TEXTURE_FORMAT_UNDEFINED:
+			return VK_FORMAT_UNDEFINED;
+		case TEXTURE_FORMAT_RGBA8_UNORM:
+			return VK_FORMAT_R8G8B8A8_UNORM;
+		case TEXTURE_FORMAT_RGBA8_SRGB:
+			return VK_FORMAT_R8G8B8A8_SRGB;
+		case TEXTURE_FORMAT_RGBA16_SFLOAT:
+			return VK_FORMAT_R16G16B16A16_SFLOAT;
+		case TEXTURE_FORMAT_RGBA32_SFLOAT:
+			return VK_FORMAT_R32G32B32A32_SFLOAT;
+		case TEXTURE_FORMAT_RG16_SFLOAT:
+			return VK_FORMAT_R16G16_SFLOAT;
+		case TEXTURE_FORMAT_D32_SFLOAT:
+			return VK_FORMAT_D32_SFLOAT;
+		}
+	}
 
-		VkImage image = VK_NULL_HANDLE;
-		VkCheckResult(vkCreateImage(vk_inst.device, &image_info, nullptr, &image));
+	static std::vector<VkFormat> ToVkFormat(const std::vector<TextureFormat>& formats)
+	{
+		std::vector<VkFormat> vk_formats;
 
-		VulkanResourceTracker::TrackImage(image, image_info.initialLayout, num_mips, num_layers);
-		return image;
+		for (const auto& format : formats)
+		{
+			vk_formats.push_back(ToVkFormat(format));
+		}
+
+		return vk_formats;
+	}
+
+	static VkImageUsageFlags ToVkImageUsageFlags(Flags usage_flags)
+	{
+		VkImageUsageFlags vk_usage_flags = 0;
+
+		if (usage_flags & TEXTURE_USAGE_RENDER_TARGET)
+			vk_usage_flags |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+		if ((usage_flags & TEXTURE_USAGE_DEPTH_TARGET) || (usage_flags & TEXTURE_USAGE_DEPTH_STENCIL_TARGET))
+			vk_usage_flags |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+		if (usage_flags & TEXTURE_USAGE_SAMPLED)
+			vk_usage_flags |= VK_IMAGE_USAGE_SAMPLED_BIT;
+		if ((usage_flags & TEXTURE_USAGE_READ_ONLY) || (usage_flags & TEXTURE_USAGE_READ_WRITE))
+			vk_usage_flags |= VK_IMAGE_USAGE_STORAGE_BIT;
+		if (usage_flags & TEXTURE_USAGE_COPY_SRC)
+			vk_usage_flags |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+		if (usage_flags & TEXTURE_USAGE_COPY_DST)
+			vk_usage_flags |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+
+		return vk_usage_flags;
+	}
+
+	VkImage CreateImage(const TextureCreateInfo& texture_info)
+	{
+		VkImageCreateInfo vk_image_info = { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
+		vk_image_info.imageType = VK_IMAGE_TYPE_2D;
+		vk_image_info.extent.width = texture_info.width;
+		vk_image_info.extent.height = texture_info.height;
+		vk_image_info.extent.depth = 1;
+		vk_image_info.mipLevels = texture_info.num_mips;
+		vk_image_info.arrayLayers = texture_info.num_layers;
+		vk_image_info.format = ToVkFormat(texture_info.format);
+		vk_image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+		vk_image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		vk_image_info.usage = ToVkImageUsageFlags(texture_info.usage_flags);
+		vk_image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+		vk_image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+		vk_image_info.flags = texture_info.dimension == TEXTURE_DIMENSION_CUBE ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
+
+		VkImage vk_image = VK_NULL_HANDLE;
+		VkCheckResult(vkCreateImage(vk_inst.device, &vk_image_info, nullptr, &vk_image));
+
+		Vulkan::DebugNameObject((uint64_t)vk_image, VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_EXT, texture_info.name.c_str());
+		VulkanResourceTracker::TrackImage(vk_image, vk_image_info.initialLayout, vk_image_info.mipLevels, vk_image_info.arrayLayers);
+
+		return vk_image;
 	}
 
 	void DestroyImage(VkImage image)
@@ -1048,10 +1146,10 @@ namespace Vulkan
 		vkDestroyImage(vk_inst.device, image, nullptr);
 	}
 
-	void GenerateMips(VkImage image, VkFormat format, uint32_t width, uint32_t height, uint32_t num_mips)
+	void GenerateMips(VkImage image, TextureFormat format, uint32_t width, uint32_t height, uint32_t num_mips)
 	{
 		VkFormatProperties format_properties;
-		vkGetPhysicalDeviceFormatProperties(vk_inst.physical_device, format, &format_properties);
+		vkGetPhysicalDeviceFormatProperties(vk_inst.physical_device, ToVkFormat(format), &format_properties);
 
 		if (!(format_properties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT))
 		{
@@ -1142,48 +1240,160 @@ namespace Vulkan
 		VulkanResourceTracker::UpdateImageLayout(image, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
 	}
 
-	VkImageView CreateImageView(VkImage image, VkImageViewType view_type, VkFormat format, uint32_t base_mip, uint32_t num_mips, uint32_t base_layer, uint32_t num_layers)
+	static VkImageViewType ToVkViewType(Flags dimension, uint32_t num_layers = 1)
 	{
-		VkImageViewCreateInfo view_info = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
-		view_info.image = image;
-		view_info.viewType = view_type;
-		view_info.format = format;
-		//view_info.components.r = VK_COMPONENT_SWIZZLE_R;
-		//view_info.components.g = VK_COMPONENT_SWIZZLE_G;
-		//view_info.components.b = VK_COMPONENT_SWIZZLE_B;
-		//view_info.components.a = VK_COMPONENT_SWIZZLE_A;
-		if (format == VK_FORMAT_D32_SFLOAT)
-			view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+		if (num_layers == 1)
+		{
+			switch (dimension)
+			{
+			case TEXTURE_DIMENSION_2D:
+				return VK_IMAGE_VIEW_TYPE_2D;
+			case TEXTURE_DIMENSION_CUBE:
+				return VK_IMAGE_VIEW_TYPE_CUBE;
+			}
+		}
 		else
-			view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		view_info.subresourceRange.baseMipLevel = base_mip;
-		view_info.subresourceRange.levelCount = num_mips;
-		view_info.subresourceRange.baseArrayLayer = base_layer;
-		view_info.subresourceRange.layerCount = num_layers;
-		view_info.flags = 0;
-
-		VkImageView image_view = VK_NULL_HANDLE;
-		VkCheckResult(vkCreateImageView(vk_inst.device, &view_info, nullptr, &image_view));
-
-		return image_view;
+		{
+			switch (dimension)
+			{
+			case TEXTURE_DIMENSION_2D:
+				return VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+			case TEXTURE_DIMENSION_CUBE:
+				return VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
+			}
+		}
 	}
 
-	void DestroyImageView(VkImageView image_view)
+	VkImageView CreateImageView(VkImage vk_image, const TextureViewCreateInfo& texture_view_info)
 	{
-		vkDestroyImageView(vk_inst.device, image_view, nullptr);
+		VkImageViewCreateInfo vk_view_info = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+		vk_view_info.image = vk_image;
+		vk_view_info.viewType = ToVkViewType(texture_view_info.dimension);
+		vk_view_info.format = ToVkFormat(texture_view_info.format);
+		//vk_view_info.components.r = VK_COMPONENT_SWIZZLE_R;
+		//vk_view_info.components.g = VK_COMPONENT_SWIZZLE_G;
+		//vk_view_info.components.b = VK_COMPONENT_SWIZZLE_B;
+		//vk_view_info.components.a = VK_COMPONENT_SWIZZLE_A;
+
+		if (ToVkFormat(texture_view_info.format) == VK_FORMAT_D32_SFLOAT)
+			vk_view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+		else
+			vk_view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+
+		vk_view_info.subresourceRange.baseMipLevel = texture_view_info.base_mip;
+		vk_view_info.subresourceRange.levelCount = texture_view_info.num_mips;
+		vk_view_info.subresourceRange.baseArrayLayer = texture_view_info.base_layer;
+		vk_view_info.subresourceRange.layerCount = texture_view_info.num_layers;
+		vk_view_info.flags = 0;
+
+		VkImageView vk_image_view = VK_NULL_HANDLE;
+		VkCheckResult(vkCreateImageView(vk_inst.device, &vk_view_info, nullptr, &vk_image_view));
+
+		return vk_image_view;
 	}
 
-	VkSampler CreateSampler(const VkSamplerCreateInfo& sampler_info)
+	void DestroyImageView(VkImageView vk_image_view)
 	{
-		VkSampler sampler = VK_NULL_HANDLE;
-		VkCheckResult(vkCreateSampler(vk_inst.device, &sampler_info, nullptr, &sampler));
-
-		return sampler;
+		vkDestroyImageView(vk_inst.device, vk_image_view, nullptr);
 	}
 
-	void DestroySampler(VkSampler sampler)
+	static VkSamplerAddressMode ToVkAddressMode(SamplerAddressMode address_mode)
 	{
-		vkDestroySampler(vk_inst.device, sampler, nullptr);
+		switch (address_mode)
+		{
+		case SAMPLER_ADDRESS_MODE_REPEAT:
+			return VK_SAMPLER_ADDRESS_MODE_REPEAT;
+		case SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT:
+			return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+		case SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE:
+			return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+		case SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER:
+			return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+		case SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE:
+			return VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE;
+		}
+	}
+
+	static VkBorderColor ToVkBorderColor(SamplerBorderColor border_color)
+	{
+		switch (border_color)
+		{
+		case SAMPLER_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK:
+			return VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
+		case SAMPLER_BORDER_COLOR_INT_TRANSPARENT_BLACK:
+			return VK_BORDER_COLOR_INT_TRANSPARENT_BLACK;
+		case SAMPLER_BORDER_COLOR_FLOAT_OPAQUE_BLACK:
+			return VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
+		case SAMPLER_BORDER_COLOR_INT_OPAQUE_BLACK:
+			return VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+		case SAMPLER_BORDER_COLOR_FLOAT_OPAQUE_WHITE:
+			return VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+		case SAMPLER_BORDER_COLOR_INT_OPAQUE_WHITE:
+			return VK_BORDER_COLOR_INT_OPAQUE_WHITE;
+		}
+	}
+
+	static VkFilter ToVkFilter(SamplerFilter filter)
+	{
+		switch (filter)
+		{
+		case SAMPLER_FILTER_NEAREST:
+			return VK_FILTER_NEAREST;
+		case SAMPLER_FILTER_LINEAR:
+			return VK_FILTER_LINEAR;
+		case SAMPLER_FILTER_CUBIC:
+			return VK_FILTER_CUBIC_EXT;
+		}
+	}
+
+	static VkSamplerMipmapMode ToVkSamplerMipmapMode(SamplerFilter filter)
+	{
+		switch (filter)
+		{
+		case SAMPLER_FILTER_NEAREST:
+			return VK_SAMPLER_MIPMAP_MODE_NEAREST;
+		case SAMPLER_FILTER_LINEAR:
+			return VK_SAMPLER_MIPMAP_MODE_LINEAR;
+		case SAMPLER_FILTER_CUBIC:
+			VK_ASSERT(false && "Cannot enable trilinear filtering for mipmap sampler mode");
+		}
+	}
+
+	static VkSamplerCreateInfo ToVkSamplerCreateInfo(const SamplerCreateInfo& sampler_info)
+	{
+		VkSamplerCreateInfo vk_sampler_info = { VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
+
+		vk_sampler_info.addressModeU = ToVkAddressMode(sampler_info.address_u);
+		vk_sampler_info.addressModeV = ToVkAddressMode(sampler_info.address_v);
+		vk_sampler_info.addressModeW = ToVkAddressMode(sampler_info.address_w);
+		vk_sampler_info.borderColor = ToVkBorderColor(sampler_info.border_color);
+
+		vk_sampler_info.minFilter = ToVkFilter(sampler_info.filter_min);
+		vk_sampler_info.magFilter = ToVkFilter(sampler_info.filter_mag);
+		vk_sampler_info.mipmapMode = ToVkSamplerMipmapMode(sampler_info.filter_mip);
+
+		vk_sampler_info.anisotropyEnable = static_cast<VkBool32>(sampler_info.enable_anisotropy);
+		vk_sampler_info.maxAnisotropy = vk_inst.device_props.max_anisotropy;
+
+		vk_sampler_info.minLod = sampler_info.min_lod;
+		vk_sampler_info.maxLod = sampler_info.max_lod;
+
+		return vk_sampler_info;
+	}
+
+	VkSampler CreateSampler(const SamplerCreateInfo& sampler_info)
+	{
+		VkSamplerCreateInfo vk_sampler_info = ToVkSamplerCreateInfo(sampler_info);
+
+		VkSampler vk_sampler = VK_NULL_HANDLE;
+		VkCheckResult(vkCreateSampler(vk_inst.device, &vk_sampler_info, nullptr, &vk_sampler));
+
+		return vk_sampler;
+	}
+
+	void DestroySampler(VkSampler vk_sampler)
+	{
+		vkDestroySampler(vk_inst.device, vk_sampler, nullptr);
 	}
 
 	VkFormat FindDepthFormat()
@@ -1420,8 +1630,9 @@ namespace Vulkan
 		VkPipelineRenderingCreateInfo pipeline_rendering_info = {};
 		pipeline_rendering_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
 		pipeline_rendering_info.colorAttachmentCount = (uint32_t)info.color_attachment_formats.size();
-		pipeline_rendering_info.pColorAttachmentFormats = info.color_attachment_formats.data();
-		pipeline_rendering_info.depthAttachmentFormat = info.depth_stencil_attachment_format;
+		std::vector<VkFormat> color_attachment_formats = ToVkFormat(info.color_attachment_formats);
+		pipeline_rendering_info.pColorAttachmentFormats = color_attachment_formats.data();
+		pipeline_rendering_info.depthAttachmentFormat = ToVkFormat(info.depth_stencil_attachment_format);
 		pipeline_rendering_info.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
 		pipeline_rendering_info.viewMask = 0;
 		pipeline_info.pNext = &pipeline_rendering_info;

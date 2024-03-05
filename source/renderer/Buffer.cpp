@@ -61,56 +61,14 @@ std::unique_ptr<Buffer> Buffer::CreateInstance(size_t size_in_bytes, const std::
 	return std::make_unique<Buffer>(buffer_info);
 }
 
-static VkBufferUsageFlags ToVkBufferUsageFlags(Flags usage_flags)
-{
-	VkBufferUsageFlags vk_usage_flags = 0;
-
-	if (usage_flags & BUFFER_USAGE_STAGING)
-		vk_usage_flags |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-	if (usage_flags & BUFFER_USAGE_UNIFORM)
-		vk_usage_flags |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-	if (usage_flags & BUFFER_USAGE_VERTEX)
-		vk_usage_flags |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-	if (usage_flags & BUFFER_USAGE_INDEX)
-		vk_usage_flags |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-	if ((usage_flags & BUFFER_USAGE_READ_ONLY) || (usage_flags & BUFFER_USAGE_READ_WRITE))
-		vk_usage_flags |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-	if (usage_flags & BUFFER_USAGE_COPY_SRC)
-		vk_usage_flags |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-	if (usage_flags & BUFFER_USAGE_COPY_DST)
-		vk_usage_flags |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-
-	if (usage_flags & BUFFER_USAGE_UNIFORM)
-		vk_usage_flags |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-
-	return vk_usage_flags;
-}
-
-static VkMemoryPropertyFlags ToVkMemoryPropertyFlags(Flags memory_flags)
-{
-	VkMemoryPropertyFlags vk_mem_property_flags = 0;
-
-	if (memory_flags & GPU_MEMORY_DEVICE_LOCAL)
-		vk_mem_property_flags |= VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-	if (memory_flags & GPU_MEMORY_HOST_VISIBLE)
-		vk_mem_property_flags |= VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
-	if (memory_flags & GPU_MEMORY_HOST_COHERENT)
-		vk_mem_property_flags |= VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-
-	return vk_mem_property_flags;
-}
-
 Buffer::Buffer(const BufferCreateInfo& create_info)
 	: m_create_info(create_info)
 {
-	m_vk_buffer = Vulkan::CreateBuffer(create_info.size_in_bytes, ToVkBufferUsageFlags(create_info.usage_flags));
-	m_vk_device_memory = Vulkan::AllocateDeviceMemory(m_vk_buffer, ToVkMemoryPropertyFlags(create_info.memory_flags));
+	m_vk_buffer = Vulkan::CreateBuffer(create_info);
+	m_vk_device_memory = Vulkan::AllocateDeviceMemory(m_vk_buffer, create_info);
 
 	if (create_info.memory_flags & GPU_MEMORY_HOST_VISIBLE)
 		m_mapped_ptr = Vulkan::MapMemory(m_vk_device_memory, m_create_info.size_in_bytes);
-
-	Vulkan::DebugNameObject((uint64_t)m_vk_buffer, VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_EXT, create_info.name.c_str());
-	Vulkan::DebugNameObject((uint64_t)m_vk_device_memory, VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_MEMORY_EXT, create_info.name.c_str());
 }
 
 Buffer::~Buffer()

@@ -34,6 +34,7 @@ namespace VulkanResourceTracker
 
 	void Exit()
 	{
+		delete data;
 	}
 
 	void TrackBuffer(VkBuffer buffer)

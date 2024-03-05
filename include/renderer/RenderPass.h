@@ -36,7 +36,7 @@ public:
 	struct AttachmentInfo
 	{
 		AttachmentSlot slot = ATTACHMENT_SLOT_INVALID;
-		VkFormat format;
+		TextureFormat format;
 		VkAttachmentLoadOp load_op = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		VkAttachmentStoreOp store_op = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 		VkImageLayout expected_layout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -66,8 +66,8 @@ public:
 
 	void SetAttachmentInfos(const std::vector<AttachmentInfo>& attachment_infos);
 	void SetAttachment(AttachmentSlot slot, TextureView* attachment_view);
-	std::vector<VkFormat> GetColorAttachmentFormats();
-	VkFormat GetDepthStencilAttachmentFormat();
+	std::vector<TextureFormat> GetColorAttachmentFormats();
+	TextureFormat GetDepthStencilAttachmentFormat();
 
 	void Build(const std::vector<VkDescriptorSetLayout>& descriptor_set_layouts,
 		const std::vector<VkPushConstantRange>& push_constant_ranges, const Vulkan::GraphicsPipelineInfo& graphics_pipeline_info);

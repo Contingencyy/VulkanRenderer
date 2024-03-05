@@ -2,6 +2,7 @@
 #include "renderer/VulkanIncludes.h"
 #include "renderer/DescriptorBuffer.h"
 #include "renderer/DescriptorAllocation.h"
+#include "renderer/RenderTypes.h"
 #include "Shared.glsl.h"
 
 typedef struct GLFWwindow;
@@ -10,6 +11,14 @@ inline void VkCheckResult(VkResult result);
 
 namespace Vulkan
 {
+
+	/*
+	
+		NOTE: Treating the VkBuffer, VkImage pointers etc. as handles to resources in the high-level renderer.
+		Usually I would like to create my own handle type for this, but for now this is fine,
+		especially because I only intend to use Vulkan for the foreseeable future.
+	
+	*/
 
 	void Init(::GLFWwindow* window);
 	void Exit();
@@ -21,10 +30,10 @@ namespace Vulkan
 	void SetVSyncEnabled(bool enabled);
 	bool IsVSyncEnabled();
 
-	void DebugNameObject(uint64_t object, VkDebugReportObjectTypeEXT object_type, const char* debug_name);
+	void DebugNameObject(uint64_t object, VkDebugReportObjectTypeEXT object_type, const std::string& debug_name);
 
-	VkDeviceMemory AllocateDeviceMemory(VkBuffer buffer, VkMemoryPropertyFlags mem_flags);
-	VkDeviceMemory AllocateDeviceMemory(VkImage image, VkMemoryPropertyFlags mem_flags);
+	VkDeviceMemory AllocateDeviceMemory(VkBuffer buffer, const BufferCreateInfo& buffer_info);
+	VkDeviceMemory AllocateDeviceMemory(VkImage image, const TextureCreateInfo& texture_info);
 	void FreeDeviceMemory(VkDeviceMemory device_memory);
 	uint8_t* MapMemory(VkDeviceMemory device_memory, VkDeviceSize size, VkDeviceSize offset = 0);
 	void UnmapMemory(VkDeviceMemory device_memory);
@@ -35,18 +44,17 @@ namespace Vulkan
 	std::vector<VkDescriptorBufferBindingInfoEXT> GetDescriptorBufferBindingInfos();
 	size_t GetDescriptorTypeSize(VkDescriptorType type);
 
-	VkBuffer CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage_flags);
+	VkBuffer CreateBuffer(const BufferCreateInfo& buffer_info);
 	void DestroyBuffer(VkBuffer buffer);
 
-	VkImage CreateImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,
-		VkImageUsageFlags usage, uint32_t num_mips, uint32_t num_layers, VkImageCreateFlags create_flags);
+	VkImage CreateImage(const TextureCreateInfo& texture_info);
 	void DestroyImage(VkImage image);
-	void GenerateMips(VkImage image, VkFormat format, uint32_t width, uint32_t height, uint32_t num_mips);
+	void GenerateMips(VkImage image, TextureFormat format, uint32_t width, uint32_t height, uint32_t num_mips);
 
-	VkImageView CreateImageView(VkImage image, VkImageViewType view_type, VkFormat format, uint32_t base_mip = 0, uint32_t num_mips = 1, uint32_t base_layer = 0, uint32_t num_layers = 1);
+	VkImageView CreateImageView(VkImage vk_image, const TextureViewCreateInfo& texture_view_info);
 	void DestroyImageView(VkImageView image_view);
 
-	VkSampler CreateSampler(const VkSamplerCreateInfo& sampler_info);
+	VkSampler CreateSampler(const SamplerCreateInfo& sampler_info);
 	void DestroySampler(VkSampler sampler);
 
 	VkFormat FindDepthFormat();
@@ -65,8 +73,8 @@ namespace Vulkan
 		std::vector<VkVertexInputBindingDescription> input_bindings;
 		std::vector<VkVertexInputAttributeDescription> input_attributes;
 
-		std::vector<VkFormat> color_attachment_formats;
-		VkFormat depth_stencil_attachment_format = VK_FORMAT_UNDEFINED;
+		std::vector<TextureFormat> color_attachment_formats;
+		TextureFormat depth_stencil_attachment_format = TEXTURE_FORMAT_UNDEFINED;
 
 		const char* vs_path;
 		const char* fs_path;

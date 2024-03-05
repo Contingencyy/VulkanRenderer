@@ -167,10 +167,10 @@ void RenderPass::SetAttachment(AttachmentSlot slot, TextureView* attachment_view
 	m_attachments[slot].view = attachment_view;
 }
 
-std::vector<VkFormat> RenderPass::GetColorAttachmentFormats()
+std::vector<TextureFormat> RenderPass::GetColorAttachmentFormats()
 {
 	VK_ASSERT(m_type == RENDER_PASS_TYPE_GRAPHICS);
-	std::vector<VkFormat> formats;
+	std::vector<TextureFormat> formats;
 
 	for (const auto& attachment : m_attachments)
 	{
@@ -186,7 +186,7 @@ std::vector<VkFormat> RenderPass::GetColorAttachmentFormats()
 	return formats;
 }
 
-VkFormat RenderPass::GetDepthStencilAttachmentFormat()
+TextureFormat RenderPass::GetDepthStencilAttachmentFormat()
 {
 	VK_ASSERT(m_type == RENDER_PASS_TYPE_GRAPHICS);
 
@@ -198,7 +198,7 @@ VkFormat RenderPass::GetDepthStencilAttachmentFormat()
 		}
 	}
 
-	return VK_FORMAT_UNDEFINED;
+	return TEXTURE_FORMAT_UNDEFINED;
 }
 
 void RenderPass::Build(const std::vector<VkDescriptorSetLayout>& descriptor_set_layouts,
