@@ -9,6 +9,7 @@
 #include <array>
 #include <vector>
 #include <unordered_map>
+#include <queue>
 #include <memory>
 #include <exception>
 #include <algorithm>

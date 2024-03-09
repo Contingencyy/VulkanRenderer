@@ -1,12 +1,9 @@
 #include "Precomp.h"
 #include "renderer/Renderer.h"
-#include "renderer/VulkanBackend.h"
-#include "renderer/VulkanResourceTracker.h"
+#include "renderer/vulkan/VulkanBackend.h"
+#include "renderer/vulkan/VulkanResourceTracker.h"
 #include "renderer/ResourceSlotmap.h"
 #include "renderer/RenderPass.h"
-#include "renderer/Texture.h"
-#include "renderer/Buffer.h"
-#include "renderer/Sampler.h"
 #include "renderer/RingBuffer.h"
 #include "Shared.glsl.h"
 #include "Assets.h"
@@ -106,27 +103,28 @@ namespace Renderer
 
 	struct TextureResource
 	{
-		std::unique_ptr<Texture> texture = nullptr;
-		std::shared_ptr<Sampler> sampler = nullptr;
+		VulkanImage image;
+		VulkanImageView view;
+		VulkanSampler sampler;
 
 		VkDescriptorSet imgui_descriptor_set = VK_NULL_HANDLE;
 
-		TextureResource() = default;
-		TextureResource(std::unique_ptr<Texture>&& _texture, std::shared_ptr<Sampler> _sampler)
-			: texture(std::move(_texture)), sampler(_sampler)
+		explicit TextureResource(VulkanImage image, VulkanImageView view, VulkanSampler sampler)
+			: image(image), view(view), sampler(sampler)
 		{
-			imgui_descriptor_set = ImGui_ImplVulkan_AddTexture(sampler->GetVkSampler(), texture->GetView()->view, texture->GetView()->GetLayout());
+			Vulkan::AddImGuiTexture(image.vk_image, view.vk_image_view, sampler.vk_sampler);
 		}
 	};
 
 	struct MeshResource
 	{
-		std::unique_ptr<Buffer> vertex_buffer = nullptr;
-		std::unique_ptr<Buffer> index_buffer = nullptr;
+		VulkanBuffer vertex_buffer;
+		VulkanBuffer index_buffer;
 
-		MeshResource() = default;
-		MeshResource(std::unique_ptr<Buffer>&& _vertex_buffer, std::unique_ptr<Buffer>&& _index_buffer)
-			: vertex_buffer(std::move(_vertex_buffer)), index_buffer(std::move(_index_buffer)) {}
+		explicit MeshResource(VulkanBuffer vertex_buffer, VulkanBuffer index_buffer)
+			: vertex_buffer(vertex_buffer), index_buffer(index_buffer)
+		{
+		}
 	};
 
 	struct Data
@@ -136,6 +134,9 @@ namespace Renderer
 		// Resource slotmaps
 		ResourceSlotmap<TextureResource> texture_slotmap;
 		ResourceSlotmap<MeshResource> mesh_slotmap;
+
+		// Ring buffer
+		std::unique_ptr<RingBuffer> ring_buffer;
 
 		uint32_t descriptor_buffer_indices[5] = { 0, 1, 2, 3, 4 };
 		VkDeviceSize descriptor_buffer_offsets[5] = { 0, 0, 0, 0, 0 };
@@ -167,32 +168,38 @@ namespace Renderer
 			TextureHandle_t brdf_lut_handle;
 		} ibl;
 
+		struct Fence
+		{
+			VkSemaphore vk_semaphore;
+			uint64_t fence_value = 0;
+		};
+
 		struct Sync
 		{
-			uint64_t semaphore_value = 0;
-			VkSemaphore in_flight_semaphore_timeline = VK_NULL_HANDLE;
+			Fence frame_fence;
+			Fence transfer_fence;
 		} sync;
 
 		struct Frame
 		{
-			VkCommandBuffer command_buffer = VK_NULL_HANDLE;
+			VulkanCommandBuffer command_buffer;
 
 			struct Sync
 			{
 				VkSemaphore render_finished_semaphore_binary = VK_NULL_HANDLE;
-				uint64_t render_finished_value = 0;
+				uint64_t frame_in_flight_value = 0;
 			} sync;
 
 			struct UBOs
 			{
-				std::unique_ptr<Buffer> camera_ubo;
-				std::unique_ptr<Buffer> light_ubo;
-				std::unique_ptr<Buffer> material_ubo;
-				std::unique_ptr<Buffer> settings_ubo;
+				RingBuffer::Allocation settings_ubo;
+				RingBuffer::Allocation camera_ubo;
+				RingBuffer::Allocation light_ubo;
+				RingBuffer::Allocation material_ubo;
 			} ubos;
 
-			std::unique_ptr<Buffer> instance_buffer;
-		} per_frame[VulkanInstance::MAX_FRAMES_IN_FLIGHT];
+			RingBuffer::Allocation instance_buffer;
+		} per_frame[Vulkan::VulkanInstance::MAX_FRAMES_IN_FLIGHT];
 
 		// Draw submission list
 		DrawList draw_list;
@@ -230,7 +237,6 @@ namespace Renderer
 
 		struct ImGui
 		{
-			VkDescriptorPool descriptor_pool;
 			RenderPass render_pass{ RENDER_PASS_TYPE_GRAPHICS };
 		} imgui;
 	} static *data;
@@ -300,42 +306,16 @@ namespace Renderer
 		return attribute_desc;
 	}
 
-	static void CreateCommandBuffers()
-	{
-		VkCommandBufferAllocateInfo alloc_info = {};
-		alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-		alloc_info.commandPool = vk_inst.cmd_pools.graphics;
-		alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-		alloc_info.commandBufferCount = 1;
-
-		for (uint32_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
-		{
-			VkCheckResult(vkAllocateCommandBuffers(vk_inst.device, &alloc_info, &data->per_frame[i].command_buffer));
-		}
-	}
-
 	static void CreateSyncObjects()
 	{
 		// Create timeline semaphore that keeps track of back buffers in-flight
-		VkSemaphoreTypeCreateInfo timeline_create_info = { VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO };
-		timeline_create_info.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
-		timeline_create_info.initialValue = 0;
-
-		VkSemaphoreCreateInfo semaphore_info = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
-		semaphore_info.flags = 0;
-		semaphore_info.pNext = &timeline_create_info;
-
-		VkCheckResult(vkCreateSemaphore(vk_inst.device, &semaphore_info, nullptr, &data->sync.in_flight_semaphore_timeline));
+		data->sync.frame_fence.vk_semaphore = Vulkan::CreateSemaphoreTimeline();
+		data->sync.transfer_fence.vk_semaphore = Vulkan::CreateSemaphoreTimeline();
 
 		// Create binary semaphore for each frame in-flight for the swapchain to wait on
-		VkSemaphoreTypeCreateInfo binary_create_info = { VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO };
-		binary_create_info.semaphoreType = VK_SEMAPHORE_TYPE_BINARY;
-
-		semaphore_info.pNext = &binary_create_info;
-
 		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
-			VkCheckResult(vkCreateSemaphore(vk_inst.device, &semaphore_info, nullptr, &data->per_frame[i].sync.render_finished_semaphore_binary));
+			data->per_frame[i].sync.render_finished_semaphore_binary = Vulkan::CreateSemaphoreBinary();
 		}
 	}
 	
@@ -411,61 +391,37 @@ namespace Renderer
 		data->default_normal_texture_handle = CreateTexture(texture_args);
 	}
 
+	static void CreateRingBuffer()
+	{
+		data->ring_buffer = std::make_unique<RingBuffer>();
+	}
+
 	static void CreateUnitCubeBuffers()
 	{
+
 		// Calculate the vertex and index buffer size
 		VkDeviceSize vb_size = UNIT_CUBE_VERTICES.size() * sizeof(glm::vec3);
 		VkDeviceSize ib_size = UNIT_CUBE_INDICES.size() * sizeof(uint16_t);
 
-		// Create the staging buffer
-		std::unique_ptr<Buffer> staging_buffer = Buffer::CreateStaging(vb_size + ib_size, "Unit Cube VB IB staging");
-
-		// Write data to the staging buffer
-		staging_buffer->Write(vb_size, (void*)&UNIT_CUBE_VERTICES[0], 0, 0);
-		staging_buffer->Write(ib_size, (void*)&UNIT_CUBE_INDICES[0], 0, vb_size);
+		// Create the staging buffer and write the data to it
+		RingBuffer::Allocation staging = data->ring_buffer->Allocate(vb_size + ib_size, vk_inst.current_frame);
+		staging.Write(0, vb_size, UNIT_CUBE_VERTICES.data());
+		staging.Write(vb_size, ib_size, UNIT_CUBE_INDICES.data());
 
 		// Create cube vertex and index buffer
 		data->unit_cube_vb = Buffer::CreateVertex(vb_size, "Unit Cube VB");
 		data->unit_cube_ib = Buffer::CreateIndex(ib_size, "Unit Cube IB");
 
+		// Get command buffer
+		std::shared_ptr<CommandBuffer> command_buffer = Vulkan::BeginCommandBuffer(COMMAND_QUEUE_TYPE_GRAPHICS_COMPUTE);
+
 		// Copy staged vertex and index data to the device local buffers
-		data->unit_cube_vb->CopyFromImmediate(*staging_buffer, vb_size, 0, 0);
-		data->unit_cube_ib->CopyFromImmediate(*staging_buffer, ib_size, vb_size, 0);
-	}
+		Vulkan::CopyBuffer(command_buffer, staging.GetHandle(), staging.byte_offset, data->unit_cube_vb->GetHandle(), 0, vb_size);
+		Vulkan::CopyBuffer(command_buffer, staging.GetHandle(), staging.byte_offset + vb_size, data->unit_cube_ib->GetHandle(), 0, ib_size);
 
-	static void CreateUniformBuffers()
-	{
-		VkDeviceSize settings_buffer_size = sizeof(RenderSettings);
-		VkDeviceSize camera_buffer_size = sizeof(CameraData);
-		VkDeviceSize light_buffer_size = sizeof(uint32_t) + MAX_LIGHT_SOURCES * sizeof(PointlightData);
-		VkDeviceSize material_buffer_size = MAX_UNIQUE_MATERIALS * sizeof(MaterialData);
-
-		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
-		{
-			// NOTE: We need to do this for UBO descriptors for now... because a descriptor buffer offsets need to be aligned to a specific boundary
-			// And since you need one UBO descriptor for each frame (or you could also update it each frame), this is what we need to do.
-			data->per_frame[i].ubos.settings_ubo = Buffer::CreateUniform(settings_buffer_size, "Settings UBO");
-			data->per_frame[i].ubos.settings_ubo->WriteDescriptorInfo(vk_inst.device_props.descriptor_buffer_offset_alignment);
-
-			data->per_frame[i].ubos.camera_ubo = Buffer::CreateUniform(camera_buffer_size, "Camera UBO");
-			data->per_frame[i].ubos.camera_ubo->WriteDescriptorInfo();
-
-			data->per_frame[i].ubos.light_ubo = Buffer::CreateUniform(light_buffer_size, "Light UBO");
-			data->per_frame[i].ubos.light_ubo->WriteDescriptorInfo();
-
-			data->per_frame[i].ubos.material_ubo = Buffer::CreateUniform(material_buffer_size, "Material UBO");
-			data->per_frame[i].ubos.material_ubo->WriteDescriptorInfo();
-		}
-	}
-
-	static void CreateInstanceBuffers()
-	{
-		VkDeviceSize instance_buffer_size = MAX_DRAW_LIST_ENTRIES * sizeof(glm::mat4);
-
-		for (size_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
-		{
-			data->per_frame[i].instance_buffer = Buffer::CreateInstance(instance_buffer_size, "Instance Buffer");
-		}
+		uint64_t signal_value = ++data->sync.transfer_fence.fence_value;
+		command_buffer->AddSignal({ .vk_semaphore = data->sync.transfer_fence.vk_semaphore, .signal_value = signal_value });
+		Vulkan::EndCommandBuffer(command_buffer);
 	}
 
 	static void CreateRenderTargets()
@@ -806,63 +762,7 @@ namespace Renderer
 		}
 	}
 
-	static void InitDearImGui()
-	{
-		IMGUI_CHECKVERSION();
-		ImGui::CreateContext();
-		ImGui::StyleColorsDark();
-
-		ImGuiIO& io = ImGui::GetIO();
-		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_DockingEnable;
-
-		// Create imgui descriptor pool
-		// First descriptor is for the font, the other ones for descriptor sets for ImGui::Image calls
-		VkDescriptorPoolSize pool_size = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 + 1000 };
-		VkDescriptorPoolCreateInfo pool_info = {};
-		pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-		pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-		// First descriptor is for the font, the other ones for descriptor sets for ImGui::Image calls
-		pool_info.maxSets = 1 + 1000;
-		pool_info.poolSizeCount = 1;
-		pool_info.pPoolSizes = &pool_size;
-		VkCheckResult(vkCreateDescriptorPool(vk_inst.device, &pool_info, nullptr, &data->imgui.descriptor_pool));
-		
-		// Init imgui
-		ImGui_ImplGlfw_InitForVulkan(vk_inst.window, true);
-		ImGui_ImplVulkan_InitInfo init_info = {};
-		init_info.Instance = vk_inst.instance;
-		init_info.PhysicalDevice = vk_inst.physical_device;
-		init_info.Device = vk_inst.device;
-		init_info.QueueFamily = vk_inst.queue_indices.graphics_compute;
-		init_info.Queue = vk_inst.queues.graphics;
-		init_info.PipelineCache = VK_NULL_HANDLE;
-		init_info.DescriptorPool = data->imgui.descriptor_pool;
-		init_info.MinImageCount = VulkanInstance::MAX_FRAMES_IN_FLIGHT;
-		init_info.ImageCount = VulkanInstance::MAX_FRAMES_IN_FLIGHT;
-		init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-		init_info.Allocator = nullptr;
-		init_info.UseDynamicRendering = true;
-		init_info.ColorAttachmentFormat = VK_FORMAT_R8G8B8A8_UNORM;
-		init_info.CheckVkResultFn = VkCheckResult;
-		ImGui_ImplVulkan_Init(&init_info, nullptr);
-
-		// Upload imgui font
-		VkCommandBuffer command_buffer = Vulkan::BeginImmediateCommand();
-		ImGui_ImplVulkan_CreateFontsTexture(command_buffer);
-		Vulkan::EndImmediateCommand(command_buffer);
-		ImGui_ImplVulkan_DestroyFontUploadObjects();
-	}
-
-	static void ExitDearImGui()
-	{
-		ImGui_ImplVulkan_Shutdown();
-		ImGui_ImplGlfw_Shutdown();
-		ImGui::DestroyContext();
-
-		vkDestroyDescriptorPool(vk_inst.device, data->imgui.descriptor_pool, nullptr);
-	}
-
-	static std::unique_ptr<Texture> GenerateCubeMapFromEquirectangular(uint32_t src_texture_index, uint32_t src_sampler_index)
+	static std::unique_ptr<Texture> GenerateCubeMapFromEquirectangular(std::shared_ptr<CommandBuffer> command_buffer, uint32_t src_texture_index, uint32_t src_sampler_index)
 	{
 		const auto& descriptor_buffer_binding_info = Vulkan::GetDescriptorBufferBindingInfos();
 
@@ -900,8 +800,6 @@ namespace Renderer
 		push_consts.src_texture_index = src_texture_index;
 		push_consts.src_sampler_index = src_sampler_index;
 
-		VkCommandBuffer command_buffer = Vulkan::BeginImmediateCommand();
-
 		for (uint32_t mip = 0; mip < num_cube_mips; ++mip)
 		{
 			for (uint32_t face = 0; face < 6; ++face)
@@ -924,33 +822,32 @@ namespace Renderer
 					scissor_rect.extent.width = viewport.width;
 					scissor_rect.extent.height = viewport.height;
 
-					vkCmdSetViewport(command_buffer, 0, 1, &viewport);
-					vkCmdSetScissor(command_buffer, 0, 1, &scissor_rect);
+					vkCmdSetViewport(command_buffer->GetHandle(), 0, 1, &viewport);
+					vkCmdSetScissor(command_buffer->GetHandle(), 0, 1, &scissor_rect);
 
 					push_consts.view_projection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 512.0f) * CUBE_FACING_VIEW_MATRICES[face];
 					data->render_passes.gen_cubemap.PushConstants(command_buffer, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &push_consts);
 					data->render_passes.gen_cubemap.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 64, 2 * sizeof(uint32_t), &push_consts.src_texture_index);
 
-					vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)descriptor_buffer_binding_info.size(), descriptor_buffer_binding_info.data());
+					vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer->GetHandle(), (uint32_t)descriptor_buffer_binding_info.size(), descriptor_buffer_binding_info.data());
 					data->render_passes.gen_cubemap.SetDescriptorBufferOffsets(command_buffer, 0, 5, &data->descriptor_buffer_indices[0], &data->descriptor_buffer_offsets[0]);
 
-					VkBuffer vertex_buffers = { data->unit_cube_vb->GetVkBuffer() };
+					VkBuffer vertex_buffers = { data->unit_cube_vb->GetHandle() };
 					VkDeviceSize vb_offset = 0;
-					vkCmdBindVertexBuffers(command_buffer, 0, 1, &vertex_buffers, &vb_offset);
-					vkCmdBindIndexBuffer(command_buffer, data->unit_cube_ib->GetVkBuffer(), 0, VK_INDEX_TYPE_UINT16);
-					vkCmdDrawIndexed(command_buffer, data->unit_cube_ib->GetSize() / sizeof(uint16_t), 1, 0, 0, 0);
+					vkCmdBindVertexBuffers(command_buffer->GetHandle(), 0, 1, &vertex_buffers, &vb_offset);
+					vkCmdBindIndexBuffer(command_buffer->GetHandle(), data->unit_cube_ib->GetHandle(), 0, VK_INDEX_TYPE_UINT16);
+					vkCmdDrawIndexed(command_buffer->GetHandle(), data->unit_cube_ib->GetSize() / sizeof(uint16_t), 1, 0, 0, 0);
 				}
 				END_PASS(command_buffer, data->render_passes.gen_cubemap);
 			}
 		}
 
-		hdr_env_cubemap->TransitionLayout(command_buffer, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-		Vulkan::EndImmediateCommand(command_buffer);
+		Vulkan::TransitionImageLayout(command_buffer, { .vk_image = hdr_env_cubemap->GetHandle(), .new_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
 
 		return hdr_env_cubemap;
 	}
 
-	static std::unique_ptr<Texture> GenerateIrradianceCube(uint32_t src_texture_index, uint32_t src_sampler_index)
+	static std::unique_ptr<Texture> GenerateIrradianceCube(std::shared_ptr<CommandBuffer> command_buffer, uint32_t src_texture_index, uint32_t src_sampler_index)
 	{
 		const auto& descriptor_buffer_binding_info = Vulkan::GetDescriptorBufferBindingInfos();
 
@@ -994,8 +891,6 @@ namespace Renderer
 		push_consts.src_texture_index = src_texture_index;
 		push_consts.src_sampler_index = src_sampler_index;
 
-		VkCommandBuffer command_buffer = Vulkan::BeginImmediateCommand();
-
 		for (uint32_t mip = 0; mip < num_cube_mips; ++mip)
 		{
 			for (uint32_t face = 0; face < 6; ++face)
@@ -1018,33 +913,32 @@ namespace Renderer
 					scissor_rect.extent.width = viewport.width;
 					scissor_rect.extent.height = viewport.height;
 
-					vkCmdSetViewport(command_buffer, 0, 1, &viewport);
-					vkCmdSetScissor(command_buffer, 0, 1, &scissor_rect);
+					vkCmdSetViewport(command_buffer->GetHandle(), 0, 1, &viewport);
+					vkCmdSetScissor(command_buffer->GetHandle(), 0, 1, &scissor_rect);
 
 					push_consts.view_projection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 512.0f) * CUBE_FACING_VIEW_MATRICES[face];
 					data->render_passes.gen_irradiance_cube.PushConstants(command_buffer, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &push_consts);
 					data->render_passes.gen_irradiance_cube.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 64, 2 * sizeof(uint32_t) + 2 * sizeof(float), &push_consts.src_texture_index);
 
-					vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)descriptor_buffer_binding_info.size(), descriptor_buffer_binding_info.data());
+					vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer->GetHandle(), (uint32_t)descriptor_buffer_binding_info.size(), descriptor_buffer_binding_info.data());
 					data->render_passes.gen_irradiance_cube.SetDescriptorBufferOffsets(command_buffer, 0, 5, &data->descriptor_buffer_indices[0], &data->descriptor_buffer_offsets[0]);
 
-					VkBuffer vertex_buffers = { data->unit_cube_vb->GetVkBuffer() };
+					VkBuffer vertex_buffers = { data->unit_cube_vb->GetHandle() };
 					VkDeviceSize vb_offset = 0;
-					vkCmdBindVertexBuffers(command_buffer, 0, 1, &vertex_buffers, &vb_offset);
-					vkCmdBindIndexBuffer(command_buffer, data->unit_cube_ib->GetVkBuffer(), 0, VK_INDEX_TYPE_UINT16);
-					vkCmdDrawIndexed(command_buffer, data->unit_cube_ib->GetSize() / sizeof(uint16_t), 1, 0, 0, 0);
+					vkCmdBindVertexBuffers(command_buffer->GetHandle(), 0, 1, &vertex_buffers, &vb_offset);
+					vkCmdBindIndexBuffer(command_buffer->GetHandle(), data->unit_cube_ib->GetHandle(), 0, VK_INDEX_TYPE_UINT16);
+					vkCmdDrawIndexed(command_buffer->GetHandle(), data->unit_cube_ib->GetSize() / sizeof(uint16_t), 1, 0, 0, 0);
 				}
 				END_PASS(command_buffer, data->render_passes.gen_irradiance_cube);
 			}
 		}
 
-		irradiance_cubemap->TransitionLayout(command_buffer, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-		Vulkan::EndImmediateCommand(command_buffer);
+		Vulkan::TransitionImageLayout(command_buffer, { .vk_image = irradiance_cubemap->GetHandle(), .new_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL});
 
 		return irradiance_cubemap;
 	}
 
-	static std::unique_ptr<Texture> GeneratePrefilteredEnvMap(uint32_t src_texture_index, uint32_t src_sampler_index)
+	static std::unique_ptr<Texture> GeneratePrefilteredEnvMap(std::shared_ptr<CommandBuffer> command_buffer, uint32_t src_texture_index, uint32_t src_sampler_index)
 	{
 		const auto& descriptor_buffer_binding_info = Vulkan::GetDescriptorBufferBindingInfos();
 
@@ -1084,8 +978,6 @@ namespace Renderer
 		push_consts.src_texture_index = src_texture_index;
 		push_consts.src_sampler_index = src_sampler_index;
 
-		VkCommandBuffer command_buffer = Vulkan::BeginImmediateCommand();
-
 		for (uint32_t mip = 0; mip < num_cube_mips; ++mip)
 		{
 			RenderPass::BeginInfo begin_info = {};
@@ -1107,29 +999,28 @@ namespace Renderer
 					scissor_rect.extent.width = viewport.width;
 					scissor_rect.extent.height = viewport.height;
 
-					vkCmdSetViewport(command_buffer, 0, 1, &viewport);
-					vkCmdSetScissor(command_buffer, 0, 1, &scissor_rect);
+					vkCmdSetViewport(command_buffer->GetHandle(), 0, 1, &viewport);
+					vkCmdSetScissor(command_buffer->GetHandle(), 0, 1, &scissor_rect);
 
 					push_consts.view_projection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 512.0f) * CUBE_FACING_VIEW_MATRICES[face];
 					data->render_passes.gen_prefiltered_cube.PushConstants(command_buffer, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &push_consts);
 					push_consts.roughness = (float)mip / (float)(num_cube_mips - 1);
 					data->render_passes.gen_prefiltered_cube.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 64, 3 * sizeof(uint32_t) + sizeof(float), &push_consts.src_texture_index);
 
-					vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)descriptor_buffer_binding_info.size(), descriptor_buffer_binding_info.data());
+					vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer->GetHandle(), (uint32_t)descriptor_buffer_binding_info.size(), descriptor_buffer_binding_info.data());
 					data->render_passes.gen_prefiltered_cube.SetDescriptorBufferOffsets(command_buffer, 0, 5, &data->descriptor_buffer_indices[0], &data->descriptor_buffer_offsets[0]);
 
-					VkBuffer vertex_buffers = { data->unit_cube_vb->GetVkBuffer() };
+					VkBuffer vertex_buffers = { data->unit_cube_vb->GetHandle() };
 					VkDeviceSize vb_offset = 0;
-					vkCmdBindVertexBuffers(command_buffer, 0, 1, &vertex_buffers, &vb_offset);
-					vkCmdBindIndexBuffer(command_buffer, data->unit_cube_ib->GetVkBuffer(), 0, VK_INDEX_TYPE_UINT16);
-					vkCmdDrawIndexed(command_buffer, data->unit_cube_ib->GetSize() / sizeof(uint16_t), 1, 0, 0, 0);
+					vkCmdBindVertexBuffers(command_buffer->GetHandle(), 0, 1, &vertex_buffers, &vb_offset);
+					vkCmdBindIndexBuffer(command_buffer->GetHandle(), data->unit_cube_ib->GetHandle(), 0, VK_INDEX_TYPE_UINT16);
+					vkCmdDrawIndexed(command_buffer->GetHandle(), data->unit_cube_ib->GetSize() / sizeof(uint16_t), 1, 0, 0, 0);
 				}
 				END_PASS(command_buffer, data->render_passes.gen_prefiltered_cube);
 			}
 		}
 
-		prefiltered_cubemap->TransitionLayout(command_buffer, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-		Vulkan::EndImmediateCommand(command_buffer);
+		Vulkan::TransitionImageLayout(command_buffer, { .vk_image = prefiltered_cubemap->GetHandle(), .new_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
 
 		return prefiltered_cubemap;
 	}
@@ -1165,7 +1056,7 @@ namespace Renderer
 			uint32_t num_samples = IBL_BRDF_LUT_SAMPLES;
 		} push_consts;
 
-		VkCommandBuffer command_buffer = Vulkan::BeginImmediateCommand();
+		std::shared_ptr<CommandBuffer> command_buffer = Vulkan::BeginCommandBuffer(COMMAND_QUEUE_TYPE_GRAPHICS_COMPUTE);
 
 		RenderPass::BeginInfo begin_info = {};
 		begin_info.render_width = IBL_BRDF_LUT_RESOLUTION;
@@ -1181,20 +1072,20 @@ namespace Renderer
 			scissor_rect.extent.width = viewport.width;
 			scissor_rect.extent.height = viewport.height;
 
-			vkCmdSetViewport(command_buffer, 0, 1, &viewport);
-			vkCmdSetScissor(command_buffer, 0, 1, &scissor_rect);
+			vkCmdSetViewport(command_buffer->GetHandle(), 0, 1, &viewport);
+			vkCmdSetScissor(command_buffer->GetHandle(), 0, 1, &scissor_rect);
 
 			data->render_passes.gen_brdf_lut.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(uint32_t), &push_consts);
 
-			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)descriptor_buffer_binding_info.size(), descriptor_buffer_binding_info.data());
+			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer->GetHandle(), (uint32_t)descriptor_buffer_binding_info.size(), descriptor_buffer_binding_info.data());
 			data->render_passes.gen_brdf_lut.SetDescriptorBufferOffsets(command_buffer, 0, 5, &data->descriptor_buffer_indices[0], &data->descriptor_buffer_offsets[0]);
 
-			vkCmdDraw(command_buffer, 3, 1, 0, 0);
+			vkCmdDraw(command_buffer->GetHandle(), 3, 1, 0, 0);
 		}
 		END_PASS(command_buffer, data->render_passes.gen_brdf_lut);
 
-		brdf_lut->TransitionLayout(command_buffer, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-		Vulkan::EndImmediateCommand(command_buffer);
+		Vulkan::TransitionImageLayout(command_buffer, { .vk_image = brdf_lut->GetHandle(), .new_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
+		Vulkan::EndCommandBuffer(command_buffer);
 
 		data->ibl.brdf_lut_handle = data->texture_slotmap.Insert(TextureResource(std::move(brdf_lut), data->brdf_lut_sampler));
 	}
@@ -1206,15 +1097,13 @@ namespace Renderer
 		data = new Data();
 		data->window = window;
 
+		CreateRingBuffer();
 		CreateRenderPasses();
 		CreateRenderTargets();
-		InitDearImGui();
 
-		CreateCommandBuffers();
+		Vulkan::InitImGui();
+
 		CreateSyncObjects();
-
-		CreateUniformBuffers();
-		CreateInstanceBuffers();
 
 		CreateUnitCubeBuffers();
 		CreateDefaultSamplers();
@@ -1245,10 +1134,11 @@ namespace Renderer
 		// Wait for GPU to be idle before we start the cleanup
 		VkCheckResult(vkDeviceWaitIdle(vk_inst.device));
 
-		ExitDearImGui();
+		Vulkan::ExitImGui();
 
 		// Start cleaning up all of the objects that won't be destroyed automatically
-		vkDestroySemaphore(vk_inst.device, data->sync.in_flight_semaphore_timeline, nullptr);
+		vkDestroySemaphore(vk_inst.device, data->sync.frame_fence.vk_semaphore, nullptr);
+		vkDestroySemaphore(vk_inst.device, data->sync.transfer_fence.vk_semaphore, nullptr);
 		for (uint32_t i = 0; i < VulkanInstance::MAX_FRAMES_IN_FLIGHT; ++i)
 		{
 			vkDestroySemaphore(vk_inst.device, data->per_frame[i].sync.render_finished_semaphore_binary, nullptr);
@@ -1263,20 +1153,19 @@ namespace Renderer
 
 	void BeginFrame(const BeginFrameInfo& frame_info)
 	{
-		const Data::Frame* frame = GetFrameCurrent();
+		Vulkan::BeginFrame();
+
+		Data::Frame* frame = GetFrameCurrent();
 
 		// Wait for timeline semaphore to reach 
 		frame = GetFrameCurrent();
-		VkSemaphoreWaitInfo wait_info = { VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO };
-		wait_info.semaphoreCount = 1;
-		wait_info.pSemaphores = &data->sync.in_flight_semaphore_timeline;
-		wait_info.pValues = &frame->sync.render_finished_value;
-		wait_info.flags = 0;
-
-		vkWaitSemaphores(vk_inst.device, &wait_info, UINT64_MAX);
+		Vulkan::WaitForSemaphore(data->sync.frame_fence.vk_semaphore, frame->sync.frame_in_flight_value);
 
 		// Get the next available image from the swapchain
 		VkResult result = Vulkan::SwapChainAcquireNextImage();
+		// TODO: Make this cleaner, also waiting for a swapchain image to be available could be fully inside the vulkan backend
+		vk_inst.last_finished_frame = std::max(0, (int32_t)vk_inst.current_frame - (int32_t)VulkanInstance::MAX_FRAMES_IN_FLIGHT);
+
 		if ((result == VK_ERROR_OUT_OF_DATE_KHR) || (result == VK_SUBOPTIMAL_KHR))
 		{
 			if (result == VK_ERROR_OUT_OF_DATE_KHR)
@@ -1292,9 +1181,12 @@ namespace Renderer
 			VkCheckResult(result);
 		}
 
-		// Reset and record the command buffer
-		VkCommandBuffer command_buffer = frame->command_buffer;
-		vkResetCommandBuffer(command_buffer, 0);
+		// TODO: Make this run on a separate thread in the vulkan backend
+		vk_inst.queues.graphics_compute->RecycleInFlightCommandBuffers();
+		vk_inst.queues.transfer->RecycleInFlightCommandBuffers();
+
+		// TODO: Not just have a single command buffer for the entire frame, this is not great when complexity increases
+		frame->command_buffer = Vulkan::BeginCommandBuffer(COMMAND_QUEUE_TYPE_GRAPHICS_COMPUTE);
 
 		ImGui_ImplGlfw_NewFrame();
 		ImGui_ImplVulkan_NewFrame();
@@ -1306,9 +1198,16 @@ namespace Renderer
 		camera_data.proj = frame_info.proj;
 		camera_data.view_pos = glm::inverse(frame_info.view)[3];
 
-		// Write camera and settings to their respective UBOs
-		frame->ubos.camera_ubo->Write(sizeof(camera_data), &camera_data);
-		frame->ubos.settings_ubo->Write(sizeof(data->settings), &data->settings);
+		// Allocate frame UBOs and instance buffer from ring buffer
+		frame->ubos.settings_ubo = data->ring_buffer->Allocate(sizeof(RenderSettings), vk_inst.current_frame);
+		frame->ubos.camera_ubo = data->ring_buffer->Allocate(sizeof(CameraData), vk_inst.current_frame);
+		frame->ubos.light_ubo = data->ring_buffer->Allocate(sizeof(uint32_t) + sizeof(PointlightData) * MAX_LIGHT_SOURCES, vk_inst.current_frame);
+		frame->ubos.material_ubo = data->ring_buffer->Allocate(sizeof(MaterialData) * MAX_UNIQUE_MATERIALS, vk_inst.current_frame);
+		frame->instance_buffer = data->ring_buffer->Allocate(sizeof(glm::mat4) * MAX_DRAW_LIST_ENTRIES, vk_inst.current_frame);
+
+		// Write camera data to the camera UBO
+		frame->ubos.camera_ubo.Write(0, sizeof(CameraData), &camera_data);
+		frame->ubos.settings_ubo.Write(0, sizeof(data->settings), &data->settings);
 
 		// If white furnace test is enabled, we want to use the white furnace environment map to render instead of the one passed in
 		if (data->settings.white_furnace_test)
@@ -1319,16 +1218,11 @@ namespace Renderer
 
 	void RenderFrame()
 	{
-		const Data::Frame* frame = GetFrameCurrent();
+		Data::Frame* frame = GetFrameCurrent();
 		const std::vector<VkDescriptorBufferBindingInfoEXT>& descriptor_buffer_binding_info = Vulkan::GetDescriptorBufferBindingInfos();
-		VkCommandBuffer command_buffer = frame->command_buffer;
-
-		VkCommandBufferBeginInfo command_buffer_begin_info = {};
-		command_buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-		VkCheckResult(vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info));
 
 		// Update number of lights in the light ubo
-		frame->ubos.light_ubo->Write(sizeof(uint32_t), &data->num_pointlights, 0, sizeof(PointlightData) * MAX_LIGHT_SOURCES);
+		frame->ubos.light_ubo.Write(sizeof(PointlightData) * MAX_LIGHT_SOURCES, sizeof(uint32_t), &data->num_pointlights);
 
 		// TODO: Move to the vulkan backend, we should not care about descriptor buffers in the renderer
 		// Update UBO descriptor buffer offset
@@ -1359,10 +1253,10 @@ namespace Renderer
 		// ----------------------------------------------------------------------------------------------------------------
 		// Skybox pass
 
-		BEGIN_PASS(command_buffer, data->render_passes.skybox, begin_info);
+		BEGIN_PASS(frame->command_buffer, data->render_passes.skybox, begin_info);
 		{
-			vkCmdSetViewport(command_buffer, 0, 1, &viewport);
-			vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+			vkCmdSetViewport(frame->command_buffer->GetHandle(), 0, 1, &viewport);
+			vkCmdSetScissor(frame->command_buffer->GetHandle(), 0, 1, &scissor);
 
 			struct PushConsts
 			{
@@ -1379,27 +1273,27 @@ namespace Renderer
 			push_consts.env_texture_index = skybox_texture->texture->GetView()->descriptor.GetIndex();
 			push_consts.env_sampler_index = 0;
 
-			data->render_passes.skybox.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push_consts), &push_consts);
+			data->render_passes.skybox.PushConstants(frame->command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push_consts), &push_consts);
 
-			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)descriptor_buffer_binding_info.size(), descriptor_buffer_binding_info.data());
-			data->render_passes.skybox.SetDescriptorBufferOffsets(command_buffer, 0, 5, &data->descriptor_buffer_indices[0], &data->descriptor_buffer_offsets[0]);
+			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(frame->command_buffer->GetHandle(), (uint32_t)descriptor_buffer_binding_info.size(), descriptor_buffer_binding_info.data());
+			data->render_passes.skybox.SetDescriptorBufferOffsets(frame->command_buffer, 0, 5, &data->descriptor_buffer_indices[0], &data->descriptor_buffer_offsets[0]);
 			
-			VkBuffer vertex_buffers = { data->unit_cube_vb->GetVkBuffer() };
+			VkBuffer vertex_buffers = { data->unit_cube_vb->GetHandle() };
 			VkDeviceSize vb_offset = 0;
-			vkCmdBindVertexBuffers(command_buffer, 0, 1, &vertex_buffers, &vb_offset);
-			vkCmdBindIndexBuffer(command_buffer, data->unit_cube_ib->GetVkBuffer(), 0, VK_INDEX_TYPE_UINT16);
-			vkCmdDrawIndexed(command_buffer, data->unit_cube_ib->GetSize() / sizeof(uint16_t), 1, 0, 0, 0);
+			vkCmdBindVertexBuffers(frame->command_buffer->GetHandle(), 0, 1, &vertex_buffers, &vb_offset);
+			vkCmdBindIndexBuffer(frame->command_buffer->GetHandle(), data->unit_cube_ib->GetHandle(), 0, VK_INDEX_TYPE_UINT16);
+			vkCmdDrawIndexed(frame->command_buffer->GetHandle(), data->unit_cube_ib->GetSize() / sizeof(uint16_t), 1, 0, 0, 0);
 		}
-		END_PASS(command_buffer, data->render_passes.skybox);
+		END_PASS(frame->command_buffer, data->render_passes.skybox);
 
 		// ----------------------------------------------------------------------------------------------------------------
 		// Lighting pass
 
-		BEGIN_PASS(command_buffer, data->render_passes.lighting, begin_info);
+		BEGIN_PASS(frame->command_buffer, data->render_passes.lighting, begin_info);
 		{
 			// Viewport and scissor
-			vkCmdSetViewport(command_buffer, 0, 1, &viewport);
-			vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+			vkCmdSetViewport(frame->command_buffer->GetHandle(), 0, 1, &viewport);
+			vkCmdSetScissor(frame->command_buffer->GetHandle(), 0, 1, &scissor);
 
 			const TextureResource* skybox_texture = data->texture_slotmap.Find(data->skybox_texture_handle);
 			if (!skybox_texture)
@@ -1431,14 +1325,11 @@ namespace Renderer
 			push_consts.brdf_lut_index = data->texture_slotmap.Find(data->ibl.brdf_lut_handle)->texture->GetView()->descriptor.GetIndex();
 			push_consts.brdf_lut_sampler_index = data->texture_slotmap.Find(data->ibl.brdf_lut_handle)->sampler->GetIndex();
 
-			data->render_passes.lighting.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 7 * sizeof(uint32_t), &push_consts);
+			data->render_passes.lighting.PushConstants(frame->command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 7 * sizeof(uint32_t), &push_consts);
 
 			// Bind descriptor buffers
-			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)descriptor_buffer_binding_info.size(), descriptor_buffer_binding_info.data());
-			data->render_passes.lighting.SetDescriptorBufferOffsets(command_buffer, 0, 5, &data->descriptor_buffer_indices[0], &data->descriptor_buffer_offsets[0]);
-
-			// Instance buffer
-			const Buffer& instance_buffer = *frame->instance_buffer;
+			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(frame->command_buffer->GetHandle(), (uint32_t)descriptor_buffer_binding_info.size(), descriptor_buffer_binding_info.data());
+			data->render_passes.lighting.SetDescriptorBufferOffsets(frame->command_buffer, 0, 5, &data->descriptor_buffer_indices[0], &data->descriptor_buffer_offsets[0]);
 
 			for (uint32_t i = 0; i < data->draw_list.next_free_entry; ++i)
 			{
@@ -1452,39 +1343,39 @@ namespace Renderer
 				}
 				VK_ASSERT(mesh && "Tried to render a mesh with an invalid mesh handle");
 
-				data->render_passes.lighting.PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 28, sizeof(uint32_t), &i);
+				data->render_passes.lighting.PushConstants(frame->command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 28, sizeof(uint32_t), &i);
 
 				// Vertex and index buffers
-				VkBuffer vertex_buffers[] = { mesh->vertex_buffer->GetVkBuffer(), instance_buffer.GetVkBuffer() };
+				VkBuffer vertex_buffers[] = { mesh->vertex_buffer->GetHandle(), frame->instance_buffer.GetHandle() };
 				VkDeviceSize offsets[] = { 0, i * sizeof(glm::mat4) };
-				vkCmdBindVertexBuffers(command_buffer, 0, 2, vertex_buffers, offsets);
-				vkCmdBindIndexBuffer(command_buffer, mesh->index_buffer->GetVkBuffer(), 0, VK_INDEX_TYPE_UINT32);
+				vkCmdBindVertexBuffers(frame->command_buffer->GetHandle(), 0, 2, vertex_buffers, offsets);
+				vkCmdBindIndexBuffer(frame->command_buffer->GetHandle(), mesh->index_buffer->GetHandle(), 0, VK_INDEX_TYPE_UINT32);
 
 				// Draw call
-				vkCmdDrawIndexed(command_buffer, mesh->index_buffer->GetSize() / sizeof(uint32_t), 1, 0, 0, 0);
+				vkCmdDrawIndexed(frame->command_buffer->GetHandle(), mesh->index_buffer->GetSize() / sizeof(uint32_t), 1, 0, 0, 0);
 
 				data->stats.total_vertex_count += mesh->index_buffer->GetSize() / sizeof(Vertex);
 				data->stats.total_triangle_count += (mesh->index_buffer->GetSize() / sizeof(uint32_t)) / 3;
 			}
 		}
-		END_PASS(command_buffer, data->render_passes.lighting);
+		END_PASS(frame->command_buffer, data->render_passes.lighting);
 
 		// ----------------------------------------------------------------------------------------------------------------
 		// Post-process pass
 
-		BEGIN_PASS(command_buffer, data->render_passes.post_process, begin_info);
+		BEGIN_PASS(frame->command_buffer, data->render_passes.post_process, begin_info);
 		{
-			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer, (uint32_t)descriptor_buffer_binding_info.size(), descriptor_buffer_binding_info.data());
-			data->render_passes.post_process.SetDescriptorBufferOffsets(command_buffer, 0, 5, &data->descriptor_buffer_indices[0], &data->descriptor_buffer_offsets[0]);
+			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(frame->command_buffer->GetHandle(), (uint32_t)descriptor_buffer_binding_info.size(), descriptor_buffer_binding_info.data());
+			data->render_passes.post_process.SetDescriptorBufferOffsets(frame->command_buffer, 0, 5, &data->descriptor_buffer_indices[0], &data->descriptor_buffer_offsets[0]);
 
 			uint32_t src_dst_indices[2] = { data->render_targets.hdr->GetView()->descriptor.GetIndex(), data->render_targets.sdr->GetView()->descriptor.GetIndex() };
-			data->render_passes.post_process.PushConstants(command_buffer, VK_SHADER_STAGE_COMPUTE_BIT, 0, 2 * sizeof(uint32_t), &src_dst_indices);
+			data->render_passes.post_process.PushConstants(frame->command_buffer, VK_SHADER_STAGE_COMPUTE_BIT, 0, 2 * sizeof(uint32_t), &src_dst_indices);
 
 			uint32_t dispatch_x = VK_ALIGN_POW2(begin_info.render_width, 8) / 8;
 			uint32_t dispatch_y = VK_ALIGN_POW2(begin_info.render_height, 8) / 8;
-			vkCmdDispatch(command_buffer, dispatch_x, dispatch_y, 1);
+			vkCmdDispatch(frame->command_buffer->GetHandle(), dispatch_x, dispatch_y, 1);
 		}
-		END_PASS(command_buffer, data->render_passes.post_process);
+		END_PASS(frame->command_buffer, data->render_passes.post_process);
 	}
 
 	void RenderUI()
@@ -1653,64 +1544,43 @@ namespace Renderer
 	void EndFrame()
 	{
 		Data::Frame* frame = GetFrameCurrent();
-		VkCommandBuffer command_buffer = frame->command_buffer;
 
 		// Render ImGui
 		RenderPass::BeginInfo begin_info = {};
 		begin_info.render_width = vk_inst.swapchain.extent.width;
 		begin_info.render_height = vk_inst.swapchain.extent.height;
 
-		BEGIN_PASS(command_buffer, data->imgui.render_pass, begin_info);
+		BEGIN_PASS(frame->command_buffer, data->imgui.render_pass, begin_info);
 		{
 			ImGui::Render();
-			ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer, nullptr);
+			ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), frame->command_buffer->GetHandle(), nullptr);
 
 			ImGui::EndFrame();
 		}
-		END_PASS(command_buffer, data->imgui.render_pass);
+		END_PASS(frame->command_buffer, data->imgui.render_pass);
 
 		// Transition SDR render target and swapchain image to TRANSFER_SRC and TRANSFER_DST
-		data->render_targets.sdr->TransitionLayout(command_buffer, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-
-		VkImageMemoryBarrier2 copy_barrier = VulkanResourceTracker::ImageMemoryBarrier(
-			vk_inst.swapchain.images[vk_inst.swapchain.current_image], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-		Vulkan::CmdImageMemoryBarrier(command_buffer, 1, &copy_barrier);
+		std::vector<Vulkan::ImageLayoutInfo> copy_transitions =
+		{
+			{.vk_image = data->render_targets.sdr->GetHandle(), .new_layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL },
+			{.vk_image = vk_inst.swapchain.images[vk_inst.swapchain.current_image], .new_layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL }
+		};
+		Vulkan::TransitionImageLayouts(frame->command_buffer, copy_transitions);
 
 		// Copy the contents of the SDR render target into the currently active swapchain back buffer
-		Vulkan::CopyToSwapchain(command_buffer, data->render_targets.sdr->GetVkImage());
+		Vulkan::CopyToSwapchain(frame->command_buffer, data->render_targets.sdr->GetHandle());
 
 		// Transition the active swapchain back buffer to PRESENT_SRC
-		VkImageMemoryBarrier2 present_barrier = VulkanResourceTracker::ImageMemoryBarrier(
-			vk_inst.swapchain.images[vk_inst.swapchain.current_image], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
-		Vulkan::CmdImageMemoryBarrier(command_buffer, 1, &present_barrier);
+		Vulkan::ImageLayoutInfo present_transition = { .vk_image = vk_inst.swapchain.images[vk_inst.swapchain.current_image], .new_layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR };
+		Vulkan::TransitionImageLayout(frame->command_buffer, present_transition);
 
 		// Submit the command buffer for execution
-		VkCheckResult(vkEndCommandBuffer(command_buffer));
+		frame->command_buffer->AddWait({ .vk_semaphore = vk_inst.swapchain.image_available_semaphores[vk_inst.current_frame],
+			.wait_stages = VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT });
 
-		std::vector<VkSemaphore> wait_semaphores = { vk_inst.swapchain.image_available_semaphores[vk_inst.current_frame] };
-		VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT };
-
-		// Update the render finished timline semaphore value for the current frame
-		frame->sync.render_finished_value = ++data->sync.semaphore_value;
-		const uint64_t signal_semaphore_values[] = {frame->sync.render_finished_value, 0};
-		VkTimelineSemaphoreSubmitInfo timeline_semaphore_submit_info = { VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO };
-		timeline_semaphore_submit_info.waitSemaphoreValueCount = 0;
-		timeline_semaphore_submit_info.pWaitSemaphoreValues = nullptr;
-		timeline_semaphore_submit_info.signalSemaphoreValueCount = 2;
-		timeline_semaphore_submit_info.pSignalSemaphoreValues = signal_semaphore_values;
-		std::vector<VkSemaphore> signal_semaphores = { data->sync.in_flight_semaphore_timeline, frame->sync.render_finished_semaphore_binary };
-
-		VkSubmitInfo submit_info = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
-		submit_info.commandBufferCount = 1;
-		submit_info.pCommandBuffers = &command_buffer;
-		submit_info.waitSemaphoreCount = static_cast<uint32_t>(wait_semaphores.size());
-		submit_info.pWaitSemaphores = wait_semaphores.data();
-		submit_info.pWaitDstStageMask = wait_stages;
-		submit_info.signalSemaphoreCount = static_cast<uint32_t>(signal_semaphores.size());
-		submit_info.pSignalSemaphores = signal_semaphores.data();
-		submit_info.pNext = &timeline_semaphore_submit_info;
-
-		VkCheckResult(vkQueueSubmit(vk_inst.queues.graphics, 1, &submit_info, nullptr));
+		uint64_t signal_value = ++data->sync.frame_fence.fence_value;
+		frame->command_buffer->AddSignal({ .vk_semaphore = data->sync.frame_fence.vk_semaphore, .signal_value = signal_value });
+		Vulkan::EndCommandBuffer(frame->command_buffer);
 
 		// Reset per-frame statistics, draw list, and other data
 		data->stats.Reset();
@@ -1735,22 +1605,20 @@ namespace Renderer
 		{
 			VkCheckResult(result);
 		}
+
+		Vulkan::EndFrame();
 	}
 
 	TextureHandle_t CreateTexture(const CreateTextureArgs& args)
 	{
+		std::shared_ptr<CommandBuffer> command_buffer = Vulkan::BeginCommandBuffer(COMMAND_QUEUE_TYPE_GRAPHICS_COMPUTE);
+
 		// Determine the texture byte size
 		VkDeviceSize image_size = args.pixels.size();
 
-		// Create staging buffer
-		std::unique_ptr<Buffer> staging_buffer = Buffer::CreateStaging(image_size, "Staging Buffer Renderer::CreateTexture");
-
-		// Copy data into the mapped memory of the staging buffer
-		staging_buffer->Write(image_size, (void*)args.pixels.data());
-
 		// Create texture image
 		uint32_t num_mips = args.generate_mips ? (uint32_t)std::floor(std::log2(std::max(args.width, args.height))) + 1 : 1;
-		
+
 		TextureCreateInfo texture_info = {
 			.format = args.format,
 			.usage_flags = TEXTURE_USAGE_COPY_DST | TEXTURE_USAGE_SAMPLED,
@@ -1767,38 +1635,49 @@ namespace Renderer
 			texture_info.usage_flags |= TEXTURE_USAGE_COPY_SRC;
 
 		std::unique_ptr<Texture> texture = Texture::Create(texture_info);
+
+		// Create ring buffer staging allocation and write the data to it
+		RingBuffer::Allocation staging = data->ring_buffer->Allocate(image_size, vk_inst.current_frame, Vulkan::GetImageAlign(texture->GetHandle()));
+		staging.Write(0, image_size, args.pixels.data());
 		
 		// Copy staging buffer data into final texture image memory (device local)
-		texture->TransitionLayoutImmediate(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-		texture->CopyFromBufferImmediate(*staging_buffer, 0);
+		Vulkan::TransitionImageLayout(command_buffer, { .vk_image = texture->GetHandle(), .new_layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL });
+		Vulkan::CopyBufferToTexture(command_buffer, staging.GetHandle(), staging.byte_offset, texture->GetHandle(), texture_info.width, texture_info.height);
 
 		// Generate mips
 		if (num_mips > 1)
 		{
-			texture->GenerateMips();
+			Vulkan::GenerateMips(command_buffer, texture->GetHandle(), texture_info.format, texture_info.width, texture_info.height, texture_info.num_mips);
 		}
 		else
 		{
 			// Generate Mips will already transition the image back to READ_ONLY_OPTIMAL, if we do not generate mips, we have to do it manually
-			texture->TransitionLayoutImmediate(VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
+			Vulkan::TransitionImageLayout(command_buffer, { .vk_image = texture->GetHandle(), .new_layout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL });
 		}
 
 		TextureView* texture_view = texture->GetView();
 		texture_view->descriptor = Vulkan::AllocateDescriptors(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
 		texture_view->WriteDescriptorInfo(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
 
+		uint64_t signal_value = ++data->sync.transfer_fence.fence_value;
+
 		// Generate irradiance cube map for IBL
 		if (args.is_environment_map)
 		{
 			// Generate a cubemap from the equirectangular hdr environment map
-			texture = GenerateCubeMapFromEquirectangular(texture_view->descriptor.GetIndex(), data->hdr_equirect_sampler->GetIndex());
+			// NOTE: This throws because the original texture is a unique_ptr and overwritten here, so it gets destroyed and freed
+			Vulkan::ResourceTracker::TrackImageTemp(texture->GetHandle(), data->sync.transfer_fence.vk_semaphore, signal_value);
+			texture = GenerateCubeMapFromEquirectangular(command_buffer, texture_view->descriptor.GetIndex(), data->hdr_equirect_sampler->GetIndex());
 
 			// Generate the irradiance cubemap from the hdr cubemap, and append it to the base environment map
-			texture->AppendToChain(GenerateIrradianceCube(texture->GetView()->descriptor.GetIndex(), data->hdr_cube_sampler->GetIndex()));
+			texture->AppendToChain(GenerateIrradianceCube(command_buffer, texture->GetView()->descriptor.GetIndex(), data->hdr_cube_sampler->GetIndex()));
 
 			// Generate the prefiltered cubemap from the hdr cubemap, and append it to the base environment map
-			texture->AppendToChain(GeneratePrefilteredEnvMap(texture->GetView()->descriptor.GetIndex(), data->hdr_cube_sampler->GetIndex()));
+			texture->AppendToChain(GeneratePrefilteredEnvMap(command_buffer, texture->GetView()->descriptor.GetIndex(), data->hdr_cube_sampler->GetIndex()));
 		}
+
+		command_buffer->AddSignal({ data->sync.transfer_fence.vk_semaphore, signal_value });
+		Vulkan::EndCommandBuffer(command_buffer);
 
 		return data->texture_slotmap.Insert(TextureResource(std::move(texture), data->default_sampler));
 	}
@@ -1828,20 +1707,24 @@ namespace Renderer
 		VkDeviceSize vb_size = sizeof(Vertex) * args.vertices.size();
 		VkDeviceSize ib_size = sizeof(uint32_t) * args.indices.size();
 
-		// Create staging buffer
-		std::unique_ptr<Buffer> staging_buffer = Buffer::CreateStaging(vb_size + ib_size, "Staging Buffer CreateMesh");
-
-		// Write data into staging buffer
-		staging_buffer->Write(vb_size, (void*)args.vertices.data(), 0, 0);
-		staging_buffer->Write(ib_size, (void*)args.indices.data(), 0, vb_size);
+		// Allocate from ring buffer and write data to it
+		RingBuffer::Allocation staging = data->ring_buffer->Allocate(vb_size + ib_size, vk_inst.current_frame);
+		staging.Write(0, vb_size, (void*)args.vertices.data());
+		staging.Write(vb_size, ib_size, (void*)args.indices.data());
 
 		// Create vertex and index buffers
 		std::unique_ptr<Buffer> vertex_buffer = Buffer::CreateVertex(vb_size, "Vertex Buffer " + args.name);
 		std::unique_ptr<Buffer> index_buffer = Buffer::CreateIndex(ib_size, "Index Buffer " + args.name);
 
 		// Copy staging buffer data into vertex and index buffers
-		vertex_buffer->CopyFromImmediate(*staging_buffer, vb_size, 0, 0);
-		index_buffer->CopyFromImmediate(*staging_buffer, ib_size, vb_size, 0);
+		std::shared_ptr<CommandBuffer> command_buffer = Vulkan::BeginCommandBuffer(COMMAND_QUEUE_TYPE_GRAPHICS_COMPUTE);
+
+		Vulkan::CopyBuffer(command_buffer, staging.GetHandle(), staging.byte_offset, vertex_buffer->GetHandle(), 0, vb_size);
+		Vulkan::CopyBuffer(command_buffer, staging.GetHandle(), staging.byte_offset + vb_size, index_buffer->GetHandle(), 0, ib_size);
+
+		uint64_t signal_value = ++data->sync.transfer_fence.fence_value;
+		command_buffer->AddSignal({ .vk_semaphore = data->sync.transfer_fence.vk_semaphore, .signal_value = signal_value });
+		Vulkan::EndCommandBuffer(command_buffer);
 
 		return data->mesh_slotmap.Insert(MeshResource(std::move(vertex_buffer), std::move(index_buffer)));
 	}
@@ -1858,8 +1741,8 @@ namespace Renderer
 		entry.transform = transform;
 
 		// Write mesh transform to the instance buffer for the currently active frame
-		const Data::Frame* frame = GetFrameCurrent();
-		frame->instance_buffer->Write(sizeof(glm::mat4), &entry.transform, 0, sizeof(glm::mat4) * entry.index);
+		Data::Frame* frame = GetFrameCurrent();
+		frame->instance_buffer.Write(sizeof(glm::mat4) * entry.index, sizeof(glm::mat4), &entry.transform);
 
 		// Write material data to the material UBO
 		TextureResource* albedo_texture = data->texture_slotmap.Find(material.albedo_texture_handle);
@@ -1905,7 +1788,7 @@ namespace Renderer
 		entry.material_data.sampler_index = data->default_sampler->GetIndex();
 
 		// Write material data to the material ubo for the currently active frame
-		frame->ubos.material_ubo->Write(sizeof(MaterialData), &entry.material_data, 0, sizeof(MaterialData) * entry.index);
+		frame->ubos.material_ubo.Write(sizeof(MaterialData) * entry.index, sizeof(MaterialData), &entry.material_data);
 	}
 
 	void SubmitPointlight(const glm::vec3& pos, const glm::vec3& color, float intensity)
@@ -1918,9 +1801,8 @@ namespace Renderer
 			.color = color
 		};
 
-		const Data::Frame* frame = GetFrameCurrent();
-		frame->ubos.light_ubo->Write(sizeof(PointlightData), &pointlight, 0, sizeof(PointlightData) * data->num_pointlights);
-
+		Data::Frame* frame = GetFrameCurrent();
+		frame->ubos.light_ubo.Write(sizeof(PointlightData) * data->num_pointlights, sizeof(PointlightData), &pointlight);
 		data->num_pointlights++;
 	}
 

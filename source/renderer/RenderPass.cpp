@@ -1,7 +1,6 @@
 #include "Precomp.h"
 #include "renderer/RenderPass.h"
 #include "renderer/RenderTypes.h"
-#include "renderer/Texture.h"
 
 RenderPass::RenderPass(RenderPassType type)
 	: m_type(type)
@@ -14,7 +13,7 @@ RenderPass::~RenderPass()
 	vkDestroyPipelineLayout(vk_inst.device, m_pipeline_layout, nullptr);
 }
 
-void RenderPass::Begin(VkCommandBuffer command_buffer, const BeginInfo& begin_info)
+void RenderPass::Begin(std::shared_ptr<CommandBuffer> command_buffer, const BeginInfo& begin_info)
 {
 	std::vector<VkImageMemoryBarrier2> barriers;
 
@@ -28,7 +27,7 @@ void RenderPass::Begin(VkCommandBuffer command_buffer, const BeginInfo& begin_in
 			if (attachment.info.slot == ATTACHMENT_SLOT_INVALID)
 				continue;
 
-			attachment.view->TransitionLayout(command_buffer, attachment.info.expected_layout);
+			Vulkan::TransitionImageLayout(command_buffer, { attachment.view->texture->GetHandle(), attachment.info.expected_layout });
 
 			VkRenderingAttachmentInfo* attachment_info = &depth_attachment_info;
 			if (IsColorAttachment(attachment.info.slot))
@@ -38,7 +37,7 @@ void RenderPass::Begin(VkCommandBuffer command_buffer, const BeginInfo& begin_in
 
 			attachment_info->sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
 			attachment_info->imageView = attachment.view->view;
-			attachment_info->imageLayout = attachment.view->GetLayout();
+			attachment_info->imageLayout = attachment.info.expected_layout;
 			attachment_info->loadOp = attachment.info.load_op;
 			attachment_info->storeOp = attachment.info.store_op;
 			attachment_info->clearValue = attachment.info.clear_value;
@@ -61,10 +60,10 @@ void RenderPass::Begin(VkCommandBuffer command_buffer, const BeginInfo& begin_in
 		rendering_info.pNext = nullptr;
 
 		// Begin rendering and bind the pipeline state
-		vkCmdBeginRendering(command_buffer, &rendering_info);
+		vkCmdBeginRendering(command_buffer->GetHandle(), &rendering_info);
 		if (m_pipeline)
 		{
-			vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
+			vkCmdBindPipeline(command_buffer->GetHandle(), VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
 		}
 	}
 	else if (m_type == RENDER_PASS_TYPE_COMPUTE)
@@ -117,22 +116,22 @@ void RenderPass::Begin(VkCommandBuffer command_buffer, const BeginInfo& begin_in
 			if (attachment.info.slot == ATTACHMENT_SLOT_INVALID)
 				continue;
 
-			attachment.view->TransitionLayout(command_buffer, attachment.info.expected_layout);
+			Vulkan::TransitionImageLayout(command_buffer, { attachment.view->texture->GetHandle(), attachment.info.expected_layout });
 		}
 
 		if (m_pipeline)
 		{
-			vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipeline);
+			vkCmdBindPipeline(command_buffer->GetHandle(), VK_PIPELINE_BIND_POINT_COMPUTE, m_pipeline);
 		}
 	}
 }
 
-void RenderPass::PushConstants(VkCommandBuffer command_buffer, VkShaderStageFlags stage_bits, uint32_t offset, uint32_t size, const void* ptr)
+void RenderPass::PushConstants(std::shared_ptr<CommandBuffer> command_buffer, VkShaderStageFlags stage_bits, uint32_t offset, uint32_t size, const void* ptr)
 {
-	vkCmdPushConstants(command_buffer, m_pipeline_layout, stage_bits, offset, size, ptr);
+	vkCmdPushConstants(command_buffer->GetHandle(), m_pipeline_layout, stage_bits, offset, size, ptr);
 }
 
-void RenderPass::SetDescriptorBufferOffsets(VkCommandBuffer command_buffer, uint32_t first, uint32_t count, const uint32_t* indices, const VkDeviceSize* offsets)
+void RenderPass::SetDescriptorBufferOffsets(std::shared_ptr<CommandBuffer> command_buffer, uint32_t first, uint32_t count, const uint32_t* indices, const VkDeviceSize* offsets)
 {
 	VkPipelineBindPoint bind_point = VK_PIPELINE_BIND_POINT_GRAPHICS;
 	if (m_type == RENDER_PASS_TYPE_COMPUTE)
@@ -140,14 +139,14 @@ void RenderPass::SetDescriptorBufferOffsets(VkCommandBuffer command_buffer, uint
 		bind_point = VK_PIPELINE_BIND_POINT_COMPUTE;
 	}
 
-	vk_inst.pFunc.cmd_set_descriptor_buffer_offsets_ext(command_buffer, bind_point, m_pipeline_layout, first, count, indices, offsets);
+	vk_inst.pFunc.cmd_set_descriptor_buffer_offsets_ext(command_buffer->GetHandle(), bind_point, m_pipeline_layout, first, count, indices, offsets);
 }
 
-void RenderPass::End(VkCommandBuffer command_buffer)
+void RenderPass::End(std::shared_ptr<CommandBuffer> command_buffer)
 {
 	if (m_type == RENDER_PASS_TYPE_GRAPHICS)
 	{
-		vkCmdEndRendering(command_buffer);
+		vkCmdEndRendering(command_buffer->GetHandle());
 	}
 }
 

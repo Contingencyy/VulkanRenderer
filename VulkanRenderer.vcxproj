@@ -189,16 +189,20 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="source\renderer\Buffer.cpp" />
     <ClCompile Include="source\renderer\DescriptorAllocation.cpp" />
     <ClCompile Include="source\renderer\DescriptorBuffer.cpp" />
     <ClCompile Include="source\renderer\Renderer.cpp" />
     <ClCompile Include="source\renderer\RenderPass.cpp" />
     <ClCompile Include="source\renderer\RingBuffer.cpp" />
-    <ClCompile Include="source\renderer\Sampler.cpp" />
-    <ClCompile Include="source\renderer\Texture.cpp" />
-    <ClCompile Include="source\renderer\VulkanBackend.cpp" />
-    <ClCompile Include="source\renderer\VulkanResourceTracker.cpp" />
+    <ClCompile Include="source\renderer\vulkan\VulkanAllocator.cpp" />
+    <ClCompile Include="source\renderer\vulkan\VulkanBackend.cpp" />
+    <ClCompile Include="source\renderer\vulkan\VulkanBuffer.cpp" />
+    <ClCompile Include="source\renderer\vulkan\VulkanImage.cpp" />
+    <ClCompile Include="source\renderer\vulkan\VulkanImageView.cpp" />
+    <ClCompile Include="source\renderer\vulkan\VulkanResourceTracker.cpp" />
+    <ClCompile Include="source\renderer\vulkan\VulkanSwapChain.cpp" />
+    <ClCompile Include="source\renderer\vulkan\VulkanSync.cpp" />
+    <ClCompile Include="source\renderer\vulkan\VulkanUtils.cpp" />
     <ClCompile Include="source\Scene.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -213,7 +217,6 @@
     <ClInclude Include="include\Input.h" />
     <ClInclude Include="include\Logger.h" />
     <ClInclude Include="include\Precomp.h" />
-    <ClInclude Include="include\renderer\Buffer.h" />
     <ClInclude Include="include\renderer\DescriptorAllocation.h" />
     <ClInclude Include="include\renderer\DescriptorBuffer.h" />
     <ClInclude Include="include\renderer\Renderer.h" />
@@ -221,11 +224,18 @@
     <ClInclude Include="include\renderer\RenderTypes.h" />
     <ClInclude Include="include\renderer\ResourceSlotmap.h" />
     <ClInclude Include="include\renderer\RingBuffer.h" />
-    <ClInclude Include="include\renderer\Sampler.h" />
-    <ClInclude Include="include\renderer\Texture.h" />
-    <ClInclude Include="include\renderer\VulkanIncludes.h" />
-    <ClInclude Include="include\renderer\VulkanResourceTracker.h" />
-    <ClInclude Include="include\renderer\VulkanBackend.h" />
+    <ClInclude Include="include\renderer\vulkan\VulkanImage.h" />
+    <ClInclude Include="include\renderer\vulkan\VulkanImageView.h" />
+    <ClInclude Include="include\renderer\vulkan\VulkanInstance.h" />
+    <ClInclude Include="include\renderer\vulkan\VulkanAllocator.h" />
+    <ClInclude Include="include\renderer\vulkan\VulkanBuffer.h" />
+    <ClInclude Include="include\renderer\vulkan\VulkanIncludes.h" />
+    <ClInclude Include="include\renderer\vulkan\VulkanResourceTracker.h" />
+    <ClInclude Include="include\renderer\vulkan\VulkanBackend.h" />
+    <ClInclude Include="include\renderer\vulkan\VulkanSwapChain.h" />
+    <ClInclude Include="include\renderer\vulkan\VulkanSync.h" />
+    <ClInclude Include="include\renderer\vulkan\VulkanTypes.h" />
+    <ClInclude Include="include\renderer\vulkan\VulkanUtils.h" />
     <ClInclude Include="include\Scene.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
