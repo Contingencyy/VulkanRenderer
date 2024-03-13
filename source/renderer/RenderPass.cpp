@@ -1,6 +1,4 @@
 #include "Precomp.h"
-#include "renderer/RenderPass.h"
-#include "renderer/RenderTypes.h"
 
 RenderPass::RenderPass(RenderPassType type)
 	: m_type(type)
@@ -13,7 +11,7 @@ RenderPass::~RenderPass()
 	vkDestroyPipelineLayout(vk_inst.device, m_pipeline_layout, nullptr);
 }
 
-void RenderPass::Begin(std::shared_ptr<CommandBuffer> command_buffer, const BeginInfo& begin_info)
+void RenderPass::Begin(VulkanCommandBuffer& command_buffer, const BeginInfo& begin_info)
 {
 	std::vector<VkImageMemoryBarrier2> barriers;
 
@@ -142,7 +140,7 @@ void RenderPass::SetDescriptorBufferOffsets(std::shared_ptr<CommandBuffer> comma
 	vk_inst.pFunc.cmd_set_descriptor_buffer_offsets_ext(command_buffer->GetHandle(), bind_point, m_pipeline_layout, first, count, indices, offsets);
 }
 
-void RenderPass::End(std::shared_ptr<CommandBuffer> command_buffer)
+void RenderPass::End(VulkanCommandBuffer& command_buffer)
 {
 	if (m_type == RENDER_PASS_TYPE_GRAPHICS)
 	{

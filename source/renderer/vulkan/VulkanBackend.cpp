@@ -1,6 +1,11 @@
 #include "Precomp.h"
 #include "renderer/vulkan/VulkanBackend.h"
 #include "renderer/vulkan/VulkanInstance.h"
+#include "renderer/vulkan/VulkanSwapChain.h"
+#include "renderer/vulkan/VulkanCommandQueue.h"
+#include "renderer/vulkan/VulkanCommandPool.h"
+#include "renderer/vulkan/VulkanCommandBuffer.h"
+#include "renderer/vulkan/VulkanCommands.h"
 #include "renderer/vulkan/VulkanUtils.h"
 #include "renderer/vulkan/VulkanResourceTracker.h"
 #include "renderer/DescriptorBuffer.h"
@@ -181,13 +186,6 @@ namespace Vulkan
 				required_extensions.erase(extension.extensionName);
 			}
 
-			bool swapchain_suitable = false;
-			if (required_extensions.empty())
-			{
-				SwapChainSupportDetails swapchain_support = QuerySwapChainSupport(device);
-				swapchain_suitable = !swapchain_support.formats.empty() && !swapchain_support.present_modes.empty();
-			}
-
 			// Request Physical Device Properties
 			VkPhysicalDeviceDescriptorBufferPropertiesEXT descriptor_buffer_properties = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_PROPERTIES_EXT };
 
@@ -220,7 +218,7 @@ namespace Vulkan
 			vkGetPhysicalDeviceFeatures2(device, &device_features2);
 
 			if (device_properties2.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU &&
-				required_extensions.empty() && swapchain_suitable &&
+				required_extensions.empty() &&
 				device_features2.features.samplerAnisotropy &&
 				descriptor_buffer_features.descriptorBuffer &&
 				buffer_device_address_features.bufferDeviceAddress &&
@@ -251,14 +249,7 @@ namespace Vulkan
 		}
 	}
 
-	struct QueueIndices
-	{
-		uint32_t present = ~0u;
-		uint32_t graphics_compute = ~0u;
-		uint32_t transfer = ~0u;
-	};
-
-	static QueueIndices FindQueueIndices()
+	static void FindQueueIndices()
 	{
 		uint32_t queue_family_count = 0;
 		vkGetPhysicalDeviceQueueFamilyProperties(vk_inst.physical_device, &queue_family_count, nullptr);
@@ -266,42 +257,42 @@ namespace Vulkan
 		std::vector<VkQueueFamilyProperties> queue_families(queue_family_count);
 		vkGetPhysicalDeviceQueueFamilyProperties(vk_inst.physical_device, &queue_family_count, queue_families.data());
 
-		QueueIndices queue_indices = {};
 		int32_t i = 0;
 		for (const auto& queue_family : queue_families)
 		{
 			VkBool32 present_supported = false;
 			VkCheckResult(vkGetPhysicalDeviceSurfaceSupportKHR(vk_inst.physical_device, i, vk_inst.swapchain.surface, &present_supported));
 
-			if (present_supported)
+			/*if (present_supported)
 			{
-				queue_indices.present = i;;
-			}
+				vk_inst.queues.present.vk_queue_index = i;
+			}*/
 			// Check queue for graphics and compute capabilities
 			if ((queue_family.queueFlags & VK_QUEUE_GRAPHICS_BIT) && (queue_family.queueFlags & VK_QUEUE_COMPUTE_BIT))
 			{
-				queue_indices.graphics_compute = i;
+				vk_inst.queues.graphics_compute.queue_family_index = i;
 			}
 			if (queue_family.queueFlags & VK_QUEUE_TRANSFER_BIT)
 			{
-				queue_indices.transfer = i;
+				vk_inst.queues.transfer.queue_family_index = i;
 			}
 
-			if (queue_indices.present != ~0u && queue_indices.graphics_compute != ~0u && queue_indices.transfer != ~0u)
+			if (//vk_inst.queues.present.vk_queue_index != ~0u &&
+				vk_inst.queues.graphics_compute.queue_family_index != ~0u &&
+				vk_inst.queues.transfer.queue_family_index != ~0u)
 				break;
 
 			i++;
 		}
-
-		return queue_indices;
 	}
 
 	static void CreateDevice()
 	{
-		QueueIndices queue_indices = FindQueueIndices();
+		FindQueueIndices();
 
 		std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
-		std::set<uint32_t> unique_queue_families = { queue_indices.present, queue_indices.graphics_compute, queue_indices.transfer };
+		std::set<uint32_t> unique_queue_families = { //vk_inst.queues.present.vk_queue_index,
+			vk_inst.queues.graphics_compute.queue_family_index, vk_inst.queues.transfer.queue_family_index };
 		float queue_priority = 1.0;
 
 		for (uint32_t queue_family : unique_queue_families)
@@ -366,8 +357,9 @@ namespace Vulkan
 		VkCheckResult(vkCreateDevice(vk_inst.physical_device, &device_create_info, nullptr, &vk_inst.device));
 
 		// Create queues
-		vk_inst.queues.graphics_compute = std::make_unique<CommandQueue>(COMMAND_QUEUE_TYPE_GRAPHICS_COMPUTE, queue_indices.graphics_compute);
-		vk_inst.queues.transfer = std::make_unique<CommandQueue>(COMMAND_QUEUE_TYPE_TRANSFER, queue_indices.transfer);
+		//vk_inst.queues.present = CreateCommandQueue(vk_inst.queues.present.vk_queue_index, 0);
+		vk_inst.queues.graphics_compute = CommandQueue::Create(VULKAN_COMMAND_BUFFER_TYPE_GRAPHICS_COMPUTE, vk_inst.queues.graphics_compute.queue_family_index, 0);
+		vk_inst.queues.transfer = CommandQueue::Create(VULKAN_COMMAND_BUFFER_TYPE_TRANSFER, vk_inst.queues.transfer.queue_family_index, 0);
 
 		// Load function pointers for extensions
 		LoadVulkanFunction<PFN_vkGetDescriptorEXT>("vkGetDescriptorEXT", vk_inst.pFunc.get_descriptor_ext);
@@ -471,11 +463,14 @@ namespace Vulkan
 
 		struct DescriptorBuffers
 		{
-			DescriptorBuffer uniform{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, RESERVED_DESCRIPTOR_UBO_COUNT * VulkanInstance::MAX_FRAMES_IN_FLIGHT };
+			DescriptorBuffer uniform{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, RESERVED_DESCRIPTOR_UBO_COUNT * Vulkan::MAX_FRAMES_IN_FLIGHT };
 			DescriptorBuffer storage_buffer{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER };
 			DescriptorBuffer storage_image{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE };
 			DescriptorBuffer sampled_image{ VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE };
 			DescriptorBuffer sampler{ VK_DESCRIPTOR_TYPE_SAMPLER };
+
+			std::vector<uint32_t> indices = { 0, 1, 2, 3, 4 };
+			std::vector<uint64_t> offsets = { 0, 0, 0, 0, 0 };
 		} descriptor_buffers;
 	} static* data;
 
@@ -523,30 +518,30 @@ namespace Vulkan
 		============================ PUBLIC INTERFACE FUNCTIONS =================================
 	*/
 
-	void Init(::GLFWwindow* window)
+	void Init(::GLFWwindow* window, uint32_t window_width, uint32_t window_height)
 	{
-		vk_inst.window = window;
-
-		ResourceTracker::Init();
-
 		CreateInstance();
 		EnableValidationLayers();
 
-		VkCheckResult(glfwCreateWindowSurface(vk_inst.instance, vk_inst.window, nullptr, &vk_inst.swapchain.surface));
+		VkCheckResult(glfwCreateWindowSurface(vk_inst.instance, window, nullptr, &vk_inst.swapchain.surface));
+		ResourceTracker::Init();
+
 		CreatePhysicalDevice();
 		CreateDevice();
+		SwapChain::Create(window_width, window_height);
 
 		data = new Data();
 	}
 
 	void Exit()
 	{
-		vk_inst.queues.graphics_compute->Flush();
-		vk_inst.queues.transfer->Flush();
+		//vkQueueWaitIdle(vk_inst.queues.present.vk_queue);
+		vkQueueWaitIdle(vk_inst.queues.graphics_compute.vk_queue);
+		vkQueueWaitIdle(vk_inst.queues.transfer.vk_queue);
 
 		delete data;
 
-		DestroySwapChain();
+		SwapChain::Destroy();
 		vkDestroySurfaceKHR(vk_inst.instance, vk_inst.swapchain.surface, nullptr);
 
 #ifdef ENABLE_VK_DEBUG_LAYER
@@ -567,13 +562,107 @@ namespace Vulkan
 
 	void BeginFrame()
 	{
-		LOG_WARN("Vulkan::BeginFrame", "IMPLEMENT");
+		// Get the next available image from the swapchain
+		VkResult result = Vulkan::SwapChain::AcquireNextImage();
+		if ((result == VK_ERROR_OUT_OF_DATE_KHR) || (result == VK_SUBOPTIMAL_KHR))
+		{
+			if (result == VK_ERROR_OUT_OF_DATE_KHR)
+			{
+				Vulkan::ResizeOutputResolution(data->output_resolution.width, data->output_resolution.height);
+				CreateRenderTargets();
+			}
+
+			return;
+		}
+		else
+		{
+			VkCheckResult(result);
+		}
+
+		// ImGui (backends) new frame
+		ImGui_ImplGlfw_NewFrame();
+		ImGui_ImplVulkan_NewFrame();
+		ImGui::NewFrame();
+
+		// Update UBO descriptor buffer offset
+		// We need a UBO per in-flight frame, so we need to update the offset at which we want to bind our UBOs from the descriptor buffer
+		data->descriptor_buffers.offsets[DESCRIPTOR_SET_UBO] = VK_ALIGN_POW2(
+			RESERVED_DESCRIPTOR_UBO_COUNT * vk_inst.current_frame_index * vk_inst.descriptor_sizes.uniform_buffer,
+			vk_inst.device_props.descriptor_buffer_offset_alignment
+		);
 	}
 
 	void EndFrame()
 	{
+		// Present
+		std::vector<VkSemaphore> present_wait_semaphore = { frame->sync.render_finished_semaphore_binary };
+		VkResult result = Vulkan::SwapChain::Present(present_wait_semaphore);
+
+		if ((result == VK_ERROR_OUT_OF_DATE_KHR) || (result == VK_SUBOPTIMAL_KHR))
+		{
+			Vulkan::ResizeOutputResolution(data->output_resolution.width, data->output_resolution.height);
+			CreateRenderTargets();
+
+			if (result == VK_ERROR_OUT_OF_DATE_KHR)
+			{
+				return;
+			}
+		}
+		else
+		{
+			VkCheckResult(result);
+		}
+
+		vk_inst.current_frame_index = (vk_inst.current_frame_index + 1) % Vulkan::MAX_FRAMES_IN_FLIGHT;
+
 		ResourceTracker::ReleaseStaleTempResources();
-		LOG_WARN("Vulkan::EndFrame", "IMPLEMENT");
+	}
+
+	void ResizeOutputResolution(uint32_t output_width, uint32_t output_height)
+	{
+		if (output_width == 0 || output_height == 0)
+		{
+			return;
+		}
+
+		vkDeviceWaitIdle(vk_inst.device);
+
+		SwapChain::Destroy();
+		SwapChain::Create(output_width, output_height);
+	}
+
+	void WaitDeviceIdle()
+	{
+		vkDeviceWaitIdle(vk_inst.device);
+	}
+
+	uint32_t GetCurrentBackBufferIndex()
+	{
+		return vk_inst.swapchain.current_image;
+	}
+
+	uint32_t GetCurrentFrameIndex()
+	{
+		return vk_inst.current_frame_index;
+	}
+
+	uint32_t GetLastFinishedFrameIndex()
+	{
+		// TODO: Could probably use a fence value here instead that signals the finish of a frame
+		return std::max(0, (int32_t)vk_inst.current_frame_index - (int32_t)Vulkan::MAX_FRAMES_IN_FLIGHT);
+	}
+
+	VulkanCommandQueue GetCommandQueue(VulkanCommandBufferType type)
+	{
+		switch (type)
+		{
+		case VULKAN_COMMAND_BUFFER_TYPE_GRAPHICS_COMPUTE:
+			return vk_inst.queues.graphics_compute;
+		case VULKAN_COMMAND_BUFFER_TYPE_TRANSFER:
+			return vk_inst.queues.transfer;
+		default:
+			VK_EXCEPT("Vulkan::GetCommandQueue", "Tried to retrieve a command queue for an unknown type");
+		}
 	}
 
 	DescriptorAllocation AllocateDescriptors(VkDescriptorType type, uint32_t num_descriptors, uint32_t align)
@@ -639,6 +728,16 @@ namespace Vulkan
 			data->descriptor_buffers.sampled_image.GetBindingInfo(),
 			data->descriptor_buffers.sampler.GetBindingInfo()
 		};
+	}
+
+	std::vector<uint32_t> GetDescriptorBufferIndices()
+	{
+		return data->descriptor_buffers.indices;
+	}
+
+	std::vector<uint64_t> GetDescriptorBufferOffsets()
+	{
+		return data->descriptor_buffers.offsets;
 	}
 
 	size_t GetDescriptorTypeSize(VkDescriptorType type)
@@ -883,7 +982,7 @@ namespace Vulkan
 		return pipeline;
 	}
 
-	void InitImGui()
+	void InitImGui(::GLFWwindow* window, const VulkanCommandBuffer& command_buffer)
 	{
 		IMGUI_CHECKVERSION();
 		ImGui::CreateContext();
@@ -904,20 +1003,18 @@ namespace Vulkan
 		pool_info.pPoolSizes = &pool_size;
 		VkCheckResult(vkCreateDescriptorPool(vk_inst.device, &pool_info, nullptr, &vk_inst.imgui.descriptor_pool));
 
-		QueueIndices queue_indices = FindQueueIndices();
-
 		// Init imgui
-		ImGui_ImplGlfw_InitForVulkan(vk_inst.window, true);
+		ImGui_ImplGlfw_InitForVulkan(window, true);
 		ImGui_ImplVulkan_InitInfo init_info = {};
 		init_info.Instance = vk_inst.instance;
 		init_info.PhysicalDevice = vk_inst.physical_device;
 		init_info.Device = vk_inst.device;
-		init_info.QueueFamily = queue_indices.graphics_compute;
-		init_info.Queue = vk_inst.queues.graphics_compute->GetVkQueue();
+		init_info.QueueFamily = vk_inst.queues.graphics_compute.queue_family_index;
+		init_info.Queue = vk_inst.queues.graphics_compute.vk_queue;
 		init_info.PipelineCache = VK_NULL_HANDLE;
 		init_info.DescriptorPool = vk_inst.imgui.descriptor_pool;
-		init_info.MinImageCount = VulkanInstance::MAX_FRAMES_IN_FLIGHT;
-		init_info.ImageCount = VulkanInstance::MAX_FRAMES_IN_FLIGHT;
+		init_info.MinImageCount = Vulkan::MAX_FRAMES_IN_FLIGHT;
+		init_info.ImageCount = Vulkan::MAX_FRAMES_IN_FLIGHT;
 		init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
 		init_info.Allocator = nullptr;
 		init_info.UseDynamicRendering = true;
@@ -926,10 +1023,8 @@ namespace Vulkan
 		ImGui_ImplVulkan_Init(&init_info, nullptr);
 
 		// Upload imgui font
-		std::shared_ptr<CommandBuffer> command_buffer = vk_inst.queues.graphics_compute->GetCommandBuffer();
-		ImGui_ImplVulkan_CreateFontsTexture(command_buffer->GetHandle());
-		vk_inst.queues.graphics_compute->ExecuteCommandBuffer(command_buffer);
-		vk_inst.queues.graphics_compute->Flush();
+		ImGui_ImplVulkan_CreateFontsTexture(command_buffer.vk_command_buffer);
+
 		ImGui_ImplVulkan_DestroyFontUploadObjects();
 	}
 

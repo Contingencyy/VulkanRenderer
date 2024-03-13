@@ -1,5 +1,4 @@
 #pragma once
-#include "renderer/VulkanBackend.h"
 
 enum RenderPassType
 {
@@ -13,7 +12,7 @@ public:
 	enum AttachmentSlot
 	{
 		// Attachment slots used by graphics passes
-		ATTACHMENT_SLOT_INVALID = 0xffffffff,
+		ATTACHMENT_SLOT_INVALID = 0xFFFFFFFF,
 		ATTACHMENT_SLOT_COLOR0,
 		ATTACHMENT_SLOT_COLOR1,
 		ATTACHMENT_SLOT_DEPTH_STENCIL,
@@ -57,10 +56,8 @@ public:
 	RenderPass(RenderPassType type);
 	~RenderPass();
 
-	void Begin(std::shared_ptr<CommandBuffer> command_buffer, const BeginInfo& begin_info);
-	void PushConstants(std::shared_ptr<CommandBuffer> command_buffer, VkShaderStageFlags stage_bits, uint32_t offset, uint32_t size, const void* ptr);
-	void SetDescriptorBufferOffsets(std::shared_ptr<CommandBuffer> command_buffer, uint32_t first, uint32_t count, const uint32_t* indices, const VkDeviceSize* offsets);
-	void End(std::shared_ptr<CommandBuffer> command_buffer);
+	void Begin(VulkanCommandBuffer& command_buffer, const BeginInfo& begin_info);
+	void End(VulkanCommandBuffer& command_buffer);
 
 	void SetAttachmentInfos(const std::vector<AttachmentInfo>& attachment_infos);
 	void SetAttachment(AttachmentSlot slot, TextureView* attachment_view);

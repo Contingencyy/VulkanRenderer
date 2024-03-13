@@ -11,7 +11,7 @@ namespace Assets
 namespace Renderer
 {
 
-	void Init(GLFWwindow* window);
+	void Init(GLFWwindow* window, uint32_t window_width, uint32_t window_height);
 	void Exit();
 
 	struct BeginFrameInfo

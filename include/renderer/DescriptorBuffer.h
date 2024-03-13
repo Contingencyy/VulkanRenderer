@@ -1,5 +1,5 @@
 #pragma once
-#include "renderer/VulkanIncludes.h"
+#include "renderer/vulkan/VulkanTypes.h"
 
 class DescriptorAllocation;
 
@@ -22,8 +22,8 @@ private:
 	VkDescriptorType m_descriptor_type;
 	VkDescriptorSetLayout m_layout = VK_NULL_HANDLE;
 
-	VkBuffer m_vk_buffer = VK_NULL_HANDLE;
-	VkDeviceMemory m_buffer_memory = VK_NULL_HANDLE;
+	VulkanBuffer m_buffer;
+	VulkanMemory m_memory;
 
 	uint32_t m_num_descriptors = 0;
 	uint32_t m_descriptor_size = 0;

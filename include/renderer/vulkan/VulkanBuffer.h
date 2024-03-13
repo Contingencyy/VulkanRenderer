@@ -5,9 +5,17 @@
 namespace Vulkan
 {
 
-	VulkanBuffer CreateBuffer(const BufferCreateInfo& buffer_info);
-	void DestroyBuffer(const VulkanBuffer& buffer);
+	namespace Buffer
+	{
 
-	void CopyBuffers(VulkanCommandBuffer& command_buffer, VulkanBuffer& src_buffer, uint64_t src_offset, VulkanBuffer& dst_buffer, uint64_t dst_offset, uint64_t num_bytes);
+		VulkanBuffer CreateVertex(uint64_t size_in_bytes, const std::string& name);
+		VulkanBuffer CreateIndex(uint64_t size_in_bytes, const std::string& name);
+
+		VulkanBuffer Create(const BufferCreateInfo& buffer_info);
+		void Destroy(const VulkanBuffer& buffer);
+
+		VkMemoryRequirements GetMemoryRequirements(const VulkanBuffer& buffer);
+
+	}
 
 }

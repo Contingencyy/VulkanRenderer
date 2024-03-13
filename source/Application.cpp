@@ -17,6 +17,8 @@ namespace Application
 	struct Data
 	{
 		GLFWwindow* window;
+		uint32_t window_width = 0;
+		uint32_t window_height = 0;
 
 		bool is_running = false;
 		bool should_close = false;
@@ -33,6 +35,9 @@ namespace Application
 
 	static void FramebufferResizeCallback(GLFWwindow* window, int width, int height)
 	{
+		data.window_width = static_cast<uint32_t>(width);
+		data.window_height = static_cast<uint32_t>(height);
+
 		if (width > 0 && height > 0)
 		{
 			data.active_scene.GetActiveCamera().OnResolutionChanged(width, height);
@@ -51,6 +56,12 @@ namespace Application
 		glfwSetCursorPosCallback(data.window, Input::GLFWCursorPosCallback);
 		glfwSetScrollCallback(data.window, Input::GLTFMouseScrollCollback);
 		glfwSetInputMode(data.window, GLFW_LOCK_KEY_MODS, GLFW_TRUE);
+
+		int32_t width = 0, height = 0;
+		glfwGetFramebufferSize(data.window, &width, &height);
+
+		data.window_width = static_cast<uint32_t>(width);
+		data.window_height = static_cast<uint32_t>(height);
 	}
 
 	static void DestroyWindow()
@@ -115,7 +126,7 @@ namespace Application
 		CreateWindow();
 
 		Input::Init(data.window);
-		Renderer::Init(data.window);
+		Renderer::Init(data.window, data.window_width, data.window_height);
 
 		Assets::Init();
 		Assets::LoadTexture("assets/textures/hdr/Env_Plaza.hdr", "Env", TEXTURE_FORMAT_RGBA32_SFLOAT, true, true);

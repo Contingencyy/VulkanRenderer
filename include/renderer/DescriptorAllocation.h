@@ -1,5 +1,5 @@
 #pragma once
-#include "renderer/VulkanIncludes.h"
+#include "renderer/vulkan/VulkanTypes.h"
 
 class Buffer;
 class Sampler;

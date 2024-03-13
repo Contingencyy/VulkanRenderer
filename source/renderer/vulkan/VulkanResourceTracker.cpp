@@ -1,5 +1,6 @@
 #include "Precomp.h"
 #include "renderer/vulkan/VulkanResourceTracker.h"
+#include "renderer/vulkan/VulkanSync.h"
 
 namespace Vulkan
 {
@@ -10,15 +11,16 @@ namespace Vulkan
 		struct TrackedBuffer
 		{
 			VulkanBuffer buffer;
+
 			VulkanFence fence;
 		};
 
 		struct TrackedImage
 		{
 			VulkanImage image;
-			VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
 			VkPipelineStageFlags last_pipeline_stage_used = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
 
+			VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
 			std::vector<VkImageLayout> subresource_layouts;
 
 			VulkanFence fence;
@@ -40,7 +42,7 @@ namespace Vulkan
 			delete data;
 		}
 
-		void TrackBuffer(VulkanBuffer buffer)
+		void TrackBuffer(const VulkanBuffer& buffer)
 		{
 			auto tracked = data->tracked_buffers.find(buffer.vk_buffer);
 			VK_ASSERT(tracked == data->tracked_buffers.end() && "Tracked a buffer that was already being tracked");
@@ -51,15 +53,16 @@ namespace Vulkan
 			}
 		}
 
-		void TrackBufferTemp(VulkanBuffer buffer, VulkanFence fence)
+		void TrackBufferTemp(const VulkanBuffer& buffer, const VulkanFence& fence, uint64_t fence_value)
 		{
 			auto tracked = data->tracked_buffers.find(buffer.vk_buffer);
 			VK_ASSERT(tracked != data->tracked_buffers.end() && "Tried to add temporary tracking to a buffer that was not previously tracked");
 
 			tracked->second.fence = fence;
+			tracked->second.fence.fence_value = fence_value;
 		}
 
-		void RemoveBuffer(VulkanBuffer buffer)
+		void RemoveBuffer(const VulkanBuffer& buffer)
 		{
 			VK_ASSERT(data->tracked_buffers.find(buffer.vk_buffer) != data->tracked_buffers.end() &&
 				"Tried to remove a buffer from being tracked that was already not tracked");
@@ -67,7 +70,7 @@ namespace Vulkan
 			data->tracked_buffers.erase(buffer.vk_buffer);
 		}
 
-		void TrackImage(VulkanImage image, VkImageLayout layout)
+		void TrackImage(const VulkanImage& image, VkImageLayout layout)
 		{
 			auto tracked = data->tracked_images.find(image.vk_image);
 			VK_ASSERT(tracked == data->tracked_images.end() && "Tracked an image that was already being tracked");
@@ -76,22 +79,23 @@ namespace Vulkan
 			{
 				data->tracked_images.emplace(image, TrackedImage{
 						.image = image,
-						.layout = layout,
-						.last_pipeline_stage_used = VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT
+						.last_pipeline_stage_used = VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT,
+						.layout = layout
 					}
 				);
 			}
 		}
 
-		void TrackImageTemp(VulkanImage image, VulkanFence fence)
+		void TrackImageTemp(const VulkanImage& image, const VulkanFence& fence, uint64_t fence_value)
 		{
 			auto tracked = data->tracked_images.find(image.vk_image);
 			VK_ASSERT(tracked != data->tracked_images.end() && "Tried to add temporary tracking to an image that was not previously tracked");
 			
 			tracked->second.fence = fence;
+			tracked->second.fence.fence_value = fence_value;
 		}
 
-		void RemoveImage(VulkanImage image)
+		void RemoveImage(const VulkanImage& image)
 		{
 			VK_ASSERT(data->tracked_images.find(image.vk_image) != data->tracked_images.end() &&
 				"Tried to remove an image from being tracked that was already not tracked");
@@ -299,7 +303,7 @@ namespace Vulkan
 			for (auto it = data->tracked_buffers.begin(); it != data->tracked_buffers.end();)
 			{
 				if (it->second.fence.vk_semaphore &&
-					it->second.fence.fence_value <= Vulkan::GetSemaphoreFenceValue(it->second.fence.vk_semaphore))
+					it->second.fence.fence_value <= Vulkan::Sync::GetFenceValue(it->second.fence))
 				{
 					it = data->tracked_buffers.erase(it);
 				}
@@ -308,7 +312,7 @@ namespace Vulkan
 			for (auto it = data->tracked_images.begin(); it != data->tracked_images.end();)
 			{
 				if (it->second.fence.vk_semaphore &&
-					it->second.fence.fence_value <= Vulkan::GetSemaphoreFenceValue(it->second.fence.vk_semaphore))
+					it->second.fence.fence_value <= Vulkan::Sync::GetFenceValue(it->second.fence))
 				{
 					it = data->tracked_images.erase(it);
 				}

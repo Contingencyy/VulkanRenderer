@@ -10,16 +10,29 @@ typedef struct GLFWwindow;
 namespace Vulkan
 {
 
-	void Init(::GLFWwindow* window);
+	static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
+
+	void Init(::GLFWwindow* window, uint32_t window_width, uint32_t window_height);
 	void Exit();
 
 	void BeginFrame();
 	void EndFrame();
 
+	void ResizeOutputResolution(uint32_t output_width, uint32_t output_height);
+	void WaitDeviceIdle();
+
+	inline uint32_t GetCurrentBackBufferIndex();
+	inline uint32_t GetCurrentFrameIndex();
+	inline uint32_t GetLastFinishedFrameIndex();
+
+	VulkanCommandQueue GetCommandQueue(VulkanCommandBufferType type);
+
 	DescriptorAllocation AllocateDescriptors(VkDescriptorType type, uint32_t num_descriptors = 1, uint32_t align = 0);
 	void FreeDescriptors(const DescriptorAllocation& descriptors);
 	std::vector<VkDescriptorSetLayout> GetDescriptorBufferLayouts();
 	std::vector<VkDescriptorBufferBindingInfoEXT> GetDescriptorBufferBindingInfos();
+	std::vector<uint32_t> GetDescriptorBufferIndices();
+	std::vector<uint64_t> GetDescriptorBufferOffsets();
 	size_t GetDescriptorTypeSize(VkDescriptorType type);
 
 	VulkanSampler CreateSampler(const SamplerCreateInfo& sampler_info);
@@ -54,7 +67,7 @@ namespace Vulkan
 
 	VkPipeline CreateComputePipeline(const ComputePipelineInfo& info, VkPipelineLayout pipeline_layout);
 
-	void InitImGui();
+	void InitImGui(::GLFWwindow* window, const VulkanCommandBuffer& command_buffer);
 	void ExitImGui();
 	VkDescriptorSet AddImGuiTexture(VkImage image, VkImageView image_view, VkSampler sampler);
 

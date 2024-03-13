@@ -6,60 +6,65 @@
 namespace Vulkan
 {
 
-	VulkanFence CreateFence(VulkanFenceType type, uint64_t initial_fence_value)
+	namespace Sync
 	{
-		VkSemaphoreTypeCreateInfo vk_semaphore_create_info = { VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO };
-		vk_semaphore_create_info.semaphoreType = type == VULKAN_FENCE_TYPE_TIMELINE ? VK_SEMAPHORE_TYPE_TIMELINE : VK_SEMAPHORE_TYPE_BINARY;
-		vk_semaphore_create_info.initialValue = initial_fence_value;
 
-		VkSemaphoreCreateInfo semaphore_info = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
-		semaphore_info.flags = 0;
-		semaphore_info.pNext = &vk_semaphore_create_info;
+		VulkanFence CreateFence(VulkanFenceType type, uint64_t initial_fence_value)
+		{
+			VkSemaphoreTypeCreateInfo vk_semaphore_create_info = { VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO };
+			vk_semaphore_create_info.semaphoreType = type == VULKAN_FENCE_TYPE_TIMELINE ? VK_SEMAPHORE_TYPE_TIMELINE : VK_SEMAPHORE_TYPE_BINARY;
+			vk_semaphore_create_info.initialValue = initial_fence_value;
 
-		VkSemaphore vk_semaphore = VK_NULL_HANDLE;
-		VkCheckResult(vkCreateSemaphore(vk_inst.device, &semaphore_info, nullptr, &vk_semaphore));
+			VkSemaphoreCreateInfo semaphore_info = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+			semaphore_info.flags = 0;
+			semaphore_info.pNext = &vk_semaphore_create_info;
 
-		VulkanFence fence = {};
-		fence.type = type;
-		fence.vk_semaphore = vk_semaphore;
-		fence.fence_value = initial_fence_value;
+			VkSemaphore vk_semaphore = VK_NULL_HANDLE;
+			VkCheckResult(vkCreateSemaphore(vk_inst.device, &semaphore_info, nullptr, &vk_semaphore));
 
-		return fence;
-	}
+			VulkanFence fence = {};
+			fence.type = type;
+			fence.vk_semaphore = vk_semaphore;
+			fence.fence_value = initial_fence_value;
 
-	void DestroyFence(VulkanFence& fence)
-	{
-		vkDestroySemaphore(vk_inst.device, fence.vk_semaphore, nullptr);
-	}
+			return fence;
+		}
 
-	void SignalFence(VulkanFence& fence)
-	{
-		VkSemaphoreSignalInfo signal_info = { VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO };
-		signal_info.semaphore = fence.vk_semaphore;
-		signal_info.value = ++fence.fence_value;
-		vkSignalSemaphore(vk_inst.device, &signal_info);
-	}
+		void DestroyFence(const VulkanFence& fence)
+		{
+			vkDestroySemaphore(vk_inst.device, fence.vk_semaphore, nullptr);
+		}
 
-	void WaitOnFence(const VulkanFence& fence, uint64_t wait_value)
-	{
-		VkSemaphoreWaitInfo wait_info = { VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO };
-		wait_info.semaphoreCount = 1;
-		wait_info.pSemaphores = &fence.vk_semaphore;
-		wait_info.pValues = &wait_value;
-		wait_info.flags = 0;
-		vkWaitSemaphores(vk_inst.device, &wait_info, UINT64_MAX);
-	}
+		void SignalFence(VulkanFence& fence)
+		{
+			VkSemaphoreSignalInfo signal_info = { VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO };
+			signal_info.semaphore = fence.vk_semaphore;
+			signal_info.value = ++fence.fence_value;
+			vkSignalSemaphore(vk_inst.device, &signal_info);
+		}
 
-	uint64_t GetFenceValue(const VulkanFence& fence)
-	{
-		uint64_t fence_value;
-		vkGetSemaphoreCounterValue(vk_inst.device, fence.vk_semaphore, &fence_value);
-		return fence_value;
-	}
+		void WaitOnFence(const VulkanFence& fence, uint64_t wait_value)
+		{
+			VkSemaphoreWaitInfo wait_info = { VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO };
+			wait_info.semaphoreCount = 1;
+			wait_info.pSemaphores = &fence.vk_semaphore;
+			wait_info.pValues = &wait_value;
+			wait_info.flags = 0;
+			vkWaitSemaphores(vk_inst.device, &wait_info, UINT64_MAX);
+		}
 
-	bool GetFenceCompleted(const VulkanFence& fence)
-	{
-		return (fence.fence_value >= GetFenceValue(fence));
+		uint64_t GetFenceValue(const VulkanFence& fence)
+		{
+			uint64_t fence_value;
+			vkGetSemaphoreCounterValue(vk_inst.device, fence.vk_semaphore, &fence_value);
+			return fence_value;
+		}
+
+		bool IsFenceCompleted(const VulkanFence& fence)
+		{
+			return (fence.fence_value >= GetFenceValue(fence));
+		}
+
 	}
 
 }

@@ -1,5 +1,5 @@
 #pragma once
-#include "renderer/VulkanIncludes.h"
+#include "renderer/vulkan/VulkanTypes.h"
 
 /*
 
@@ -17,18 +17,12 @@ public:
 public:
 	struct Allocation
 	{
-		uint64_t byte_offset = 0;
+		VulkanBuffer buffer;
+
 		uint8_t* ptr_begin = nullptr;
 		uint8_t* ptr_end = nullptr;
 
-		void Write(uint64_t offset, uint64_t num_bytes, const void* data);
-		VkBuffer GetHandle() const { return vk_buffer; }
-
-	private:
-		friend class RingBuffer;
-
-		VkBuffer vk_buffer = VK_NULL_HANDLE;
-
+		void WriteBuffer(uint64_t byte_offset, uint64_t num_bytes, const void* data);
 	};
 
 public:
@@ -36,7 +30,7 @@ public:
 	RingBuffer(uint64_t byte_size);
 	~RingBuffer();
 
-	Allocation Allocate(uint64_t num_bytes, uint32_t frame_index, uint16_t align = RING_BUFFER_ALLOC_DEFAULT_ALIGNMENT);
+	Allocation Allocate(uint64_t num_bytes, uint16_t align = RING_BUFFER_ALLOC_DEFAULT_ALIGNMENT);
 
 private:
 	struct InFlightAllocation
@@ -50,10 +44,7 @@ private:
 
 private:
 	VulkanBuffer m_buffer;
-	VkBuffer m_vk_buffer = VK_NULL_HANDLE;
-	VkDeviceMemory m_vk_memory = VK_NULL_HANDLE;
 
-	uint64_t m_byte_size = 0;
 	uint8_t* m_ptr_begin = nullptr;
 	uint8_t* m_ptr_at = nullptr;
 	uint8_t* m_ptr_free_until = nullptr;

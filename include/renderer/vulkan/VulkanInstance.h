@@ -5,10 +5,6 @@ namespace Vulkan
 
 	struct VulkanInstance
 	{
-		static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
-
-		::GLFWwindow* window;
-
 		std::vector<const char*> extensions =
 		{
 			VK_KHR_SWAPCHAIN_EXTENSION_NAME,
@@ -22,7 +18,7 @@ namespace Vulkan
 		VkInstance instance = VK_NULL_HANDLE;
 		VkPhysicalDevice physical_device = VK_NULL_HANDLE;
 		VkDevice device = VK_NULL_HANDLE;
-		uint32_t current_frame = 0;
+		uint32_t current_frame_index = 0;
 		uint32_t last_finished_frame = 0;
 
 		struct DeviceProperties
@@ -52,13 +48,14 @@ namespace Vulkan
 			bool vsync_enabled = true;
 
 			std::vector<VulkanImage> images;
-			std::vector<VkSemaphore> image_available_semaphores;
+			std::vector<VulkanFence> image_available_fences;
 		} swapchain;
 
 		struct Queues
 		{
-			std::unique_ptr<CommandQueue> graphics_compute;
-			std::unique_ptr<CommandQueue> transfer;
+			//VulkanCommandQueue present;
+			VulkanCommandQueue graphics_compute;
+			VulkanCommandQueue transfer;
 		} queues;
 
 		struct Debug
