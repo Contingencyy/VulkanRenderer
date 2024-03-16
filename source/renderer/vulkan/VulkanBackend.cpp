@@ -6,6 +6,7 @@
 #include "renderer/vulkan/VulkanCommandPool.h"
 #include "renderer/vulkan/VulkanCommandBuffer.h"
 #include "renderer/vulkan/VulkanCommands.h"
+#include "renderer/vulkan/VulkanDescriptor.h"
 #include "renderer/vulkan/VulkanUtils.h"
 #include "renderer/vulkan/VulkanResourceTracker.h"
 #include "renderer/DescriptorBuffer.h"
@@ -460,18 +461,6 @@ namespace Vulkan
 			shaderc::Compiler compiler;
 			ShadercIncluder includer;
 		} shader_compiler;
-
-		struct DescriptorBuffers
-		{
-			DescriptorBuffer uniform{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, RESERVED_DESCRIPTOR_UBO_COUNT * Vulkan::MAX_FRAMES_IN_FLIGHT };
-			DescriptorBuffer storage_buffer{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER };
-			DescriptorBuffer storage_image{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE };
-			DescriptorBuffer sampled_image{ VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE };
-			DescriptorBuffer sampler{ VK_DESCRIPTOR_TYPE_SAMPLER };
-
-			std::vector<uint32_t> indices = { 0, 1, 2, 3, 4 };
-			std::vector<uint64_t> offsets = { 0, 0, 0, 0, 0 };
-		} descriptor_buffers;
 	} static* data;
 
 	static std::vector<uint32_t> CompileShader(const char* filepath, shaderc_shader_kind shader_type)
@@ -530,6 +519,8 @@ namespace Vulkan
 		CreateDevice();
 		SwapChain::Create(window_width, window_height);
 
+		Descriptor::Init();
+
 		data = new Data();
 	}
 
@@ -541,6 +532,7 @@ namespace Vulkan
 
 		delete data;
 
+		Descriptor::Exit();
 		SwapChain::Destroy();
 		vkDestroySurfaceKHR(vk_inst.instance, vk_inst.swapchain.surface, nullptr);
 
@@ -665,100 +657,6 @@ namespace Vulkan
 		}
 	}
 
-	DescriptorAllocation AllocateDescriptors(VkDescriptorType type, uint32_t num_descriptors, uint32_t align)
-	{
-		switch (type)
-		{
-		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
-			return data->descriptor_buffers.uniform.Allocate(num_descriptors, align);
-		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
-			return data->descriptor_buffers.storage_buffer.Allocate(num_descriptors, align);
-		case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
-			return data->descriptor_buffers.storage_image.Allocate(num_descriptors, align);
-		case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
-			return data->descriptor_buffers.sampled_image.Allocate(num_descriptors, align);
-		case VK_DESCRIPTOR_TYPE_SAMPLER:
-			return data->descriptor_buffers.sampler.Allocate(num_descriptors, align);
-		default:
-			VK_EXCEPT("Vulkan::AllocateDescriptors", "Tried to allocate descriptors for a descriptor type that is not supported");
-		}
-	}
-
-	void FreeDescriptors(const DescriptorAllocation& descriptors)
-	{
-		if (descriptors.IsNull())
-			return;
-
-		switch (descriptors.GetType())
-		{
-		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
-			return data->descriptor_buffers.uniform.Free(descriptors);
-		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
-			return data->descriptor_buffers.storage_buffer.Free(descriptors);
-		case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
-			return data->descriptor_buffers.storage_image.Free(descriptors);
-		case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
-			return data->descriptor_buffers.sampled_image.Free(descriptors);
-		case VK_DESCRIPTOR_TYPE_SAMPLER:
-			return data->descriptor_buffers.sampler.Free(descriptors);
-		default:
-			VK_EXCEPT("Vulkan::AllocateDescriptors", "Tried to allocate descriptors for a descriptor type that is not supported");
-		}
-	}
-
-	std::vector<VkDescriptorSetLayout> GetDescriptorBufferLayouts()
-	{
-		return std::vector<VkDescriptorSetLayout>
-		{
-			data->descriptor_buffers.uniform.GetDescriptorSetLayout(),
-			data->descriptor_buffers.storage_buffer.GetDescriptorSetLayout(),
-			data->descriptor_buffers.storage_image.GetDescriptorSetLayout(),
-			data->descriptor_buffers.sampled_image.GetDescriptorSetLayout(),
-			data->descriptor_buffers.sampler.GetDescriptorSetLayout()
-		};
-	}
-
-	std::vector<VkDescriptorBufferBindingInfoEXT> GetDescriptorBufferBindingInfos()
-	{
-		return std::vector<VkDescriptorBufferBindingInfoEXT>
-		{
-			data->descriptor_buffers.uniform.GetBindingInfo(),
-			data->descriptor_buffers.storage_buffer.GetBindingInfo(),
-			data->descriptor_buffers.storage_image.GetBindingInfo(),
-			data->descriptor_buffers.sampled_image.GetBindingInfo(),
-			data->descriptor_buffers.sampler.GetBindingInfo()
-		};
-	}
-
-	std::vector<uint32_t> GetDescriptorBufferIndices()
-	{
-		return data->descriptor_buffers.indices;
-	}
-
-	std::vector<uint64_t> GetDescriptorBufferOffsets()
-	{
-		return data->descriptor_buffers.offsets;
-	}
-
-	size_t GetDescriptorTypeSize(VkDescriptorType type)
-	{
-		switch (type)
-		{
-		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
-			return vk_inst.descriptor_sizes.uniform_buffer;
-		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
-			return vk_inst.descriptor_sizes.storage_buffer;
-		case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
-			return vk_inst.descriptor_sizes.storage_image;
-		case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
-			return vk_inst.descriptor_sizes.sampled_image;
-		case VK_DESCRIPTOR_TYPE_SAMPLER:
-			return vk_inst.descriptor_sizes.sampler;
-		default:
-			VK_EXCEPT("Vulkan::GetDescriptorTypeSize", "Tried to retrieve descriptor size for a descriptor type that is not supported");
-		}
-	}
-
 	VulkanSampler CreateSampler(const SamplerCreateInfo& sampler_info)
 	{
 		VkSamplerCreateInfo vk_sampler_info = { VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
@@ -782,6 +680,8 @@ namespace Vulkan
 
 		VulkanSampler sampler = {};
 		sampler.vk_sampler = vk_sampler;
+		sampler.descriptor = Vulkan::Descriptor::Allocate(VULKAN_DESCRIPTOR_TYPE_SAMPLER);
+		Vulkan::Descriptor::Write(sampler.descriptor, sampler);
 
 		return sampler;
 	}

@@ -154,7 +154,7 @@ struct BufferCreateInfo
 {
 	Flags usage_flags = BUFFER_USAGE_NONE;
 	Flags memory_flags = GPU_MEMORY_DEVICE_LOCAL;
-	size_t size_in_bytes = 0;
+	uint64_t size_in_bytes = 0;
 
 	std::string name = "Unnamed Buffer";
 };

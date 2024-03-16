@@ -10,46 +10,21 @@
 namespace Vulkan
 {
 
-	VulkanCommandBuffer GetCommandBuffer(VulkanCommandBufferType type)
-	{
-		VulkanCommandBuffer command_buffer;
-		switch (command_buffer.type)
-		{
-		case VULKAN_COMMAND_BUFFER_TYPE_GRAPHICS_COMPUTE:
-			command_buffer = CommandBuffer::Allocate(vk_inst.command_pools.graphics_compute);
-			break;
-		case VULKAN_COMMAND_BUFFER_TYPE_TRANSFER:
-			command_buffer = CommandBuffer::Allocate(vk_inst.command_pools.transfer);
-			break;
-		default:
-			VK_EXCEPT("VulkanCommands::BeginRecording", "Tried to begin recording on a command buffer type that is invalid");
-			break;
-		}
-
-		return command_buffer;
-	}
-
-	void FreeCommandBuffer(VulkanCommandBuffer& command_buffer)
-	{
-		VulkanCommandPool command_pool;
-		switch (command_buffer.type)
-		{
-		case VULKAN_COMMAND_BUFFER_TYPE_GRAPHICS_COMPUTE:
-			command_pool = vk_inst.command_pools.graphics_compute;
-			break;
-		case VULKAN_COMMAND_BUFFER_TYPE_TRANSFER:
-			command_pool = vk_inst.command_pools.transfer;
-			break;
-		default:
-			VK_EXCEPT("VulkanCommands::BeginRecording", "Tried to begin recording on a command buffer type that is invalid");
-			break;
-		}
-
-		CommandBuffer::Free(command_pool, command_buffer);
-	}
-
 	namespace Command
 	{
+
+		static VkPipelineBindPoint ToVkPipelineBindPoint(VulkanPipelineType type)
+		{
+			switch (type)
+			{
+			case VULKAN_PIPELINE_TYPE_GRAPHICS:
+				return VK_PIPELINE_BIND_POINT_GRAPHICS;
+			case VULKAN_PIPELINE_TYPE_COMPUTE:
+				return VK_PIPELINE_BIND_POINT_COMPUTE;
+			default:
+				VK_EXCEPT("Command::ToVkPipelineBindPoint", "Invalid VulkanPipelineType");
+			}
+		}
 
 		static VkIndexType ToVkIndexType(uint32_t index_byte_size)
 		{
@@ -64,6 +39,12 @@ namespace Vulkan
 			}
 		}
 
+		void BindPipeline(VulkanCommandBuffer& command_buffer, const VulkanPipeline& pipeline)
+		{
+			vkCmdBindPipeline(command_buffer.vk_command_buffer, ToVkPipelineBindPoint(pipeline.type), pipeline.vk_pipeline);
+			command_buffer.pipeline_bound = pipeline;
+		}
+
 		void SetViewport(const VulkanCommandBuffer& command_buffer, uint32_t first_viewport, uint32_t num_viewports, const VkViewport* const vk_viewports)
 		{
 			vkCmdSetViewport(command_buffer.vk_command_buffer, first_viewport, num_viewports, vk_viewports);
@@ -72,6 +53,11 @@ namespace Vulkan
 		void SetScissor(const VulkanCommandBuffer& command_buffer, uint32_t first_scissor, uint32_t num_scissors, const VkRect2D* const vk_scissor_rects)
 		{
 			vkCmdSetScissor(command_buffer.vk_command_buffer, first_scissor, num_scissors, vk_scissor_rects);
+		}
+
+		void PushConstants(const VulkanCommandBuffer& command_buffer, VkShaderStageFlags stage_flags, uint32_t byte_offset, uint32_t num_bytes, const void* data)
+		{
+			vkCmdPushConstants(command_buffer.vk_command_buffer, command_buffer.pipeline_bound.vk_pipeline_layout, stage_flags, byte_offset, num_bytes, data);
 		}
 
 		void DrawGeometry(const VulkanCommandBuffer& command_buffer, uint32_t num_vertex_buffers, const VulkanBuffer* vertex_buffers,

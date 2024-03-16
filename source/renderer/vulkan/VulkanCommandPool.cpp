@@ -81,6 +81,11 @@ namespace Vulkan
 			vkDestroyCommandPool(vk_inst.device, command_pool.vk_command_pool, nullptr);
 		}
 
+		void Reset(const VulkanCommandPool& command_pool)
+		{
+			vkResetCommandPool(vk_inst.device, command_pool.vk_command_pool, 0);
+		}
+
 	}
 
 }

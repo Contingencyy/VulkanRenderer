@@ -7,8 +7,12 @@ namespace Vulkan
 	namespace Command
 	{
 
+		inline void BindPipeline(VulkanCommandBuffer& command_buffer, const VulkanPipeline& pipeline);
+
 		inline void SetViewport(const VulkanCommandBuffer& command_buffer, uint32_t first_viewport, uint32_t num_viewports, const VkViewport* const vk_viewports);
 		inline void SetScissor(const VulkanCommandBuffer& command_buffer, uint32_t first_scissor, uint32_t num_scissors, const VkRect2D* const vk_scissor_rects);
+		inline void PushConstants(const VulkanCommandBuffer& command_buffer, VkShaderStageFlags stage_flags, uint32_t byte_offset, uint32_t num_bytes, const void* data);
+
 		inline void DrawGeometry(const VulkanCommandBuffer& command_buffer, uint32_t num_vertex_buffers, const VulkanBuffer* vertex_buffers,
 			uint32_t num_vertices, uint32_t num_instances = 1, uint32_t first_vertex = 0, uint32_t first_instance = 0);
 		inline void DrawGeometryIndexed(const VulkanCommandBuffer& command_buffer, uint32_t num_vertex_buffers, const VulkanBuffer* const vertex_buffers, const VulkanBuffer* const index_buffer,

@@ -29,11 +29,11 @@ namespace Vulkan
 
 		struct DescriptorSizes
 		{
-			size_t uniform_buffer;
-			size_t storage_buffer;
-			size_t storage_image;
-			size_t sampled_image;
-			size_t sampler;
+			size_t uniform_buffer = 0;
+			size_t storage_buffer = 0;
+			size_t storage_image = 0;
+			size_t sampled_image = 0;
+			size_t sampler = 0;
 		} descriptor_sizes;
 
 		struct Swapchain

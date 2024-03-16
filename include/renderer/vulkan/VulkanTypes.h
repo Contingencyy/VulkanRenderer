@@ -1,6 +1,8 @@
 #pragma once
 #include "renderer/vulkan/VulkanIncludes.h"
 
+#include <vector>
+
 enum VulkanFenceType
 {
 	VULKAN_FENCE_TYPE_BINARY,
@@ -14,6 +16,20 @@ struct VulkanFence
 	VkSemaphore vk_semaphore = VK_NULL_HANDLE;
 	VkPipelineStageFlags2 stage_flags = VK_PIPELINE_STAGE_2_NONE;
 	uint64_t fence_value = 0;
+};
+
+enum VulkanPipelineType
+{
+	VULKAN_PIPELINE_TYPE_GRAPHICS,
+	VULKAN_PIPELINE_TYPE_COMPUTE,
+	VULKAN_PIPELINE_TYPE_NUM_TYPES
+};
+
+struct VulkanPipeline
+{
+	VulkanPipelineType type = VULKAN_PIPELINE_TYPE_NUM_TYPES;
+	VkPipeline vk_pipeline = VK_NULL_HANDLE;
+	VkPipelineLayout vk_pipeline_layout = VK_NULL_HANDLE;
 };
 
 enum VulkanCommandBufferType
@@ -41,8 +57,30 @@ struct VulkanCommandBuffer
 	VkCommandBuffer vk_command_buffer = VK_NULL_HANDLE;
 	VulkanCommandBufferType type = VULKAN_COMMAND_BUFFER_TYPE_NUM_TYPES;
 
+	VulkanPipeline pipeline_bound;
+
 	std::vector<VulkanFence> wait_fences;
 	std::vector<VulkanFence> signal_fences;
+};
+
+enum VulkanDescriptorType
+{
+	VULKAN_DESCRIPTOR_TYPE_UNIFORM,
+	VULKAN_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+	VULKAN_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+	VULKAN_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+	VULKAN_DESCRIPTOR_TYPE_SAMPLER,
+	VULKAN_DESCRIPTOR_TYPE_NUM_TYPES
+};
+
+struct VulkanDescriptorAllocation
+{
+	VulkanDescriptorType type = VULKAN_DESCRIPTOR_TYPE_NUM_TYPES;
+
+	uint32_t num_descriptors = 0;
+	uint32_t descriptor_size_in_bytes = 0;
+	uint64_t descriptor_offset = 0;
+	uint8_t* ptr = nullptr;
 };
 
 struct VulkanMemory
@@ -103,4 +141,5 @@ struct VulkanImageLayoutTransition
 struct VulkanSampler
 {
 	VkSampler vk_sampler = VK_NULL_HANDLE;
+	VulkanDescriptorAllocation descriptor;
 };

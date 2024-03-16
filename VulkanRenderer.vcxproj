@@ -189,11 +189,10 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="source\renderer\DescriptorAllocation.cpp" />
-    <ClCompile Include="source\renderer\DescriptorBuffer.cpp" />
     <ClCompile Include="source\renderer\Renderer.cpp" />
     <ClCompile Include="source\renderer\RenderPass.cpp" />
     <ClCompile Include="source\renderer\RingBuffer.cpp" />
+    <ClCompile Include="source\renderer\vulkan\VulkanDescriptor.cpp" />
     <ClCompile Include="source\renderer\vulkan\VulkanDeviceMemory.cpp" />
     <ClCompile Include="source\renderer\vulkan\VulkanBackend.cpp" />
     <ClCompile Include="source\renderer\vulkan\VulkanBuffer.cpp" />
@@ -221,8 +220,6 @@
     <ClInclude Include="include\Input.h" />
     <ClInclude Include="include\Logger.h" />
     <ClInclude Include="include\Precomp.h" />
-    <ClInclude Include="include\renderer\DescriptorAllocation.h" />
-    <ClInclude Include="include\renderer\DescriptorBuffer.h" />
     <ClInclude Include="include\renderer\Renderer.h" />
     <ClInclude Include="include\renderer\RenderPass.h" />
     <ClInclude Include="include\renderer\RenderTypes.h" />
@@ -232,6 +229,7 @@
     <ClInclude Include="include\renderer\vulkan\VulkanCommandPool.h" />
     <ClInclude Include="include\renderer\vulkan\VulkanCommandQueue.h" />
     <ClInclude Include="include\renderer\vulkan\VulkanCommands.h" />
+    <ClInclude Include="include\renderer\vulkan\VulkanDescriptor.h" />
     <ClInclude Include="include\renderer\vulkan\VulkanImage.h" />
     <ClInclude Include="include\renderer\vulkan\VulkanImageView.h" />
     <ClInclude Include="include\renderer\vulkan\VulkanInstance.h" />

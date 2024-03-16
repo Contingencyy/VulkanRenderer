@@ -27,14 +27,6 @@ namespace Vulkan
 
 	VulkanCommandQueue GetCommandQueue(VulkanCommandBufferType type);
 
-	DescriptorAllocation AllocateDescriptors(VkDescriptorType type, uint32_t num_descriptors = 1, uint32_t align = 0);
-	void FreeDescriptors(const DescriptorAllocation& descriptors);
-	std::vector<VkDescriptorSetLayout> GetDescriptorBufferLayouts();
-	std::vector<VkDescriptorBufferBindingInfoEXT> GetDescriptorBufferBindingInfos();
-	std::vector<uint32_t> GetDescriptorBufferIndices();
-	std::vector<uint64_t> GetDescriptorBufferOffsets();
-	size_t GetDescriptorTypeSize(VkDescriptorType type);
-
 	VulkanSampler CreateSampler(const SamplerCreateInfo& sampler_info);
 	void DestroySampler(VulkanSampler sampler);
 
