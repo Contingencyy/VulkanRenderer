@@ -50,11 +50,11 @@ namespace Vulkan
 			vkFreeCommandBuffers(vk_inst.device, command_pool.vk_command_pool, 1, &command_buffer.vk_command_buffer);
 		}
 
-		void FreeCommandBuffers(const VulkanCommandPool& command_pool, const std::vector<VulkanCommandBuffer&>& command_buffers)
+		void FreeCommandBuffers(const VulkanCommandPool& command_pool, uint32_t num_buffers, const VulkanCommandBuffer* const command_buffers)
 		{
 			std::vector<VkCommandBuffer> vk_command_buffers;
-			for (auto& command_buffer : command_buffers)
-				vk_command_buffers.push_back(command_buffer.vk_command_buffer);
+			for (uint32_t i = 0; i < num_buffers; ++i)
+				vk_command_buffers.push_back(command_buffers[i].vk_command_buffer);
 
 			vkFreeCommandBuffers(vk_inst.device, command_pool.vk_command_pool,
 				static_cast<uint32_t>(vk_command_buffers.size()), vk_command_buffers.data());
@@ -64,7 +64,7 @@ namespace Vulkan
 		{
 			VkCommandPoolCreateInfo command_pool_info = { VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
 			command_pool_info.queueFamilyIndex = command_queue.queue_family_index;
-			command_pool_info.flags = 0;
+			command_pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
 			VkCommandPool vk_command_pool;
 			vkCreateCommandPool(vk_inst.device, &command_pool_info, nullptr, &vk_command_pool);

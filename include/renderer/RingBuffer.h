@@ -10,7 +10,7 @@
 class RingBuffer
 {
 public:
-	static constexpr uint64_t RING_BUFFER_DEFAULT_BYTE_SIZE = VK_GB(1ull);
+	static constexpr uint64_t RING_BUFFER_DEFAULT_BYTE_SIZE = VK_MB(512ull);
 	static constexpr uint32_t RING_BUFFER_MAX_ALLOCATIONS = 1024;
 	static constexpr uint16_t RING_BUFFER_ALLOC_DEFAULT_ALIGNMENT = 4;
 

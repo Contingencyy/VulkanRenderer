@@ -9,7 +9,6 @@
 #include "renderer/vulkan/VulkanDescriptor.h"
 #include "renderer/vulkan/VulkanUtils.h"
 #include "renderer/vulkan/VulkanResourceTracker.h"
-#include "renderer/DescriptorBuffer.h"
 
 #include "shaderc/shaderc.hpp"
 
@@ -43,6 +42,12 @@ namespace Vulkan
 	{
 		(void)type; (void)user_data;
 		static const char* sender = "Vulkan validation layer";
+
+		if (vk_inst.ignored_debug_messages.find(callback_data->messageIdNumber) != vk_inst.ignored_debug_messages.end())
+		{
+			LOG_INFO(sender, "Ignored Message ID: {}", callback_data->pMessageIdName);
+			return VK_FALSE;
+		}
 
 		switch (severity)
 		{
@@ -102,10 +107,10 @@ namespace Vulkan
 
 		// Init debug messenger for vulkan instance creation
 		VkDebugUtilsMessengerCreateInfoEXT debug_messenger_create_info = { VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT };
-		debug_messenger_create_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+		debug_messenger_create_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
 			VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-		debug_messenger_create_info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-			VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+		debug_messenger_create_info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |	VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+			VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT;
 		debug_messenger_create_info.pfnUserCallback = VkDebugCallback;
 		debug_messenger_create_info.pUserData = nullptr;
 		debug_messenger_create_info.pNext = nullptr;
@@ -552,7 +557,7 @@ namespace Vulkan
 		ResourceTracker::Exit();
 	}
 
-	void BeginFrame()
+	bool BeginFrame()
 	{
 		// Get the next available image from the swapchain
 		VkResult result = Vulkan::SwapChain::AcquireNextImage();
@@ -560,11 +565,10 @@ namespace Vulkan
 		{
 			if (result == VK_ERROR_OUT_OF_DATE_KHR)
 			{
-				Vulkan::ResizeOutputResolution(data->output_resolution.width, data->output_resolution.height);
-				CreateRenderTargets();
+				return true;
 			}
 
-			return;
+			return false;
 		}
 		else
 		{
@@ -578,26 +582,52 @@ namespace Vulkan
 
 		// Update UBO descriptor buffer offset
 		// We need a UBO per in-flight frame, so we need to update the offset at which we want to bind our UBOs from the descriptor buffer
-		data->descriptor_buffers.offsets[DESCRIPTOR_SET_UBO] = VK_ALIGN_POW2(
+		/*data->descriptor_buffers.offsets[DESCRIPTOR_SET_UBO] = VK_ALIGN_POW2(
 			RESERVED_DESCRIPTOR_UBO_COUNT * vk_inst.current_frame_index * vk_inst.descriptor_sizes.uniform_buffer,
 			vk_inst.device_props.descriptor_buffer_offset_alignment
+		);*/
+
+		return false;
+	}
+
+	void CopyToBackBuffer(VulkanCommandBuffer& command_buffer, const VulkanImage& src_image)
+	{
+		VulkanImage& backbuffer_image = Vulkan::SwapChain::GetBackBuffer();
+
+		// Transition SDR render target and swapchain image to TRANSFER_SRC and TRANSFER_DST
+		std::vector<VulkanImageLayoutTransition> back_buffer_copy_transitions =
+		{
+			{ .image = src_image, .new_layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL },
+			{ .image = backbuffer_image, .new_layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL }
+		};
+		Command::TransitionLayouts(command_buffer, back_buffer_copy_transitions);
+
+		// Copy the contents of the SDR render target into the currently active swapchain back buffer
+		Command::CopyImages(command_buffer, src_image, backbuffer_image);
+
+		// Transition the active swapchain back buffer to PRESENT_SRC
+		Command::TransitionLayout(command_buffer, { .image = backbuffer_image, .new_layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR } );
+
+		// Add wait to command buffer to wait for an available image from the swapchain
+		Vulkan::CommandBuffer::AddWait(
+			command_buffer,
+			vk_inst.swapchain.image_available_fences[vk_inst.current_frame_index % MAX_FRAMES_IN_FLIGHT],
+			VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
 		);
 	}
 
-	void EndFrame()
+	bool EndFrame(const VulkanFence& present_wait_fence)
 	{
-		// Present
-		std::vector<VkSemaphore> present_wait_semaphore = { frame->sync.render_finished_semaphore_binary };
-		VkResult result = Vulkan::SwapChain::Present(present_wait_semaphore);
-
+		// Present, wait fence waits for the rendering to be finished before presenting
+		VkResult result = Vulkan::SwapChain::Present({ present_wait_fence });
+		bool swapchain_resize = false;
 		if ((result == VK_ERROR_OUT_OF_DATE_KHR) || (result == VK_SUBOPTIMAL_KHR))
 		{
-			Vulkan::ResizeOutputResolution(data->output_resolution.width, data->output_resolution.height);
-			CreateRenderTargets();
+			swapchain_resize = true;
 
 			if (result == VK_ERROR_OUT_OF_DATE_KHR)
 			{
-				return;
+				return swapchain_resize;
 			}
 		}
 		else
@@ -605,9 +635,11 @@ namespace Vulkan
 			VkCheckResult(result);
 		}
 
-		vk_inst.current_frame_index = (vk_inst.current_frame_index + 1) % Vulkan::MAX_FRAMES_IN_FLIGHT;
-
+		vk_inst.current_frame_index++;
 		ResourceTracker::ReleaseStaleTempResources();
+
+		return false;
+		//return swapchain_resize;
 	}
 
 	void ResizeOutputResolution(uint32_t output_width, uint32_t output_height)
@@ -688,17 +720,20 @@ namespace Vulkan
 
 	void DestroySampler(VulkanSampler sampler)
 	{
+		Vulkan::Descriptor::Free(sampler.descriptor);
 		vkDestroySampler(vk_inst.device, sampler.vk_sampler, nullptr);
 	}
 
-	VkPipelineLayout CreatePipelineLayout(const std::vector<VkDescriptorSetLayout>& descriptor_set_layouts, const std::vector<VkPushConstantRange>& push_constant_ranges)
+	static VkPipelineLayout CreatePipelineLayout(const std::vector<VkPushConstantRange>& push_ranges)
 	{
+		std::vector<VkDescriptorSetLayout> descriptor_set_layouts = Vulkan::Descriptor::GetDescriptorSetLayouts();
+
 		VkPipelineLayoutCreateInfo pipeline_layout_info = {};
 		pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-		pipeline_layout_info.setLayoutCount = (uint32_t)descriptor_set_layouts.size();
+		pipeline_layout_info.setLayoutCount = static_cast<uint32_t>(descriptor_set_layouts.size());
 		pipeline_layout_info.pSetLayouts = descriptor_set_layouts.data();
-		pipeline_layout_info.pushConstantRangeCount = (uint32_t)push_constant_ranges.size();
-		pipeline_layout_info.pPushConstantRanges = push_constant_ranges.data();
+		pipeline_layout_info.pushConstantRangeCount = static_cast<uint32_t>(push_ranges.size());
+		pipeline_layout_info.pPushConstantRanges = push_ranges.data();
 
 		VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
 		vkCreatePipelineLayout(vk_inst.device, &pipeline_layout_info, nullptr, &pipeline_layout);
@@ -706,8 +741,10 @@ namespace Vulkan
 		return pipeline_layout;
 	}
 
-	VkPipeline CreateGraphicsPipeline(const GraphicsPipelineInfo& info, VkPipelineLayout pipeline_layout)
+	VulkanPipeline CreateGraphicsPipeline(const GraphicsPipelineInfo& info)
 	{
+		VkPipelineLayout vk_pipeline_layout = CreatePipelineLayout(info.push_ranges);
+
 		// TODO: Vulkan extension for shader objects? No longer need to make compiled pipeline states then
 		// https://www.khronos.org/blog/you-can-use-vulkan-without-pipelines-today
 		std::vector<uint32_t> vert_spv = CompileShader(info.vs_path, shaderc_vertex_shader);
@@ -831,7 +868,7 @@ namespace Vulkan
 		pipeline_info.pDepthStencilState = &depth_stencil;
 		pipeline_info.pColorBlendState = &color_blend;
 		pipeline_info.pDynamicState = &dynamic_state;
-		pipeline_info.layout = pipeline_layout;
+		pipeline_info.layout = vk_pipeline_layout;
 		pipeline_info.renderPass = VK_NULL_HANDLE;
 		pipeline_info.subpass = 0;
 		pipeline_info.basePipelineHandle = VK_NULL_HANDLE;
@@ -848,17 +885,24 @@ namespace Vulkan
 		pipeline_rendering_info.viewMask = 0;
 		pipeline_info.pNext = &pipeline_rendering_info;
 
-		VkPipeline pipeline = VK_NULL_HANDLE;
-		VkCheckResult(vkCreateGraphicsPipelines(vk_inst.device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &pipeline));
+		VkPipeline vk_pipeline = VK_NULL_HANDLE;
+		VkCheckResult(vkCreateGraphicsPipelines(vk_inst.device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &vk_pipeline));
 
 		vkDestroyShaderModule(vk_inst.device, frag_shader_module, nullptr);
 		vkDestroyShaderModule(vk_inst.device, vert_shader_module, nullptr);
 
+		VulkanPipeline pipeline = {};
+		pipeline.type = VULKAN_PIPELINE_TYPE_GRAPHICS;
+		pipeline.vk_pipeline = vk_pipeline;
+		pipeline.vk_pipeline_layout = vk_pipeline_layout;
+
 		return pipeline;
 	}
 
-	VkPipeline CreateComputePipeline(const ComputePipelineInfo& info, VkPipelineLayout pipeline_layout)
+	VulkanPipeline CreateComputePipeline(const ComputePipelineInfo& info)
 	{
+		VkPipelineLayout vk_pipeline_layout = CreatePipelineLayout(info.push_ranges);
+
 		std::vector<uint32_t> compute_spv = CompileShader(info.cs_path, shaderc_compute_shader);
 		VkShaderModule compute_shader_module = CreateShaderModule(compute_spv);
 
@@ -870,19 +914,24 @@ namespace Vulkan
 
 		VkComputePipelineCreateInfo pipeline_info = {};
 		pipeline_info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-		pipeline_info.layout = pipeline_layout;
+		pipeline_info.layout = vk_pipeline_layout;
 		pipeline_info.stage = compute_shader_stage_info;
 		pipeline_info.flags = VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
 
-		VkPipeline pipeline = VK_NULL_HANDLE;
-		VkCheckResult(vkCreateComputePipelines(vk_inst.device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &pipeline));
+		VkPipeline vk_pipeline = VK_NULL_HANDLE;
+		VkCheckResult(vkCreateComputePipelines(vk_inst.device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &vk_pipeline));
 
 		vkDestroyShaderModule(vk_inst.device, compute_shader_module, nullptr);
+
+		VulkanPipeline pipeline = {};
+		pipeline.type = VULKAN_PIPELINE_TYPE_COMPUTE;
+		pipeline.vk_pipeline = vk_pipeline;
+		pipeline.vk_pipeline_layout = vk_pipeline_layout;
 
 		return pipeline;
 	}
 
-	void InitImGui(::GLFWwindow* window, const VulkanCommandBuffer& command_buffer)
+	void InitImGui(::GLFWwindow* window)
 	{
 		IMGUI_CHECKVERSION();
 		ImGui::CreateContext();
@@ -921,11 +970,6 @@ namespace Vulkan
 		init_info.ColorAttachmentFormat = VK_FORMAT_R8G8B8A8_UNORM;
 		init_info.CheckVkResultFn = VkCheckResult;
 		ImGui_ImplVulkan_Init(&init_info, nullptr);
-
-		// Upload imgui font
-		ImGui_ImplVulkan_CreateFontsTexture(command_buffer.vk_command_buffer);
-
-		ImGui_ImplVulkan_DestroyFontUploadObjects();
 	}
 
 	void ExitImGui()
@@ -939,7 +983,7 @@ namespace Vulkan
 
 	VkDescriptorSet AddImGuiTexture(VkImage image, VkImageView image_view, VkSampler sampler)
 	{
-		return ImGui_ImplVulkan_AddTexture(sampler, image_view, ResourceTracker::GetImageLayout({ image }));
+		return ImGui_ImplVulkan_AddTexture(sampler, image_view, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
 	}
 
 }

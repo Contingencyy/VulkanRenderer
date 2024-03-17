@@ -78,7 +78,8 @@ namespace Vulkan
 			if (usage_flags & BUFFER_USAGE_COPY_DST)
 				vk_usage_flags |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 			if (usage_flags & BUFFER_USAGE_DESCRIPTOR)
-				vk_usage_flags |= VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+				vk_usage_flags |= VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
+					VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 
 			return vk_usage_flags;
 		}
@@ -136,7 +137,7 @@ namespace Vulkan
 			return vk_usage_flags;
 		}
 
-		VkImageViewType ToVkViewType(Flags dimension, uint32_t num_layers = 1)
+		VkImageViewType ToVkViewType(Flags dimension, uint32_t num_layers)
 		{
 			if (num_layers == 1)
 			{
@@ -219,6 +220,32 @@ namespace Vulkan
 				return VK_SAMPLER_MIPMAP_MODE_LINEAR;
 			case SAMPLER_FILTER_CUBIC:
 				VK_ASSERT(false && "Cannot enable trilinear filtering for mipmap sampler mode");
+			}
+		}
+
+		VkPipelineBindPoint ToVkPipelineBindPoint(VulkanPipelineType type)
+		{
+			switch (type)
+			{
+			case VULKAN_PIPELINE_TYPE_GRAPHICS:
+				return VK_PIPELINE_BIND_POINT_GRAPHICS;
+			case VULKAN_PIPELINE_TYPE_COMPUTE:
+				return VK_PIPELINE_BIND_POINT_COMPUTE;
+			default:
+				VK_EXCEPT("Command::ToVkPipelineBindPoint", "Invalid VulkanPipelineType");
+			}
+		}
+
+		VkIndexType ToVkIndexType(uint32_t index_byte_size)
+		{
+			switch (index_byte_size)
+			{
+			case 2:
+				return VK_INDEX_TYPE_UINT16;
+			case 4:
+				return VK_INDEX_TYPE_UINT32;
+			default:
+				VK_EXCEPT("Vulkan::Command::ToVkIndexType", "Index byte size is not supported");
 			}
 		}
 

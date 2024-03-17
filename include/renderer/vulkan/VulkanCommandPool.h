@@ -1,6 +1,8 @@
 #pragma once
 #include "renderer/vulkan/VulkanTypes.h"
 
+#include <vector>
+
 namespace Vulkan
 {
 
@@ -14,7 +16,7 @@ namespace Vulkan
 		VulkanCommandBuffer AllocateCommandBuffer(const VulkanCommandPool& command_pool);
 		std::vector<VulkanCommandBuffer> AllocateCommandBuffers(const VulkanCommandPool& command_pool, uint32_t num_buffers);
 		void FreeCommandBuffer(const VulkanCommandPool& command_pool, const VulkanCommandBuffer& command_buffer);
-		void FreeCommandBuffers(const VulkanCommandPool& command_pool, const std::vector<VulkanCommandBuffer&>& command_buffers);
+		void FreeCommandBuffers(const VulkanCommandPool& command_pool, uint32_t num_buffers, const VulkanCommandBuffer* const command_buffers);
 
 	}
 

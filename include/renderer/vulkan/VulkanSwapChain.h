@@ -11,6 +11,7 @@ namespace Vulkan
 		void Destroy();
 
 		VkResult AcquireNextImage();
+		VulkanImage& GetBackBuffer();
 		VkResult Present(const std::vector<VulkanFence>& wait_fences);
 
 		void SetVSync(bool enabled);

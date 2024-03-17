@@ -15,6 +15,15 @@ namespace Vulkan
 			//VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME
 		};
 
+		std::set<int32_t> ignored_debug_messages =
+		{
+			// NOTE: Timeline semaphores are not supported by the sync validation at the time of writing this
+			// Validation Error: [ VUID-vkResetCommandBuffer-commandBuffer-00045 ]
+			511214570,
+			// Validation Error: [ VUID-vkFreeCommandBuffers-pCommandBuffers-00047 ]
+			448332540
+		};
+
 		VkInstance instance = VK_NULL_HANDLE;
 		VkPhysicalDevice physical_device = VK_NULL_HANDLE;
 		VkDevice device = VK_NULL_HANDLE;

@@ -14,7 +14,8 @@ RingBuffer::RingBuffer(uint64_t byte_size)
 	// Create vulkan buffer
 	BufferCreateInfo buffer_info = {};
 	buffer_info.size_in_bytes = byte_size;
-	buffer_info.usage_flags = BUFFER_USAGE_STAGING | BUFFER_USAGE_UNIFORM;
+	// Ring buffer is used for transferring data (STAGING), uniform buffers (UNIFORM), and instance buffers (VERTEX)
+	buffer_info.usage_flags = BUFFER_USAGE_STAGING | BUFFER_USAGE_UNIFORM | BUFFER_USAGE_VERTEX;
 	buffer_info.memory_flags = GPU_MEMORY_HOST_VISIBLE | GPU_MEMORY_HOST_COHERENT;
 	buffer_info.name = "Ring Buffer";
 
@@ -34,7 +35,7 @@ RingBuffer::~RingBuffer()
 
 RingBuffer::Allocation RingBuffer::Allocate(uint64_t num_bytes, uint16_t align)
 {
-	VK_ASSERT(num_bytes < m_buffer.size_in_bytes && "Tried to allocate more memory from the ring buffer than the total ring buffer size");
+	VK_ASSERT(num_bytes <= m_buffer.size_in_bytes && "Tried to allocate more memory from the ring buffer than the total ring buffer size");
 	
 	uint8_t* alloc_ptr_begin = (uint8_t*)VK_ALIGN_POW2(m_ptr_at, align);
 	uint8_t* alloc_ptr_end = alloc_ptr_begin + num_bytes;
@@ -62,7 +63,9 @@ RingBuffer::Allocation RingBuffer::Allocate(uint64_t num_bytes, uint16_t align)
 
 	// Create the actual return allocation
 	RingBuffer::Allocation alloc = {};
-	alloc.buffer = m_buffer;
+	alloc.buffer.vk_buffer = m_buffer.vk_buffer;
+	alloc.buffer.memory = m_buffer.memory;
+	alloc.buffer.vk_usage_flags = m_buffer.vk_usage_flags;
 	alloc.buffer.offset_in_bytes = static_cast<uint64_t>(alloc_ptr_begin - m_ptr_begin);
 	alloc.buffer.size_in_bytes = num_bytes;
 	alloc.ptr_begin = alloc_ptr_begin;

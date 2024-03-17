@@ -25,18 +25,12 @@ namespace Vulkan
 		void Reset(VulkanCommandBuffer& command_buffer)
 		{
 			command_buffer.wait_fences.clear();
-			command_buffer.signal_fences.clear();
 			vkResetCommandBuffer(command_buffer.vk_command_buffer, 0);
 		}
 
 		void AddWait(VulkanCommandBuffer& command_buffer, const VulkanFence& fence, VkPipelineStageFlags2 stage_flags, uint64_t fence_value)
 		{
 			command_buffer.wait_fences.emplace_back(fence.type, fence.vk_semaphore, stage_flags, fence_value);
-		}
-
-		void AddSignal(VulkanCommandBuffer& command_buffer, const VulkanFence& fence, uint64_t fence_value)
-		{
-			command_buffer.signal_fences.emplace_back(fence.type, fence.vk_semaphore, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, fence_value);
 		}
 
 	}

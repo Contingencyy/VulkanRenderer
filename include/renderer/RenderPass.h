@@ -1,84 +1,58 @@
 #pragma once
-
-enum RenderPassType
-{
-	RENDER_PASS_TYPE_GRAPHICS,
-	RENDER_PASS_TYPE_COMPUTE
-};
+#include "renderer/vulkan/VulkanTypes.h"
+#include "renderer/RenderTypes.h"
 
 class RenderPass
 {
 public:
 	enum AttachmentSlot
 	{
-		// Attachment slots used by graphics passes
-		ATTACHMENT_SLOT_INVALID = 0xFFFFFFFF,
-		ATTACHMENT_SLOT_COLOR0,
-		ATTACHMENT_SLOT_COLOR1,
+		ATTACHMENT_SLOT_READ_ONLY0,
+		ATTACHMENT_SLOT_READ_ONLY1,
+		ATTACHMENT_SLOT_READ_WRITE0,
+		ATTACHMENT_SLOT_READ_WRITE1,
+		ATTACHMENT_SLOT_COLOR0 = ATTACHMENT_SLOT_READ_WRITE0,
+		ATTACHMENT_SLOT_COLOR1 = ATTACHMENT_SLOT_READ_WRITE1,
 		ATTACHMENT_SLOT_DEPTH_STENCIL,
-		// Attachment slots used by compute passes
-		ATTACHMENT_SLOT_READ_ONLY0 = ATTACHMENT_SLOT_COLOR0,
-		ATTACHMENT_SLOT_READ_WRITE0 = ATTACHMENT_SLOT_COLOR1,
-		ATTACHMENT_SLOT_MAX_SLOTS = 3
-	};
-
-	enum AttachmentType
-	{
-		ATTACHMENT_TYPE_COLOR,
-		ATTACHMENT_TYPE_DEPTH_STENCIL,
-		ATTACHMENT_TYPE_READ_ONLY,
-		ATTACHMENT_TYPE_READ_WRITE
+		ATTACHMENT_SLOT_NUM_READ_ONLY_ATTACHMENTS = 2,
+		ATTACHMENT_SLOT_NUM_READ_WRITE_ATTACHMENTS = 3,
+		ATTACHMENT_SLOT_NUM_SLOTS = 5
 	};
 
 	struct AttachmentInfo
 	{
-		AttachmentSlot slot = ATTACHMENT_SLOT_INVALID;
-		TextureFormat format;
-		VkAttachmentLoadOp load_op = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		VkAttachmentStoreOp store_op = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		TextureFormat format = TEXTURE_FORMAT_UNDEFINED;
 		VkImageLayout expected_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+		VkAttachmentLoadOp load_op = VK_ATTACHMENT_LOAD_OP_MAX_ENUM;
+		VkAttachmentStoreOp store_op = VK_ATTACHMENT_STORE_OP_MAX_ENUM;
 		VkClearValue clear_value = {};
 	};
 
 	struct Attachment
 	{
+		VulkanImageView view;
 		AttachmentInfo info;
-		TextureView* view;
 	};
 
-	struct BeginInfo
+	struct Stage
 	{
-		uint32_t render_width;
-		uint32_t render_height;
+		VulkanPipeline pipeline;
+		Attachment attachments[ATTACHMENT_SLOT_NUM_SLOTS];
 	};
 
 public:
-	RenderPass(RenderPassType type);
+	RenderPass() = default;
+	explicit RenderPass(const std::vector<Stage>& stages);
 	~RenderPass();
 
-	void Begin(VulkanCommandBuffer& command_buffer, const BeginInfo& begin_info);
-	void End(VulkanCommandBuffer& command_buffer);
+	void BeginStage(VulkanCommandBuffer& command_buffer, uint32_t stage_index, uint32_t render_width, uint32_t render_height);
+	void EndStage(const VulkanCommandBuffer& command_buffer, uint32_t stage_index);
 
-	void SetAttachmentInfos(const std::vector<AttachmentInfo>& attachment_infos);
-	void SetAttachment(AttachmentSlot slot, TextureView* attachment_view);
-	std::vector<TextureFormat> GetColorAttachmentFormats();
-	TextureFormat GetDepthStencilAttachmentFormat();
-
-	void Build(const std::vector<VkDescriptorSetLayout>& descriptor_set_layouts,
-		const std::vector<VkPushConstantRange>& push_constant_ranges, const Vulkan::GraphicsPipelineInfo& graphics_pipeline_info);
-	void Build(const std::vector<VkDescriptorSetLayout>& descriptor_set_layouts,
-		const std::vector<VkPushConstantRange>& push_constant_ranges, const Vulkan::ComputePipelineInfo& compute_pipeline_info);
+	void SetStageAttachment(uint32_t stage_index, AttachmentSlot slot, const VulkanImageView& attachment_view);
+	uint32_t GetStageCount();
 
 private:
-	bool IsColorAttachment(AttachmentSlot slot);
-	bool IsDepthStencilAttachment(AttachmentSlot slot);
-
-private:
-	RenderPassType m_type = RENDER_PASS_TYPE_GRAPHICS;
-
-	VkPipelineLayout m_pipeline_layout = VK_NULL_HANDLE;
-	VkPipeline m_pipeline = VK_NULL_HANDLE;
-
-	std::array<Attachment, ATTACHMENT_SLOT_MAX_SLOTS> m_attachments;
+	std::vector<Stage> m_stages;
 
 };

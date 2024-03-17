@@ -4,6 +4,7 @@
 #include "renderer/vulkan/VulkanSync.h"
 #include "renderer/vulkan/VulkanUtils.h"
 #include "renderer/vulkan/VulkanResourceTracker.h"
+#include "renderer/vulkan/VulkanBackend.h"
 
 #include "GLFW/glfw3.h"
 
@@ -158,14 +159,14 @@ namespace Vulkan
 			vk_inst.swapchain.extent = extent;
 			vk_inst.swapchain.format = create_info.imageFormat;
 
-			vk_inst.swapchain.image_available_fences.resize(Vulkan::MAX_FRAMES_IN_FLIGHT);
+			vk_inst.swapchain.image_available_fences.resize(MAX_FRAMES_IN_FLIGHT);
 			vk_inst.swapchain.images.resize(image_count);
 
 			for (size_t i = 0; i < Vulkan::MAX_FRAMES_IN_FLIGHT; ++i)
 			{
-				vk_inst.swapchain.image_available_fences[i] = CreateFence(VULKAN_FENCE_TYPE_BINARY);
+				vk_inst.swapchain.image_available_fences[i] = Sync::CreateFence(VULKAN_FENCE_TYPE_BINARY);
 
-				VulkanImage swapchain_image = {};
+				VulkanImage& swapchain_image = vk_inst.swapchain.images[i];
 				swapchain_image.vk_image = vk_swapchain_images[i];
 				swapchain_image.memory = {};
 				swapchain_image.vk_format = vk_inst.swapchain.format;
@@ -184,7 +185,7 @@ namespace Vulkan
 			for (size_t i = 0; i < Vulkan::MAX_FRAMES_IN_FLIGHT; ++i)
 			{
 				ResourceTracker::RemoveImage(vk_inst.swapchain.images[i]);
-				DestroyFence(vk_inst.swapchain.image_available_fences[i]);
+				Sync::DestroyFence(vk_inst.swapchain.image_available_fences[i]);
 			}
 
 			vkDestroySwapchainKHR(vk_inst.device, vk_inst.swapchain.swapchain, nullptr);
@@ -193,9 +194,14 @@ namespace Vulkan
 		VkResult AcquireNextImage()
 		{
 			VkResult image_result = vkAcquireNextImageKHR(vk_inst.device, vk_inst.swapchain.swapchain, UINT64_MAX,
-				vk_inst.swapchain.image_available_fences[vk_inst.current_frame_index].vk_semaphore, VK_NULL_HANDLE, &vk_inst.swapchain.current_image);
+				vk_inst.swapchain.image_available_fences[vk_inst.current_frame_index % MAX_FRAMES_IN_FLIGHT].vk_semaphore, VK_NULL_HANDLE, &vk_inst.swapchain.current_image);
 
 			return image_result;
+		}
+
+		VulkanImage& GetBackBuffer()
+		{
+			return vk_inst.swapchain.images[vk_inst.swapchain.current_image];
 		}
 
 		VkResult Present(const std::vector<VulkanFence>& wait_fences)
@@ -219,6 +225,7 @@ namespace Vulkan
 			VkSwapchainPresentModeInfoEXT present_mode_info = { VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_MODE_INFO_EXT };
 			present_mode_info.swapchainCount = 1;
 			present_mode_info.pPresentModes = &vk_inst.swapchain.desired_present_mode;
+			present_mode_info.pNext = nullptr;
 
 			present_info.pNext = &present_mode_info;
 			VkResult present_result = vkQueuePresentKHR(vk_inst.queues.graphics_compute.vk_queue, &present_info);

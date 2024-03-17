@@ -77,7 +77,7 @@ namespace Vulkan
 
 			if (tracked == data->tracked_images.end())
 			{
-				data->tracked_images.emplace(image, TrackedImage{
+				data->tracked_images.emplace(image.vk_image, TrackedImage{
 						.image = image,
 						.last_pipeline_stage_used = VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT,
 						.layout = layout

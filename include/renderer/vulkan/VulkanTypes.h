@@ -15,7 +15,7 @@ struct VulkanFence
 	VulkanFenceType type = VULKAN_FENCE_TYPE_NUM_TYPES;
 	VkSemaphore vk_semaphore = VK_NULL_HANDLE;
 	VkPipelineStageFlags2 stage_flags = VK_PIPELINE_STAGE_2_NONE;
-	uint64_t fence_value = 0;
+	uint64_t fence_value = 0ull;
 };
 
 enum VulkanPipelineType
@@ -41,9 +41,11 @@ enum VulkanCommandBufferType
 
 struct VulkanCommandQueue
 {
-	VkQueue vk_queue = VK_NULL_HANDLE;
-	uint32_t queue_family_index = ~0;
 	VulkanCommandBufferType type = VULKAN_COMMAND_BUFFER_TYPE_NUM_TYPES;
+	VkQueue vk_queue = VK_NULL_HANDLE;
+	uint32_t queue_family_index = ~0u;
+
+	VulkanFence fence;
 };
 
 struct VulkanCommandPool
@@ -60,9 +62,9 @@ struct VulkanCommandBuffer
 	VulkanPipeline pipeline_bound;
 
 	std::vector<VulkanFence> wait_fences;
-	std::vector<VulkanFence> signal_fences;
 };
 
+// NOTE: The order needs to match the DescriptorSetXYZ consts in assets/shaders/Shared.glsl.h
 enum VulkanDescriptorType
 {
 	VULKAN_DESCRIPTOR_TYPE_UNIFORM,
@@ -77,9 +79,9 @@ struct VulkanDescriptorAllocation
 {
 	VulkanDescriptorType type = VULKAN_DESCRIPTOR_TYPE_NUM_TYPES;
 
-	uint32_t num_descriptors = 0;
-	uint32_t descriptor_size_in_bytes = 0;
-	uint64_t descriptor_offset = 0;
+	uint32_t num_descriptors = 0u;
+	uint32_t descriptor_size_in_bytes = 0u;
+	uint64_t descriptor_offset = 0ull;
 	uint8_t* ptr = nullptr;
 };
 
@@ -96,8 +98,8 @@ struct VulkanBuffer
 	VkBufferUsageFlags vk_usage_flags = VK_BUFFER_USAGE_FLAG_BITS_MAX_ENUM;
 	VulkanMemory memory;
 
-	uint64_t size_in_bytes = 0;
-	uint64_t offset_in_bytes = 0;
+	uint64_t size_in_bytes = 0ull;
+	uint64_t offset_in_bytes = 0ull;
 };
 
 struct VulkanImage
@@ -106,12 +108,12 @@ struct VulkanImage
 	VulkanMemory memory;
 	VkFormat vk_format = VK_FORMAT_UNDEFINED;
 
-	uint32_t width = 0;
-	uint32_t height = 0;
-	uint32_t depth = 0;
+	uint32_t width = 0u;
+	uint32_t height = 0u;
+	uint32_t depth = 0u;
 
-	uint32_t num_mips = 0;
-	uint32_t num_layers = 0;
+	uint32_t num_mips = 0u;
+	uint32_t num_layers = 0u;
 
 	// TODO: We can add offsets into the actual buffer here once we have a GPU memory allocator
 };
@@ -121,9 +123,9 @@ struct VulkanImageView
 	VulkanImage image;
 	VkImageView vk_image_view = VK_NULL_HANDLE;
 
-	uint32_t base_mip = 0;
+	uint32_t base_mip = 0u;
 	uint32_t num_mips = UINT32_MAX;
-	uint32_t base_layer = 0;
+	uint32_t base_layer = 0u;
 	uint32_t num_layers = UINT32_MAX;
 };
 
@@ -132,9 +134,9 @@ struct VulkanImageLayoutTransition
 	VulkanImage image;
 	VkImageLayout new_layout = VK_IMAGE_LAYOUT_UNDEFINED;
 
-	uint32_t base_mip = 0;
+	uint32_t base_mip = 0u;
 	uint32_t num_mips = UINT32_MAX;
-	uint32_t base_layer = 0;
+	uint32_t base_layer = 0u;
 	uint32_t num_layers = UINT32_MAX;
 };
 

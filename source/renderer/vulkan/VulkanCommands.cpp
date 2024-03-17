@@ -4,8 +4,10 @@
 #include "renderer/vulkan/VulkanCommandBuffer.h"
 #include "renderer/vulkan/VulkanSync.h"
 #include "renderer/vulkan/VulkanBackend.h"
+#include "renderer/vulkan/VulkanDescriptor.h"
 #include "renderer/vulkan/VulkanResourceTracker.h"
 #include "renderer/vulkan/VulkanInstance.h"
+#include "renderer/vulkan/VulkanUtils.h"
 
 namespace Vulkan
 {
@@ -13,36 +15,37 @@ namespace Vulkan
 	namespace Command
 	{
 
-		static VkPipelineBindPoint ToVkPipelineBindPoint(VulkanPipelineType type)
+		void BeginRendering(const VulkanCommandBuffer& command_buffer, uint32_t num_color_attachments, const VkRenderingAttachmentInfo* const color_attachments, 
+			const VkRenderingAttachmentInfo* const depth_attachment, const VkRenderingAttachmentInfo* const stencil_attachment, uint32_t render_width, uint32_t render_height, int32_t offset_x, int32_t offset_y)
 		{
-			switch (type)
-			{
-			case VULKAN_PIPELINE_TYPE_GRAPHICS:
-				return VK_PIPELINE_BIND_POINT_GRAPHICS;
-			case VULKAN_PIPELINE_TYPE_COMPUTE:
-				return VK_PIPELINE_BIND_POINT_COMPUTE;
-			default:
-				VK_EXCEPT("Command::ToVkPipelineBindPoint", "Invalid VulkanPipelineType");
-			}
+			VkRenderingInfo rendering_info = { VK_STRUCTURE_TYPE_RENDERING_INFO };
+			rendering_info.colorAttachmentCount = num_color_attachments;
+			rendering_info.pColorAttachments = color_attachments;
+			rendering_info.pDepthAttachment = depth_attachment;
+			rendering_info.pStencilAttachment = stencil_attachment;
+			rendering_info.renderArea.extent = { .width = render_width, .height = render_height };
+			rendering_info.renderArea.offset = { .x = offset_x, .y = offset_y };
+			rendering_info.viewMask = 0;
+			rendering_info.layerCount = 1;
+			rendering_info.flags = 0;
+
+			vkCmdBeginRendering(command_buffer.vk_command_buffer, &rendering_info);
 		}
 
-		static VkIndexType ToVkIndexType(uint32_t index_byte_size)
+		void EndRendering(const VulkanCommandBuffer& command_buffer)
 		{
-			switch (index_byte_size)
-			{
-			case 2:
-				return VK_INDEX_TYPE_UINT16;
-			case 4:
-				return VK_INDEX_TYPE_UINT32;
-			default:
-				VK_EXCEPT("Vulkan::Command::ToVkIndexType", "Index byte size is not supported");
-			}
+			vkCmdEndRendering(command_buffer.vk_command_buffer);
 		}
 
 		void BindPipeline(VulkanCommandBuffer& command_buffer, const VulkanPipeline& pipeline)
 		{
-			vkCmdBindPipeline(command_buffer.vk_command_buffer, ToVkPipelineBindPoint(pipeline.type), pipeline.vk_pipeline);
+			vkCmdBindPipeline(command_buffer.vk_command_buffer, Util::ToVkPipelineBindPoint(pipeline.type), pipeline.vk_pipeline);
 			command_buffer.pipeline_bound = pipeline;
+		}
+
+		void PushConstants(const VulkanCommandBuffer& command_buffer, VkShaderStageFlags stage_flags, uint32_t byte_offset, uint32_t num_bytes, const void* data)
+		{
+			vkCmdPushConstants(command_buffer.vk_command_buffer, command_buffer.pipeline_bound.vk_pipeline_layout, stage_flags, byte_offset, num_bytes, data);
 		}
 
 		void SetViewport(const VulkanCommandBuffer& command_buffer, uint32_t first_viewport, uint32_t num_viewports, const VkViewport* const vk_viewports)
@@ -55,17 +58,10 @@ namespace Vulkan
 			vkCmdSetScissor(command_buffer.vk_command_buffer, first_scissor, num_scissors, vk_scissor_rects);
 		}
 
-		void PushConstants(const VulkanCommandBuffer& command_buffer, VkShaderStageFlags stage_flags, uint32_t byte_offset, uint32_t num_bytes, const void* data)
-		{
-			vkCmdPushConstants(command_buffer.vk_command_buffer, command_buffer.pipeline_bound.vk_pipeline_layout, stage_flags, byte_offset, num_bytes, data);
-		}
-
 		void DrawGeometry(const VulkanCommandBuffer& command_buffer, uint32_t num_vertex_buffers, const VulkanBuffer* vertex_buffers,
 			uint32_t num_vertices, uint32_t num_instances, uint32_t first_vertex, uint32_t first_instance)
 		{
-			auto descriptor_buffer_binding_info = Vulkan::GetDescriptorBufferBindingInfos();
-			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer.vk_command_buffer, (uint32_t)descriptor_buffer_binding_info.size(), descriptor_buffer_binding_info.data());
-			vk_inst.pFunc.cmd_set_descriptor_buffer_offsets_ext(command_buffer.vk_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline_layout, first, count, indices, offsets);
+			Vulkan::Descriptor::BindDescriptors(command_buffer, command_buffer.pipeline_bound);
 
 			std::vector<VkBuffer> vk_vertex_buffers;
 			std::vector<uint64_t> vk_vertex_buffer_offsets;
@@ -76,16 +72,15 @@ namespace Vulkan
 				vk_vertex_buffer_offsets.push_back(vertex_buffers[i].offset_in_bytes);
 			}
 
-			vkCmdBindVertexBuffers(command_buffer.vk_command_buffer, 0, 1, vk_vertex_buffers.data(), vk_vertex_buffer_offsets.data());
+			if (num_vertex_buffers > 0)
+				vkCmdBindVertexBuffers(command_buffer.vk_command_buffer, 0, 1, vk_vertex_buffers.data(), vk_vertex_buffer_offsets.data());
 			vkCmdDraw(command_buffer.vk_command_buffer, num_vertices, num_instances, first_vertex, first_instance);
 		}
 
 		void DrawGeometryIndexed(const VulkanCommandBuffer& command_buffer, uint32_t num_vertex_buffers, const VulkanBuffer* const vertex_buffers, const VulkanBuffer* const index_buffer,
 			uint32_t index_byte_size, uint32_t num_instances, uint32_t first_instance, uint32_t first_index, uint32_t vertex_offset)
 		{
-			auto descriptor_buffer_binding_info = Vulkan::GetDescriptorBufferBindingInfos();
-			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer.vk_command_buffer, (uint32_t)descriptor_buffer_binding_info.size(), descriptor_buffer_binding_info.data());
-			vk_inst.pFunc.cmd_set_descriptor_buffer_offsets_ext(command_buffer.vk_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline_layout, first, count, indices, offsets);
+			Vulkan::Descriptor::BindDescriptors(command_buffer, command_buffer.pipeline_bound);
 
 			std::vector<VkBuffer> vk_vertex_buffers;
 			std::vector<uint64_t> vk_vertex_buffer_offsets;
@@ -96,17 +91,40 @@ namespace Vulkan
 				vk_vertex_buffer_offsets.push_back(vertex_buffers[i].offset_in_bytes);
 			}
 
-			vkCmdBindVertexBuffers(command_buffer.vk_command_buffer, 0, 1, vk_vertex_buffers.data(), vk_vertex_buffer_offsets.data() );
-			vkCmdBindIndexBuffer(command_buffer.vk_command_buffer, index_buffer->vk_buffer, index_buffer->offset_in_bytes, ToVkIndexType(index_byte_size));
+			vkCmdBindVertexBuffers(command_buffer.vk_command_buffer, 0, static_cast<uint32_t>(vk_vertex_buffers.size()), vk_vertex_buffers.data(), vk_vertex_buffer_offsets.data());
+			vkCmdBindIndexBuffer(command_buffer.vk_command_buffer, index_buffer->vk_buffer, index_buffer->offset_in_bytes, Util::ToVkIndexType(index_byte_size));
 			vkCmdDrawIndexed(command_buffer.vk_command_buffer, index_buffer->size_in_bytes / index_byte_size, num_instances, first_index, vertex_offset, first_instance);
+		}
+
+		void ClearImage(const VulkanCommandBuffer& command_buffer, const VulkanImage& image, const VkClearColorValue& clear_value)
+		{
+			VkImageSubresourceRange subresource_range = {};
+			subresource_range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			subresource_range.baseMipLevel = 0;
+			subresource_range.levelCount = image.num_mips;
+			subresource_range.baseArrayLayer = 0;
+			subresource_range.layerCount = image.num_layers;
+
+			vkCmdClearColorImage(command_buffer.vk_command_buffer, image.vk_image,
+				ResourceTracker::GetImageLayout({ .image = image.vk_image }), &clear_value, 1, &subresource_range);
+		}
+
+		void ClearImage(const VulkanCommandBuffer& command_buffer, const VulkanImage& image, const VkClearDepthStencilValue& clear_value)
+		{
+			VkImageSubresourceRange subresource_range = {};
+			subresource_range.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+			subresource_range.baseMipLevel = 0;
+			subresource_range.levelCount = image.num_mips;
+			subresource_range.baseArrayLayer = 0;
+			subresource_range.layerCount = image.num_layers;
+
+			vkCmdClearDepthStencilImage(command_buffer.vk_command_buffer, image.vk_image,
+				ResourceTracker::GetImageLayout({ .image = image.vk_image }), &clear_value, 1, &subresource_range);
 		}
 
 		void Dispatch(const VulkanCommandBuffer& command_buffer, uint32_t group_x, uint32_t group_y, uint32_t group_z)
 		{
-			auto descriptor_buffer_binding_info = Vulkan::GetDescriptorBufferBindingInfos();
-			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer.vk_command_buffer, (uint32_t)descriptor_buffer_binding_info.size(), descriptor_buffer_binding_info.data());
-			vk_inst.pFunc.cmd_set_descriptor_buffer_offsets_ext(command_buffer.vk_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline_layout, first, count, indices, offsets);
-
+			Vulkan::Descriptor::BindDescriptors(command_buffer, command_buffer.pipeline_bound);
 			vkCmdDispatch(command_buffer.vk_command_buffer, group_x, group_y, group_z);
 		}
 

@@ -38,14 +38,14 @@ public:
 		return handle;
 	}
 
-	/*template<typename... TArgs>
+	template<typename... TArgs>
 	ResourceHandle_t Emplace(TArgs&&... args)
 	{
 		ResourceHandle_t handle = AllocateSlot();
 		new (&m_slots[handle.index].resource) TResource(std::forward<TArgs>(args)...);
 
 		return handle;
-	}*/
+	}
 
 	TResource* Find(ResourceHandle_t handle)
 	{

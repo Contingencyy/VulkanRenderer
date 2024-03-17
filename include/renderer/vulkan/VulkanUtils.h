@@ -5,8 +5,7 @@
 namespace Vulkan
 {
 
-	inline void VkCheckResult(VkResult result);
-
+	void VkCheckResult(VkResult result);
 	void DebugNameObject(uint64_t object, VkDebugReportObjectTypeEXT object_type, const std::string& debug_name);
 
 	namespace Util
@@ -27,6 +26,9 @@ namespace Vulkan
 		VkBorderColor ToVkBorderColor(SamplerBorderColor border_color);
 		VkFilter ToVkFilter(SamplerFilter filter);
 		VkSamplerMipmapMode ToVkSamplerMipmapMode(SamplerFilter filter);
+
+		VkPipelineBindPoint ToVkPipelineBindPoint(VulkanPipelineType type);
+		VkIndexType ToVkIndexType(uint32_t index_byte_size);
 
 	}
 }

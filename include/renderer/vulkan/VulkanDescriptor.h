@@ -19,6 +19,9 @@ namespace Vulkan
 
 		bool IsValid(const VulkanDescriptorAllocation& alloc);
 
+		std::vector<VkDescriptorSetLayout> GetDescriptorSetLayouts();
+		void BindDescriptors(const VulkanCommandBuffer& command_buffer, const VulkanPipeline& pipeline);
+
 	}
 
 }

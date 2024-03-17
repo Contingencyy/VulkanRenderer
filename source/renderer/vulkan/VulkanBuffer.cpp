@@ -47,8 +47,9 @@ namespace Vulkan
 			VulkanBuffer buffer = {};
 			buffer.vk_buffer = vk_buffer;
 			buffer.vk_usage_flags = vk_buffer_info.usage;
-			buffer.size_in_bytes = buffer_info.size_in_bytes;
 			buffer.memory = DeviceMemory::Allocate(buffer, buffer_info);
+			buffer.size_in_bytes = buffer_info.size_in_bytes;
+			buffer.offset_in_bytes = 0;
 
 			ResourceTracker::TrackBuffer(buffer);
 

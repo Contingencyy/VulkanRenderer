@@ -4,6 +4,7 @@
 #include "renderer/vulkan/VulkanBuffer.h"
 #include "renderer/vulkan/VulkanDeviceMemory.h"
 #include "renderer/vulkan/VulkanUtils.h"
+#include "Shared.glsl.h"
 
 namespace Vulkan
 {
@@ -66,73 +67,6 @@ namespace Vulkan
 			}
 		}
 
-		static uint64_t CreateDescriptorRanges()
-		{
-			uint64_t current_byte_offset = 0;
-
-			// Create the descriptor type ranges and their free lists from which we will allocate
-			for (uint32_t i = 0; i < VULKAN_DESCRIPTOR_TYPE_NUM_TYPES; ++i)
-			{
-				current_byte_offset = VK_ALIGN_POW2(current_byte_offset, vk_inst.device_props.descriptor_buffer_offset_alignment);
-
-				// Create the descriptor set layout
-				VkDescriptorSetLayoutBinding binding = {};
-				binding.binding = 0;
-				binding.descriptorCount = DESCRIPTOR_RANGE_DEFAULT_DESCRIPTOR_COUNT;
-				binding.descriptorType = GetVkDescriptorType((VulkanDescriptorType)i);
-				binding.pImmutableSamplers = nullptr;
-				binding.stageFlags = VK_SHADER_STAGE_ALL;
-
-				VkDescriptorSetLayoutBindingFlagsCreateInfo binding_info = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO };
-				binding_info.bindingCount = 0;
-				binding_info.pBindingFlags = nullptr;
-
-				VkDescriptorSetLayoutCreateInfo layout_info = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
-				layout_info.bindingCount = 1;
-				layout_info.pBindings = &binding;
-				layout_info.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
-				layout_info.pNext = &binding_info;
-				
-				VkDescriptorSetLayout vk_descriptor_set_layout = VK_NULL_HANDLE;
-				Vulkan::VkCheckResult(vkCreateDescriptorSetLayout(vk_inst.device, &layout_info, nullptr, &vk_descriptor_set_layout));
-
-				// Create the descriptor range
-				DescriptorRange& descriptor_range = data.descriptor_ranges[i];
-				descriptor_range.type = (VulkanDescriptorType)i;
-				descriptor_range.vk_descriptor_set_layout = vk_descriptor_set_layout;
-				descriptor_range.num_descriptors = binding.descriptorCount;
-				descriptor_range.descriptor_size_in_bytes = GetDescriptorTypeByteSize(descriptor_range.type);
-				descriptor_range.size_in_bytes = static_cast<uint64_t>(descriptor_range.num_descriptors) *
-					static_cast<uint64_t>(descriptor_range.descriptor_size_in_bytes);
-				descriptor_range.offset_in_bytes = current_byte_offset;
-
-				uint64_t descriptor_layout_byte_size;
-				vk_inst.pFunc.get_descriptor_set_layout_size_ext(vk_inst.device, vk_descriptor_set_layout, &descriptor_layout_byte_size);
-
-				// Allocate the head of the free-list for this descriptor range
-				FreeDescriptorBlock* head = new FreeDescriptorBlock();
-				head->num_descriptors = descriptor_range.num_descriptors;
-				head->descriptor_offset = 0;
-				head->ptr_next = nullptr;
-				descriptor_range.head = head;
-
-				current_byte_offset += descriptor_range.size_in_bytes;
-			}
-		}
-
-		static uint64_t CalculateDescriptorBufferSize()
-		{
-			uint64_t current_byte_size = 0;
-
-			for (uint32_t i = 0; i < VULKAN_DESCRIPTOR_TYPE_NUM_TYPES; ++i)
-			{
-				current_byte_size = VK_ALIGN_POW2(current_byte_size, vk_inst.device_props.descriptor_buffer_offset_alignment);
-
-				DescriptorRange& descriptor_range = data.descriptor_ranges[i];
-				current_byte_size += descriptor_range.size_in_bytes;
-			}
-		}
-
 		static uint32_t GetDescriptorTypeByteSize(VulkanDescriptorType type)
 		{
 			switch (type)
@@ -152,6 +86,90 @@ namespace Vulkan
 			}
 		}
 
+		static uint64_t CalculateDescriptorBufferSize()
+		{
+			uint64_t total_byte_size = 0;
+			for (uint32_t i = 0; i < VULKAN_DESCRIPTOR_TYPE_NUM_TYPES; ++i)
+			{
+				total_byte_size = VK_ALIGN_POW2(total_byte_size, vk_inst.device_props.descriptor_buffer_offset_alignment);
+
+				DescriptorRange& descriptor_range = data.descriptor_ranges[i];
+				total_byte_size += descriptor_range.size_in_bytes;
+			}
+
+			return total_byte_size;
+		}
+
+		static void CreateDescriptorRanges()
+		{
+			uint64_t current_byte_offset = 0;
+
+			// Create the descriptor type ranges and their free lists from which we will allocate
+			for (uint32_t type = 0; type < VULKAN_DESCRIPTOR_TYPE_NUM_TYPES; ++type)
+			{
+				current_byte_offset = VK_ALIGN_POW2(current_byte_offset, vk_inst.device_props.descriptor_buffer_offset_alignment);
+
+				// Create the descriptor set layout
+				std::vector<VkDescriptorSetLayoutBinding> bindings;
+				if (type == VULKAN_DESCRIPTOR_TYPE_UNIFORM)
+				{
+					bindings.resize(RESERVED_DESCRIPTOR_UBO_COUNT);
+					for (uint32_t ubo = 0; ubo < RESERVED_DESCRIPTOR_UBO_COUNT; ++ubo)
+					{
+						bindings[ubo].binding = ubo;
+						bindings[ubo].descriptorCount = 1;
+						bindings[ubo].descriptorType = GetVkDescriptorType((VulkanDescriptorType)type);
+						bindings[ubo].pImmutableSamplers = nullptr;
+						bindings[ubo].stageFlags = VK_SHADER_STAGE_ALL;
+					}
+				}
+				else
+				{
+					bindings.resize(1);
+					bindings[0].binding = 0;
+					bindings[0].descriptorCount = DESCRIPTOR_RANGE_DEFAULT_DESCRIPTOR_COUNT;
+					bindings[0].descriptorType = GetVkDescriptorType((VulkanDescriptorType)type);
+					bindings[0].pImmutableSamplers = nullptr;
+					bindings[0].stageFlags = VK_SHADER_STAGE_ALL;
+				}
+
+				VkDescriptorSetLayoutBindingFlagsCreateInfo binding_info = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO };
+				binding_info.bindingCount = 0;
+				binding_info.pBindingFlags = nullptr;
+
+				VkDescriptorSetLayoutCreateInfo layout_info = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
+				layout_info.bindingCount = static_cast<uint32_t>(bindings.size());
+				layout_info.pBindings = bindings.data();
+				layout_info.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
+				layout_info.pNext = &binding_info;
+				
+				VkDescriptorSetLayout vk_descriptor_set_layout = VK_NULL_HANDLE;
+				Vulkan::VkCheckResult(vkCreateDescriptorSetLayout(vk_inst.device, &layout_info, nullptr, &vk_descriptor_set_layout));
+
+				// Create the descriptor range
+				DescriptorRange& descriptor_range = data.descriptor_ranges[type];
+				descriptor_range.type = (VulkanDescriptorType)type;
+				descriptor_range.vk_descriptor_set_layout = vk_descriptor_set_layout;
+				descriptor_range.num_descriptors = type == VULKAN_DESCRIPTOR_TYPE_UNIFORM ? RESERVED_DESCRIPTOR_UBO_COUNT : DESCRIPTOR_RANGE_DEFAULT_DESCRIPTOR_COUNT;
+				descriptor_range.descriptor_size_in_bytes = GetDescriptorTypeByteSize(descriptor_range.type);
+				descriptor_range.size_in_bytes = static_cast<uint64_t>(descriptor_range.num_descriptors) *
+					static_cast<uint64_t>(descriptor_range.descriptor_size_in_bytes);
+				descriptor_range.offset_in_bytes = current_byte_offset;
+
+				uint64_t descriptor_layout_byte_size;
+				vk_inst.pFunc.get_descriptor_set_layout_size_ext(vk_inst.device, vk_descriptor_set_layout, &descriptor_layout_byte_size);
+
+				// Allocate the head of the free-list for this descriptor range
+				FreeDescriptorBlock* head = new FreeDescriptorBlock();
+				head->num_descriptors = descriptor_range.num_descriptors;
+				head->descriptor_offset = 0;
+				head->ptr_next = nullptr;
+				descriptor_range.head = head;
+
+				current_byte_offset += descriptor_range.size_in_bytes;
+			}
+		}
+
 		static uint64_t AllocateDescriptors(VulkanDescriptorType type, uint32_t num_descriptors)
 		{
 			DescriptorRange& descriptor_range = data.descriptor_ranges[type];
@@ -168,13 +186,15 @@ namespace Vulkan
 					{
 						previous_block->ptr_next = free_block->ptr_next;
 						delete free_block;
+
 						return free_block->descriptor_offset;
 					}
 					// Point the descriptor range head to the next block of the current block
 					else
 					{
-						delete descriptor_range.head;
 						descriptor_range.head = free_block->ptr_next;
+						delete free_block;
+
 						return descriptor_range.head->descriptor_offset;
 					}
 				}
@@ -183,6 +203,7 @@ namespace Vulkan
 				{
 					free_block->num_descriptors -= num_descriptors;
 					free_block->descriptor_offset += num_descriptors;
+
 					return free_block->descriptor_offset;
 				}
 
@@ -216,6 +237,8 @@ namespace Vulkan
 						FreeDescriptorBlock* next_block = free_block->ptr_next;
 						free_block->ptr_next = next_block->ptr_next;
 					}
+
+					return;
 				}
 				// Need a new free descriptor block to be inserted
 				else if (free_block->descriptor_offset > offset_in_descriptors)
@@ -255,6 +278,8 @@ namespace Vulkan
 						previous_block->ptr_next = new_block->ptr_next;
 						delete new_block;
 					}
+
+					return;
 				}
 				else if (free_block->descriptor_offset == offset_in_descriptors)
 				{
@@ -364,7 +389,7 @@ namespace Vulkan
 				VK_EXCEPT("Descriptor::Write", "Tried to write a buffer descriptor for an invalid descriptor type");
 			}
 
-			vkGetDescriptorEXT(vk_inst.device, &descriptor_info, descriptor_size, ptr_descriptor);
+			vk_inst.pFunc.get_descriptor_ext(vk_inst.device, &descriptor_info, descriptor_size, ptr_descriptor);
 		}
 
 		void Write(const VulkanDescriptorAllocation& descriptors, const VulkanImageView& view, VkImageLayout layout, uint32_t descriptor_offset)
@@ -399,7 +424,7 @@ namespace Vulkan
 				VK_EXCEPT("Descriptor::Write", "Tried to write an image descriptor for an invalid descriptor type");
 			}
 
-			vkGetDescriptorEXT(vk_inst.device, &descriptor_info, descriptor_size, ptr_descriptor);
+			vk_inst.pFunc.get_descriptor_ext(vk_inst.device, &descriptor_info, descriptor_size, ptr_descriptor);
 		}
 
 		void Write(const VulkanDescriptorAllocation& descriptors, const VulkanSampler& sampler, uint32_t descriptor_offset)
@@ -420,7 +445,7 @@ namespace Vulkan
 				VK_EXCEPT("Descriptor::Write", "Tried to write a sampler descriptor for an invalid descriptor type");
 			}
 
-			vkGetDescriptorEXT(vk_inst.device, &descriptor_info, descriptor_size, ptr_descriptor);
+			vk_inst.pFunc.get_descriptor_ext(vk_inst.device, &descriptor_info, descriptor_size, ptr_descriptor);
 		}
 
 		bool IsValid(const VulkanDescriptorAllocation& alloc)
@@ -430,6 +455,37 @@ namespace Vulkan
 				alloc.num_descriptors > 0 &&
 				alloc.descriptor_size_in_bytes > 0
 			);
+		}
+
+		std::vector<VkDescriptorSetLayout> GetDescriptorSetLayouts()
+		{
+			std::vector<VkDescriptorSetLayout> descriptor_set_layouts;
+			for (uint32_t i = 0; i < VULKAN_DESCRIPTOR_TYPE_NUM_TYPES; ++i)
+				descriptor_set_layouts.push_back(data.descriptor_ranges[i].vk_descriptor_set_layout);
+
+			return descriptor_set_layouts;
+		}
+
+		void BindDescriptors(const VulkanCommandBuffer& command_buffer, const VulkanPipeline& pipeline)
+		{
+			VkBufferDeviceAddressInfo buffer_device_address_info = { VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO };
+			buffer_device_address_info.buffer = data.descriptor_buffer.vk_buffer;
+
+			VkDescriptorBufferBindingInfoEXT descriptor_buffer_binding_info = { VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT };
+			descriptor_buffer_binding_info.address = vkGetBufferDeviceAddress(vk_inst.device, &buffer_device_address_info);
+			descriptor_buffer_binding_info.usage = VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT;
+
+			vk_inst.pFunc.cmd_bind_descriptor_buffers_ext(command_buffer.vk_command_buffer, 1, &descriptor_buffer_binding_info);
+
+			uint32_t buffer_indices[VULKAN_DESCRIPTOR_TYPE_NUM_TYPES] = { 0, 0, 0, 0, 0 };
+			std::vector<uint64_t> buffer_offsets(VULKAN_DESCRIPTOR_TYPE_NUM_TYPES);
+			for (uint32_t i = 0; i < VULKAN_DESCRIPTOR_TYPE_NUM_TYPES; ++i)
+			{
+				buffer_offsets[i] = data.descriptor_ranges[i].offset_in_bytes;
+			}
+
+			vk_inst.pFunc.cmd_set_descriptor_buffer_offsets_ext(command_buffer.vk_command_buffer,
+				Util::ToVkPipelineBindPoint(pipeline.type), pipeline.vk_pipeline_layout, 0, VULKAN_DESCRIPTOR_TYPE_NUM_TYPES, buffer_indices, buffer_offsets.data());
 		}
 
 	}
