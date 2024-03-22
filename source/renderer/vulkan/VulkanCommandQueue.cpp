@@ -48,70 +48,58 @@ namespace Vulkan
 		uint64_t Execute(VulkanCommandQueue& queue, uint32_t num_buffers, const VulkanCommandBuffer* const command_buffers,
 			uint32_t num_signal_fences, VulkanFence* const signal_fences)
 		{
-			std::vector<VkCommandBufferSubmitInfo> command_buffer_submit_infos(num_buffers);
-			std::vector<VkSemaphoreSubmitInfo> wait_submit_infos;
-			std::vector<VkSemaphoreSubmitInfo> signal_submit_infos;
+			std::vector<VkCommandBuffer> vk_command_buffers(num_buffers);
 
-			// Add all vk command bufers into a vector
+			std::vector<VkSemaphore> vk_wait_semaphores;
+			std::vector<VkPipelineStageFlags> vk_wait_stages;
+			std::vector<uint64_t> wait_fence_values;
+
+			std::vector<VkSemaphore> vk_signal_semaphores;
+			std::vector<uint64_t> signal_fence_values;
+
+			// Go through the command buffers and their wait fences
 			for (uint32_t i = 0; i < num_buffers; ++i)
 			{
-				command_buffer_submit_infos[i].sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
-				command_buffer_submit_infos[i].commandBuffer = command_buffers[i].vk_command_buffer;
-				command_buffer_submit_infos[i].deviceMask = 0;
+				vk_command_buffers[i] = command_buffers[i].vk_command_buffer;
 
-				// Add all wait fences into a vector
-				for (uint32_t j = 0; j < command_buffers[i].wait_fences.size(); ++j)
+				for (uint32_t wait_fence = 0; wait_fence < command_buffers[i].wait_fences.size(); ++wait_fence)
 				{
-					VkSemaphoreSubmitInfo wait_submit_info = { VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO };
-					wait_submit_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-					wait_submit_info.semaphore = command_buffers[i].wait_fences[j].vk_semaphore;
-					wait_submit_info.value = command_buffers[i].wait_fences[j].fence_value;
-					wait_submit_info.stageMask = command_buffers[i].wait_fences[j].stage_flags;
-					wait_submit_info.deviceIndex = 0;
-
-					wait_submit_infos.push_back(wait_submit_info);
+					vk_wait_semaphores.push_back(command_buffers[i].wait_fences[wait_fence].vk_semaphore);
+					vk_wait_stages.push_back(command_buffers[i].wait_fences[wait_fence].stage_flags);
+					wait_fence_values.push_back(command_buffers[i].wait_fences[wait_fence].fence_value);
 				}
 			}
 
-			// Add the command queue fence to the signal submissions
+			// Add the queue's timeline fence to signal submission
+			vk_signal_semaphores.push_back(queue.fence.vk_semaphore);
 			uint64_t queue_fence_value = ++queue.fence.fence_value;
-			{
-				VkSemaphoreSubmitInfo signal_submit_info = { VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO };
-				signal_submit_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-				signal_submit_info.semaphore = queue.fence.vk_semaphore;
-				signal_submit_info.value = queue_fence_value;
-				signal_submit_info.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-				signal_submit_info.deviceIndex = 0;
+			signal_fence_values.push_back(queue_fence_value);
 
-				signal_submit_infos.push_back(signal_submit_info);
-			}
-
-			// Add additional signal fences to the signal submissions
-			// E.g. used for the binary semaphores to indicate that rendering has finished
+			// Add additional fences to signal submission
 			for (uint32_t i = 0; i < num_signal_fences; ++i)
 			{
-				uint64_t fence_value = signal_fences[i].type == VULKAN_FENCE_TYPE_TIMELINE ? ++signal_fences[i].fence_value : 0;
-
-				VkSemaphoreSubmitInfo signal_submit_info = { VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO };
-				signal_submit_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-				signal_submit_info.semaphore = signal_fences[i].vk_semaphore;
-				signal_submit_info.value = fence_value;
-				signal_submit_info.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-				signal_submit_info.deviceIndex = 0;
-
-				signal_submit_infos.push_back(signal_submit_info);
+				vk_signal_semaphores.push_back(signal_fences[i].vk_semaphore);
+				signal_fence_values.push_back(signal_fences[i].fence_value);
 			}
 
-			VkSubmitInfo2 submit_info = { VK_STRUCTURE_TYPE_SUBMIT_INFO_2 };
-			submit_info.commandBufferInfoCount = static_cast<uint32_t>(command_buffer_submit_infos.size());
-			submit_info.pCommandBufferInfos = command_buffer_submit_infos.data();
-			submit_info.waitSemaphoreInfoCount = static_cast<uint32_t>(wait_submit_infos.size());
-			submit_info.pWaitSemaphoreInfos = wait_submit_infos.data();
-			submit_info.signalSemaphoreInfoCount = static_cast<uint32_t>(signal_submit_infos.size());
-			submit_info.pSignalSemaphoreInfos = signal_submit_infos.data();
-			submit_info.flags = 0;
+			VkTimelineSemaphoreSubmitInfo timeline_semaphores_submit_info = { VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO };
+			timeline_semaphores_submit_info.waitSemaphoreValueCount = static_cast<uint32_t>(wait_fence_values.size());
+			timeline_semaphores_submit_info.pWaitSemaphoreValues = wait_fence_values.data();
+			timeline_semaphores_submit_info.signalSemaphoreValueCount = static_cast<uint32_t>(signal_fence_values.size());
+			timeline_semaphores_submit_info.pSignalSemaphoreValues = signal_fence_values.data();
 
-			vkQueueSubmit2(queue.vk_queue, 1, &submit_info, nullptr);
+			VkSubmitInfo submit_info = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
+			submit_info.commandBufferCount = static_cast<uint32_t>(vk_command_buffers.size());
+			submit_info.pCommandBuffers = vk_command_buffers.data();
+			submit_info.waitSemaphoreCount = static_cast<uint32_t>(vk_wait_semaphores.size());
+			submit_info.pWaitSemaphores = vk_wait_semaphores.data();
+			submit_info.pWaitDstStageMask = vk_wait_stages.data();
+			submit_info.signalSemaphoreCount = static_cast<uint32_t>(vk_signal_semaphores.size());
+			submit_info.pSignalSemaphores = vk_signal_semaphores.data();
+			submit_info.pNext = &timeline_semaphores_submit_info;
+
+			VkCheckResult(vkQueueSubmit(queue.vk_queue, 1, &submit_info, VK_NULL_HANDLE));
+
 			return queue_fence_value;
 		}
 

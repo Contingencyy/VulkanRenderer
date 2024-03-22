@@ -36,26 +36,26 @@ RingBuffer::~RingBuffer()
 RingBuffer::Allocation RingBuffer::Allocate(uint64_t num_bytes, uint16_t align)
 {
 	VK_ASSERT(num_bytes <= m_buffer.size_in_bytes && "Tried to allocate more memory from the ring buffer than the total ring buffer size");
-	
-	uint8_t* alloc_ptr_begin = (uint8_t*)VK_ALIGN_POW2(m_ptr_at, align);
-	uint8_t* alloc_ptr_end = alloc_ptr_begin + num_bytes;
 
-	// If the allocation goes beyond the end pointer of the ring buffer, wrap around and allocate from the beginning
-	if (alloc_ptr_end > m_ptr_end)
+	// Align the current write pointer, and check if we need to wrap
+	m_ptr_at = (uint8_t*)VK_ALIGN_POW2(m_ptr_at, align);
+	if (m_ptr_at + num_bytes > m_ptr_end)
 	{
-		alloc_ptr_begin = m_ptr_begin;
-		alloc_ptr_end = m_ptr_begin + num_bytes;
+		m_ptr_at = m_ptr_begin;
 	}
 
-	// If the oldest in-flight allocation and the current allocation overlap or the maximum amount of allocations have been reached,
-	// we need to free some memory first
-	bool flush_required = (alloc_ptr_end > m_ptr_free_until) ||
-			(m_in_flight_allocations.size() > RING_BUFFER_MAX_ALLOCATIONS);
-	
-	if (flush_required)
+	uint8_t* alloc_ptr_begin = m_ptr_at;
+	uint8_t* alloc_ptr_end = alloc_ptr_begin + num_bytes;
+
+	// Check if we have enough space now, or if we have reached the maximum amount of allocations
+	uint64_t bytes_left = m_ptr_free_until - m_ptr_at;
+	if (num_bytes > bytes_left ||
+		m_in_flight_allocations.size() > RING_BUFFER_MAX_ALLOCATIONS)
 	{
 		Flush();
-		VK_ASSERT(alloc_ptr_end <= m_ptr_free_until && "Flushing the ring buffer did not free up enough memory");
+
+		bytes_left = m_ptr_free_until - m_ptr_at;
+		VK_ASSERT(num_bytes <= bytes_left && "Flushing the ring buffer did not free up enough memory");
 	}
 
 	// Update the current write pointer
@@ -79,19 +79,23 @@ RingBuffer::Allocation RingBuffer::Allocate(uint64_t num_bytes, uint16_t align)
 
 void RingBuffer::Flush()
 {
-	// NOTE: Flushing the ring buffer currently blocks, might be nice to change this later so that while loading
-	// assets this could just fail and the caller that wants to allocate simply has to try again
+	// NOTE: Currently the ring buffer flushes every in-flight allocation it can in the hopes that it will free up enough memory
+	// However, it could happen that an allocation will fail even after flushing, which should be indicated to the caller so that
+	// it can take action accordingly
+	uint32_t finished_frame_index = Vulkan::GetLastFinishedFrameIndex();
+
 	while (m_in_flight_allocations.size() > 0)
 	{
 		const auto& in_flight_alloc = m_in_flight_allocations.front();
-		if (in_flight_alloc.frame_index <= Vulkan::GetLastFinishedFrameIndex())
+
+		if (finished_frame_index >= in_flight_alloc.frame_index)
 		{
 			m_ptr_free_until = in_flight_alloc.alloc.ptr_end;
 			m_in_flight_allocations.pop();
 		}
 		else
 		{
-			VK_ASSERT(false && "Ring buffer flush did not sync properly, flushing should wait for all in-flight allocations to finish");
+			break;
 		}
 	}
 }

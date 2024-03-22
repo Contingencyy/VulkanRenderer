@@ -45,7 +45,8 @@ void RenderPass::BeginStage(VulkanCommandBuffer& command_buffer, uint32_t stage_
 	{
 		if (IsAttachmentValid(stage.attachments[i]))
 		{
-			attachment_transitions.emplace_back(stage.attachments[i].view.image, stage.attachments[i].info.expected_layout);
+			if (stage.attachments[i].info.expected_layout != Vulkan::ResourceTracker::GetImageLayout({ .image = stage.attachments[i].view.image }))
+				attachment_transitions.emplace_back(stage.attachments[i].view.image, stage.attachments[i].info.expected_layout);
 		}
 	}
 

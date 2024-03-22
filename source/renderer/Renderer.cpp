@@ -30,10 +30,10 @@ namespace Renderer
 {
 
 #define RENDER_PASS_BEGIN(render_pass) { RenderPass& current_pass = render_pass
-#define RENDER_PASS_STAGE_BEGIN(command_buffer, stage_index, render_width, render_height) VK_ASSERT(stage_index < current_pass.GetStageCount() && "Tried to begin more render pass stages than the render pass supports"); \
+#define RENDER_PASS_STAGE_BEGIN(stage_index, command_buffer, render_width, render_height) VK_ASSERT(stage_index < current_pass.GetStageCount() && "Tried to begin more render pass stages than the render pass supports"); \
 	current_pass.BeginStage(command_buffer, stage_index, render_width, render_height)
-#define RENDER_PASS_STAGE_SET_ATTACHMENT(attachment_slot, stage_index, image_view) current_pass.SetStageAttachment(stage_index, attachment_slot, image_view)
-#define RENDER_PASS_STAGE_END(command_buffer, stage_index) current_pass.EndStage(command_buffer, stage_index)
+#define RENDER_PASS_STAGE_SET_ATTACHMENT(stage_index, attachment_slot, image_view) current_pass.SetStageAttachment(stage_index, attachment_slot, image_view)
+#define RENDER_PASS_STAGE_END(stage_index, command_buffer) current_pass.EndStage(command_buffer, stage_index)
 #define RENDER_PASS_END(render_pass) }
 
 	enum RenderPassStage
@@ -144,14 +144,14 @@ namespace Renderer
 		VulkanDescriptorAllocation view_descriptor;
 		VulkanSampler sampler;
 
-		Texture* ptr_next = nullptr;
+		TextureHandle_t next;
 		VkDescriptorSet imgui_descriptor_set = VK_NULL_HANDLE;
 
 		Texture() = default;
 		explicit Texture(VulkanImage image, VulkanImageView view, VulkanDescriptorAllocation descriptor, VulkanSampler sampler)
 			: image(image), view(view), view_descriptor(descriptor), sampler(sampler)
 		{
-			Vulkan::AddImGuiTexture(image.vk_image, view.vk_image_view, sampler.vk_sampler);
+			imgui_descriptor_set = Vulkan::AddImGuiTexture(image.vk_image, view.vk_image_view, sampler.vk_sampler);
 		}
 
 		~Texture()
@@ -267,6 +267,8 @@ namespace Renderer
 				RingBuffer::Allocation camera_ubo;
 				RingBuffer::Allocation light_ubo;
 				RingBuffer::Allocation material_ubo;
+
+				VulkanDescriptorAllocation descriptors;
 			} ubos;
 
 			RingBuffer::Allocation instance_buffer;
@@ -309,9 +311,9 @@ namespace Renderer
 
 	static inline Data::Frame* GetFrameCurrent()
 	{
-		return &data->per_frame[Vulkan::GetCurrentFrameIndex()];
+		return &data->per_frame[Vulkan::GetCurrentFrameIndex() % Vulkan::MAX_FRAMES_IN_FLIGHT];
 	}
-	
+
 	static std::vector<VkVertexInputBindingDescription> GetVertexBindingDescription()
 	{
 		std::vector<VkVertexInputBindingDescription> binding_descs(2);
@@ -521,7 +523,6 @@ namespace Renderer
 			// Remove old depth render target
 			if (data->render_targets.depth.image.vk_image)
 			{
-				Vulkan::Descriptor::Free(data->render_targets.depth.descriptor);
 				Vulkan::ImageView::Destroy(data->render_targets.depth.view);
 				Vulkan::Image::Destroy(data->render_targets.depth.image);
 			}
@@ -831,7 +832,8 @@ namespace Renderer
 		{
 			std::vector<RenderPass::Stage> stages(RENDER_PASS_IMGUI_NUM_STAGES);
 			RenderPass::Stage& imgui_stage = stages[RENDER_PASS_IMGUI_STAGE_IMGUI];
-			
+			imgui_stage.pipeline.type = VULKAN_PIPELINE_TYPE_GRAPHICS;
+
 			RenderPass::Attachment& imgui_color0 = imgui_stage.attachments[RenderPass::ATTACHMENT_SLOT_COLOR0];
 			imgui_color0.info.format = TEXTURE_FORMAT_RGBA8_UNORM;
 			imgui_color0.info.expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -924,9 +926,9 @@ namespace Renderer
 						face_view_info.num_layers = 1;
 
 						temporary_image_views.push_back(Vulkan::ImageView::Create(hdr_cubemap_image, face_view_info));
-						RENDER_PASS_STAGE_SET_ATTACHMENT(RenderPass::ATTACHMENT_SLOT_COLOR0, RENDER_PASS_GEN_IBL_CUBEMAPS_STAGE_HDR_CUBEMAP, temporary_image_views.back());
+						RENDER_PASS_STAGE_SET_ATTACHMENT(RENDER_PASS_GEN_IBL_CUBEMAPS_STAGE_HDR_CUBEMAP, RenderPass::ATTACHMENT_SLOT_COLOR0, temporary_image_views.back());
 
-						RENDER_PASS_STAGE_BEGIN(command_buffer, RENDER_PASS_GEN_IBL_CUBEMAPS_STAGE_HDR_CUBEMAP, render_width, render_height);
+						RENDER_PASS_STAGE_BEGIN(RENDER_PASS_GEN_IBL_CUBEMAPS_STAGE_HDR_CUBEMAP, command_buffer, render_width, render_height);
 
 						viewport.width = render_width;
 						viewport.height = render_height;
@@ -944,12 +946,20 @@ namespace Renderer
 
 						Vulkan::Command::DrawGeometryIndexed(command_buffer, 1, &data->unit_cube_vb, &data->unit_cube_ib, 2);
 
-						RENDER_PASS_STAGE_END(command_buffer, RENDER_PASS_GEN_IBL_CUBEMAPS_STAGE_HDR_CUBEMAP);
+						RENDER_PASS_STAGE_END(RENDER_PASS_GEN_IBL_CUBEMAPS_STAGE_HDR_CUBEMAP, command_buffer);
 					}
 				}
 
 				Vulkan::Command::TransitionLayout(command_buffer, { .image = hdr_cubemap_image, .new_layout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL });
 			}
+
+			Vulkan::CommandBuffer::EndRecording(command_buffer);
+			Vulkan::CommandQueue::ExecuteBlocking(data->command_queues.graphics_compute, command_buffer);
+			Vulkan::CommandBuffer::Reset(command_buffer);
+			Vulkan::CommandPool::FreeCommandBuffer(data->command_pools.graphics_compute, command_buffer);
+
+			command_buffer = Vulkan::CommandPool::AllocateCommandBuffer(data->command_pools.graphics_compute);
+			Vulkan::CommandBuffer::BeginRecording(command_buffer);
 
 			// ----------------------------------------------------------------------------------------------------------------
 			// 2 - Render irradiance cubemap from hdr environment cubemap
@@ -986,7 +996,8 @@ namespace Renderer
 				viewport.x = 0.0f, viewport.y = 0.0f;
 				viewport.minDepth = 0.0f, viewport.maxDepth = 1.0f;
 
-				VkRect2D scissor_rect = { 0, 0, IBL_IRRADIANCE_CUBEMAP_RESOLUTION, IBL_IRRADIANCE_CUBEMAP_RESOLUTION };
+				VkRect2D scissor_rect = {};
+				scissor_rect.offset.x = 0, scissor_rect.offset.y = 0;
 
 				struct PushConsts
 				{
@@ -1021,9 +1032,9 @@ namespace Renderer
 						face_view_info.num_layers = 1;
 
 						temporary_image_views.push_back(Vulkan::ImageView::Create(irradiance_cubemap_image, face_view_info));
-						RENDER_PASS_STAGE_SET_ATTACHMENT(RenderPass::ATTACHMENT_SLOT_COLOR0, RENDER_PASS_GEN_IBL_CUBEMAPS_STAGE_IRRADIANCE_CUBEMAP, temporary_image_views.back());
+						RENDER_PASS_STAGE_SET_ATTACHMENT(RENDER_PASS_GEN_IBL_CUBEMAPS_STAGE_IRRADIANCE_CUBEMAP, RenderPass::ATTACHMENT_SLOT_COLOR0, temporary_image_views.back());
 
-						RENDER_PASS_STAGE_BEGIN(command_buffer, RENDER_PASS_GEN_IBL_CUBEMAPS_STAGE_IRRADIANCE_CUBEMAP, render_width, render_height);
+						RENDER_PASS_STAGE_BEGIN(RENDER_PASS_GEN_IBL_CUBEMAPS_STAGE_IRRADIANCE_CUBEMAP, command_buffer, render_width, render_height);
 
 						viewport.width = render_width;
 						viewport.height = render_height;
@@ -1041,12 +1052,20 @@ namespace Renderer
 
 						Vulkan::Command::DrawGeometryIndexed(command_buffer, 1, &data->unit_cube_vb, &data->unit_cube_ib, 2);
 
-						RENDER_PASS_STAGE_END(command_buffer, RENDER_PASS_GEN_IBL_CUBEMAPS_STAGE_IRRADIANCE_CUBEMAP);
+						RENDER_PASS_STAGE_END(RENDER_PASS_GEN_IBL_CUBEMAPS_STAGE_IRRADIANCE_CUBEMAP, command_buffer);
 					}
 				}
 
 				Vulkan::Command::TransitionLayout(command_buffer, { .image = irradiance_cubemap_image, .new_layout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL });
 			}
+
+			Vulkan::CommandBuffer::EndRecording(command_buffer);
+			Vulkan::CommandQueue::ExecuteBlocking(data->command_queues.graphics_compute, command_buffer);
+			Vulkan::CommandBuffer::Reset(command_buffer);
+			Vulkan::CommandPool::FreeCommandBuffer(data->command_pools.graphics_compute, command_buffer);
+
+			command_buffer = Vulkan::CommandPool::AllocateCommandBuffer(data->command_pools.graphics_compute);
+			Vulkan::CommandBuffer::BeginRecording(command_buffer);
 
 			// ----------------------------------------------------------------------------------------------------------------
 			// 3 - Render prefiltered cubemap from hdr environment cubemap
@@ -1113,9 +1132,9 @@ namespace Renderer
 						face_view_info.num_layers = 1;
 
 						temporary_image_views.push_back(Vulkan::ImageView::Create(prefiltered_cubemap_image, face_view_info));
-						RENDER_PASS_STAGE_SET_ATTACHMENT(RenderPass::ATTACHMENT_SLOT_COLOR0, RENDER_PASS_GEN_IBL_CUBEMAPS_STAGE_PREFILTERED_CUBEMAP, temporary_image_views.back());
+						RENDER_PASS_STAGE_SET_ATTACHMENT(RENDER_PASS_GEN_IBL_CUBEMAPS_STAGE_PREFILTERED_CUBEMAP, RenderPass::ATTACHMENT_SLOT_COLOR0, temporary_image_views.back());
 
-						RENDER_PASS_STAGE_BEGIN(command_buffer, RENDER_PASS_GEN_IBL_CUBEMAPS_STAGE_PREFILTERED_CUBEMAP, render_width, render_height);
+						RENDER_PASS_STAGE_BEGIN(RENDER_PASS_GEN_IBL_CUBEMAPS_STAGE_PREFILTERED_CUBEMAP, command_buffer, render_width, render_height);
 						{
 							viewport.width = render_width;
 							viewport.height = render_height;
@@ -1134,7 +1153,7 @@ namespace Renderer
 
 							Vulkan::Command::DrawGeometryIndexed(command_buffer, 1, &data->unit_cube_vb, &data->unit_cube_ib, 2);
 						}
-						RENDER_PASS_STAGE_END(command_buffer, RENDER_PASS_GEN_IBL_CUBEMAPS_STAGE_PREFILTERED_CUBEMAP, data->render_passes.gen_prefiltered_cube);
+						RENDER_PASS_STAGE_END(RENDER_PASS_GEN_IBL_CUBEMAPS_STAGE_PREFILTERED_CUBEMAP, command_buffer, data->render_passes.gen_prefiltered_cube);
 					}
 				}
 
@@ -1155,8 +1174,8 @@ namespace Renderer
 		}
 
 		// Append the irradiance cubemap and prefiltered cubemap to the hdr cubemap texture
-		hdr_cubemap->ptr_next = irradiance_cubemap;
-		irradiance_cubemap->ptr_next = prefiltered_cubemap;
+		hdr_cubemap->next = irradiance_cubemap_handle;
+		irradiance_cubemap->next = prefiltered_cubemap_handle;
 
 		return hdr_cubemap_handle;
 	}
@@ -1205,8 +1224,8 @@ namespace Renderer
 		uint32_t render_height = IBL_BRDF_LUT_RESOLUTION;
 
 		RENDER_PASS_BEGIN(data->render_passes.gen_brdf_lut);
-		RENDER_PASS_STAGE_SET_ATTACHMENT(RenderPass::ATTACHMENT_SLOT_COLOR0, RENDER_PASS_BRDF_LUT_STAGE_BRDF_LUT, brdf_lut_view);
-		RENDER_PASS_STAGE_BEGIN(command_buffer, RENDER_PASS_BRDF_LUT_STAGE_BRDF_LUT, render_width, render_height);
+		RENDER_PASS_STAGE_SET_ATTACHMENT(RENDER_PASS_BRDF_LUT_STAGE_BRDF_LUT, RenderPass::ATTACHMENT_SLOT_COLOR0, brdf_lut_view);
+		RENDER_PASS_STAGE_BEGIN(RENDER_PASS_BRDF_LUT_STAGE_BRDF_LUT, command_buffer, render_width, render_height);
 
 		viewport.width = render_width;
 		viewport.height = render_height;
@@ -1221,7 +1240,7 @@ namespace Renderer
 
 		Vulkan::Command::DrawGeometry(command_buffer, 0, nullptr, 3);
 
-		RENDER_PASS_STAGE_END(command_buffer, RENDER_PASS_BRDF_LUT_STAGE_BRDF_LUT);
+		RENDER_PASS_STAGE_END(RENDER_PASS_BRDF_LUT_STAGE_BRDF_LUT, command_buffer);
 		RENDER_PASS_END(data->render_passes.gen_brdf_lut);
 
 		Vulkan::Command::TransitionLayout(command_buffer, { .image = brdf_lut, .new_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
@@ -1269,15 +1288,16 @@ namespace Renderer
 		Vulkan::CommandBuffer::Reset(command_buffer);
 		Vulkan::CommandPool::FreeCommandBuffer(data->command_pools.graphics_compute, command_buffer);
 
+		for (uint32_t frame_index = 0; frame_index < Vulkan::MAX_FRAMES_IN_FLIGHT; ++frame_index)
+		{
+			data->per_frame[frame_index].command_buffer = Vulkan::CommandPool::AllocateCommandBuffer(data->command_pools.graphics_compute);
+			data->per_frame[frame_index].ubos.descriptors = Vulkan::Descriptor::Allocate(VULKAN_DESCRIPTOR_TYPE_UNIFORM_BUFFER, RESERVED_DESCRIPTOR_UBO_COUNT, frame_index);
+		}
+
 		CreateUnitCubeBuffers();
 		CreateDefaultSamplers();
 		CreateDefaultTextures();
 		GenerateBRDF_LUT();
-
-		for (uint32_t i = 0; i < Vulkan::MAX_FRAMES_IN_FLIGHT; ++i)
-		{
-			data->per_frame[i].command_buffer = Vulkan::CommandPool::AllocateCommandBuffer(data->command_pools.graphics_compute);
-		}
 
 		// Set default render settings
 		data->settings.use_direct_light = true;
@@ -1312,9 +1332,10 @@ namespace Renderer
 		Vulkan::DestroySampler(data->prefiltered_cube_sampler);
 		Vulkan::DestroySampler(data->brdf_lut_sampler);
 		
-		for (uint32_t i = 0; i < Vulkan::MAX_FRAMES_IN_FLIGHT; ++i)
+		for (uint32_t frame_index = 0; frame_index < Vulkan::MAX_FRAMES_IN_FLIGHT; ++frame_index)
 		{
-			Vulkan::CommandPool::FreeCommandBuffer(data->command_pools.graphics_compute, data->per_frame[i].command_buffer);
+			Vulkan::Descriptor::Free(data->per_frame[frame_index].ubos.descriptors, frame_index);
+			Vulkan::CommandPool::FreeCommandBuffer(data->command_pools.graphics_compute, data->per_frame[frame_index].command_buffer);
 		}
 
 		Vulkan::CommandPool::Destroy(data->command_pools.graphics_compute);
@@ -1335,6 +1356,7 @@ namespace Renderer
 		Data::Frame* frame = GetFrameCurrent();
 
 		Vulkan::CommandQueue::WaitFenceValue(data->command_queues.graphics_compute, frame->sync.frame_in_flight_fence_value);
+		Vulkan::CommandBuffer::Reset(frame->command_buffer);
 		Vulkan::CommandBuffer::BeginRecording(frame->command_buffer);
 
 		bool resized = Vulkan::BeginFrame();
@@ -1357,11 +1379,17 @@ namespace Renderer
 		camera_data.view_pos = glm::inverse(frame_info.view)[3];
 
 		// Allocate frame UBOs and instance buffer from ring buffer
-		frame->ubos.settings_ubo = data->ring_buffer.Allocate(sizeof(RenderSettings));
-		frame->ubos.camera_ubo = data->ring_buffer.Allocate(sizeof(CameraData));
+		frame->ubos.settings_ubo = data->ring_buffer.Allocate(sizeof(RenderSettings), alignof(RenderSettings));
+		frame->ubos.camera_ubo = data->ring_buffer.Allocate(sizeof(CameraData), alignof(CameraData));
 		frame->ubos.light_ubo = data->ring_buffer.Allocate(sizeof(uint32_t) + sizeof(PointlightData) * MAX_LIGHT_SOURCES);
 		frame->ubos.material_ubo = data->ring_buffer.Allocate(sizeof(MaterialData) * MAX_UNIQUE_MATERIALS);
 		frame->instance_buffer = data->ring_buffer.Allocate(sizeof(glm::mat4) * MAX_DRAW_LIST_ENTRIES);
+
+		// Write UBO descriptors
+		Vulkan::Descriptor::Write(frame->ubos.descriptors, frame->ubos.settings_ubo.buffer, RESERVED_DESCRIPTOR_UBO_SETTINGS);
+		Vulkan::Descriptor::Write(frame->ubos.descriptors, frame->ubos.camera_ubo.buffer, RESERVED_DESCRIPTOR_UBO_CAMERA);
+		Vulkan::Descriptor::Write(frame->ubos.descriptors, frame->ubos.light_ubo.buffer, RESERVED_DESCRIPTOR_UBO_LIGHTS);
+		Vulkan::Descriptor::Write(frame->ubos.descriptors, frame->ubos.material_ubo.buffer, RESERVED_DESCRIPTOR_UBO_MATERIALS);
 
 		// Write camera data to the camera UBO
 		frame->ubos.camera_ubo.WriteBuffer(0, sizeof(CameraData), &camera_data);
@@ -1400,10 +1428,10 @@ namespace Renderer
 
 		RENDER_PASS_BEGIN(data->render_passes.skybox);
 		{
-			RENDER_PASS_STAGE_SET_ATTACHMENT(RenderPass::ATTACHMENT_SLOT_COLOR0, RENDER_PASS_SKYBOX_STAGE_SKYBOX, data->render_targets.hdr.view);
-			RENDER_PASS_STAGE_SET_ATTACHMENT(RenderPass::ATTACHMENT_SLOT_DEPTH_STENCIL, RENDER_PASS_SKYBOX_STAGE_SKYBOX, data->render_targets.depth.view);
+			RENDER_PASS_STAGE_SET_ATTACHMENT(RENDER_PASS_SKYBOX_STAGE_SKYBOX, RenderPass::ATTACHMENT_SLOT_COLOR0, data->render_targets.hdr.view);
+			RENDER_PASS_STAGE_SET_ATTACHMENT(RENDER_PASS_SKYBOX_STAGE_SKYBOX, RenderPass::ATTACHMENT_SLOT_DEPTH_STENCIL, data->render_targets.depth.view);
 
-			RENDER_PASS_STAGE_BEGIN(frame->command_buffer, RENDER_PASS_SKYBOX_STAGE_SKYBOX, data->render_resolution.width, data->render_resolution.height);
+			RENDER_PASS_STAGE_BEGIN(RENDER_PASS_SKYBOX_STAGE_SKYBOX, frame->command_buffer, data->render_resolution.width, data->render_resolution.height);
 
 			Vulkan::Command::SetViewport(frame->command_buffer, 0, 1, &viewport);
 			Vulkan::Command::SetScissor(frame->command_buffer, 0, 1, &scissor_rect);
@@ -1423,7 +1451,7 @@ namespace Renderer
 			Vulkan::Command::PushConstants(frame->command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push_consts), &push_consts);
 			Vulkan::Command::DrawGeometryIndexed(frame->command_buffer, 1, &data->unit_cube_vb, &data->unit_cube_ib, 2);
 
-			RENDER_PASS_STAGE_END(frame->command_buffer, RENDER_PASS_SKYBOX_STAGE_SKYBOX);
+			RENDER_PASS_STAGE_END(RENDER_PASS_SKYBOX_STAGE_SKYBOX, frame->command_buffer);
 		}
 		RENDER_PASS_END(data->render_passes.skybox);
 
@@ -1434,10 +1462,10 @@ namespace Renderer
 
 		RENDER_PASS_BEGIN(data->render_passes.geometry);
 		{
-			RENDER_PASS_STAGE_SET_ATTACHMENT(RenderPass::ATTACHMENT_SLOT_COLOR0, RENDER_PASS_GEOMETRY_STAGE_LIGHTING, data->render_targets.hdr.view);
-			RENDER_PASS_STAGE_SET_ATTACHMENT(RenderPass::ATTACHMENT_SLOT_DEPTH_STENCIL, RENDER_PASS_GEOMETRY_STAGE_LIGHTING, data->render_targets.depth.view);
+			RENDER_PASS_STAGE_SET_ATTACHMENT(RENDER_PASS_GEOMETRY_STAGE_LIGHTING, RenderPass::ATTACHMENT_SLOT_COLOR0, data->render_targets.hdr.view);
+			RENDER_PASS_STAGE_SET_ATTACHMENT(RENDER_PASS_GEOMETRY_STAGE_LIGHTING, RenderPass::ATTACHMENT_SLOT_DEPTH_STENCIL, data->render_targets.depth.view);
 
-			RENDER_PASS_STAGE_BEGIN(frame->command_buffer, RENDER_PASS_GEOMETRY_STAGE_LIGHTING, data->render_resolution.width, data->render_resolution.height);
+			RENDER_PASS_STAGE_BEGIN(RENDER_PASS_GEOMETRY_STAGE_LIGHTING, frame->command_buffer, data->render_resolution.width, data->render_resolution.height);
 
 			// Viewport and scissor
 			Vulkan::Command::SetViewport(frame->command_buffer, 0, 1, &viewport);
@@ -1446,10 +1474,10 @@ namespace Renderer
 			const Texture* skybox_texture = data->texture_slotmap.Find(data->skybox_texture_handle);
 			VK_ASSERT(skybox_texture && "Skybox cubemap is invalid for currently selected skybox");
 
-			const Texture* irradiance_cubemap = skybox_texture->ptr_next;
+			const Texture* irradiance_cubemap = data->texture_slotmap.Find(skybox_texture->next);
 			VK_ASSERT(irradiance_cubemap && "Irradiance cubemap is invalid for currently selected skybox");
 
-			const Texture* prefiltered_cubemap = irradiance_cubemap->ptr_next;
+			const Texture* prefiltered_cubemap = data->texture_slotmap.Find(irradiance_cubemap->next);
 			VK_ASSERT(prefiltered_cubemap && "Prefiltered cubemap is invalid for currently selected skybox");
 
 			const Texture* brdf_lut = data->texture_slotmap.Find(data->ibl.brdf_lut_handle);
@@ -1499,7 +1527,7 @@ namespace Renderer
 				data->stats.total_triangle_count += (mesh->index_buffer.size_in_bytes / sizeof(uint32_t)) / 3;
 			}
 
-			RENDER_PASS_STAGE_END(frame->command_buffer, RENDER_PASS_GEOMETRY_STAGE_LIGHTING);
+			RENDER_PASS_STAGE_END(RENDER_PASS_GEOMETRY_STAGE_LIGHTING, frame->command_buffer);
 		}
 		RENDER_PASS_END(data->render_passes.geometry);
 
@@ -1509,10 +1537,10 @@ namespace Renderer
 
 		RENDER_PASS_BEGIN(data->render_passes.post_process);
 		{
-			RENDER_PASS_STAGE_SET_ATTACHMENT(RenderPass::ATTACHMENT_SLOT_READ_ONLY0, RENDER_PASS_POST_PROCESS_STAGE_TONEMAP_GAMMA_EXPOSURE, data->render_targets.hdr.view);
-			RENDER_PASS_STAGE_SET_ATTACHMENT(RenderPass::ATTACHMENT_SLOT_READ_WRITE0, RENDER_PASS_POST_PROCESS_STAGE_TONEMAP_GAMMA_EXPOSURE, data->render_targets.sdr.view);
+			RENDER_PASS_STAGE_SET_ATTACHMENT(RENDER_PASS_POST_PROCESS_STAGE_TONEMAP_GAMMA_EXPOSURE, RenderPass::ATTACHMENT_SLOT_READ_ONLY0, data->render_targets.hdr.view);
+			RENDER_PASS_STAGE_SET_ATTACHMENT(RENDER_PASS_POST_PROCESS_STAGE_TONEMAP_GAMMA_EXPOSURE, RenderPass::ATTACHMENT_SLOT_READ_WRITE0, data->render_targets.sdr.view);
 
-			RENDER_PASS_STAGE_BEGIN(frame->command_buffer, RENDER_PASS_POST_PROCESS_STAGE_TONEMAP_GAMMA_EXPOSURE, data->render_resolution.width, data->render_resolution.height);
+			RENDER_PASS_STAGE_BEGIN(RENDER_PASS_POST_PROCESS_STAGE_TONEMAP_GAMMA_EXPOSURE, frame->command_buffer, data->render_resolution.width, data->render_resolution.height);
 
 			struct PushConsts
 			{
@@ -1529,7 +1557,7 @@ namespace Renderer
 			uint32_t dispatch_y = VK_ALIGN_POW2(data->render_resolution.height, 8) / 8;
 			Vulkan::Command::Dispatch(frame->command_buffer, dispatch_x, dispatch_y, 1);
 
-			RENDER_PASS_STAGE_END(frame->command_buffer, RENDER_PASS_POST_PROCESS_STAGE_TONEMAP_GAMMA_EXPOSURE);
+			RENDER_PASS_STAGE_END(RENDER_PASS_POST_PROCESS_STAGE_TONEMAP_GAMMA_EXPOSURE, frame->command_buffer);
 		}
 		RENDER_PASS_END(data->render_passes.post_process);
 	}
@@ -1707,16 +1735,16 @@ namespace Renderer
 
 		RENDER_PASS_BEGIN(data->render_passes.imgui);
 		{
-			RENDER_PASS_STAGE_SET_ATTACHMENT(RenderPass::ATTACHMENT_SLOT_COLOR0, RENDER_PASS_IMGUI_STAGE_IMGUI, data->render_targets.sdr.view);
+			RENDER_PASS_STAGE_SET_ATTACHMENT(RENDER_PASS_IMGUI_STAGE_IMGUI, RenderPass::ATTACHMENT_SLOT_COLOR0, data->render_targets.sdr.view);
 
-			RENDER_PASS_STAGE_BEGIN(frame->command_buffer, RENDER_PASS_IMGUI_STAGE_IMGUI, data->render_resolution.width, data->render_resolution.height);
+			RENDER_PASS_STAGE_BEGIN(RENDER_PASS_IMGUI_STAGE_IMGUI, frame->command_buffer, data->render_resolution.width, data->render_resolution.height);
 
 			ImGui::Render();
 			ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), frame->command_buffer.vk_command_buffer, nullptr);
 
 			ImGui::EndFrame();
 
-			RENDER_PASS_STAGE_END(frame->command_buffer, RENDER_PASS_IMGUI_STAGE_IMGUI);
+			RENDER_PASS_STAGE_END(RENDER_PASS_IMGUI_STAGE_IMGUI, frame->command_buffer);
 		}
 		RENDER_PASS_END(data->render_passes.imgui);
 
@@ -1795,6 +1823,7 @@ namespace Renderer
 			.dimension = texture_info.dimension
 		};
 		VulkanImageView view = Vulkan::ImageView::Create(image, view_info);
+
 		VulkanDescriptorAllocation view_descriptor = Vulkan::Descriptor::Allocate(VULKAN_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
 		Vulkan::Descriptor::Write(view_descriptor, view, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
 
@@ -1823,8 +1852,14 @@ namespace Renderer
 
 	void DestroyTexture(TextureHandle_t handle)
 	{
-		VK_ASSERT(VK_RESOURCE_HANDLE_VALID(handle) && "Tried to destroy a texture with an invalid texture handle");
-		data->texture_slotmap.Delete(handle);
+		while (VK_RESOURCE_HANDLE_VALID(handle))
+		{
+			VK_ASSERT(VK_RESOURCE_HANDLE_VALID(handle) && "Tried to destroy a texture with an invalid texture handle");
+
+			TextureHandle_t next_handle = data->texture_slotmap.Find(handle)->next;
+			data->texture_slotmap.Delete(handle);
+			handle = next_handle;
+		}
 	}
 
 	void ImGuiRenderTexture(TextureHandle_t handle)
@@ -1836,8 +1871,8 @@ namespace Renderer
 			std::min((float)data->render_resolution.height / 8.0f, ImGui::GetWindowSize().y)
 		);
 
-		const Texture* texture_resource = data->texture_slotmap.Find(handle);
-		ImGui::Image(texture_resource->imgui_descriptor_set, size);
+		const Texture* texture = data->texture_slotmap.Find(handle);
+		ImGui::Image(texture->imgui_descriptor_set, size);
 	}
 
 	MeshHandle_t CreateMesh(const CreateMeshArgs& args)

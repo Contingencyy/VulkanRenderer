@@ -300,7 +300,7 @@ namespace Vulkan
 
 		void ReleaseStaleTempResources()
 		{
-			for (auto it = data->tracked_buffers.begin(); it != data->tracked_buffers.end();)
+			for (auto it = data->tracked_buffers.begin(); it != data->tracked_buffers.end(); ++it)
 			{
 				if (it->second.fence.vk_semaphore &&
 					it->second.fence.fence_value <= Vulkan::Sync::GetFenceValue(it->second.fence))
@@ -309,7 +309,7 @@ namespace Vulkan
 				}
 			}
 
-			for (auto it = data->tracked_images.begin(); it != data->tracked_images.end();)
+			for (auto it = data->tracked_images.begin(); it != data->tracked_images.end(); ++it)
 			{
 				if (it->second.fence.vk_semaphore &&
 					it->second.fence.fence_value <= Vulkan::Sync::GetFenceValue(it->second.fence))

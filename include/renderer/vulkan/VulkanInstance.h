@@ -8,20 +8,16 @@ namespace Vulkan
 		std::vector<const char*> extensions =
 		{
 			VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-			VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
 			VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME,
-			VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME,
-			//VK_EXT_SHADER_OBJECT_EXTENSION_NAME,
-			//VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME
+			/*VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME,
+			VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
+			VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
+			VK_EXT_SHADER_OBJECT_EXTENSION_NAME,*/
 		};
 
+		// A set of debug messages to ignore, useful for known bugs in the validation layer(s)
 		std::set<int32_t> ignored_debug_messages =
 		{
-			// NOTE: Timeline semaphores are not supported by the sync validation at the time of writing this
-			// Validation Error: [ VUID-vkResetCommandBuffer-commandBuffer-00045 ]
-			511214570,
-			// Validation Error: [ VUID-vkFreeCommandBuffers-pCommandBuffers-00047 ]
-			448332540
 		};
 
 		VkInstance instance = VK_NULL_HANDLE;
@@ -71,6 +67,8 @@ namespace Vulkan
 		{
 			std::vector<const char*> validation_layers = { "VK_LAYER_KHRONOS_validation" };
 			VkDebugUtilsMessengerEXT debug_messenger = VK_NULL_HANDLE;
+
+			VkDeviceSize min_imported_host_pointer_alignment = 0;
 		} debug;
 
 		struct Pfn

@@ -14,10 +14,14 @@ namespace Vulkan
 			VkMemoryRequirements mem_req = {};
 			vkGetBufferMemoryRequirements(vk_inst.device, buffer.vk_buffer, &mem_req);
 
+			VkMemoryAllocateFlagsInfo alloc_flags = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO };
+			alloc_flags.deviceMask = 0;
+			alloc_flags.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+
 			VkMemoryAllocateInfo alloc_info = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
 			alloc_info.allocationSize = mem_req.size;
 			alloc_info.memoryTypeIndex = Util::FindMemoryType(mem_req.memoryTypeBits, Util::ToVkMemoryPropertyFlags(buffer_info.memory_flags));
-			alloc_info.pNext = nullptr;
+			alloc_info.pNext = &alloc_flags;
 
 			VkDeviceMemory vk_device_memory = VK_NULL_HANDLE;
 			VkCheckResult(vkAllocateMemory(vk_inst.device, &alloc_info, nullptr, &vk_device_memory));
@@ -38,10 +42,14 @@ namespace Vulkan
 			VkMemoryRequirements mem_req = {};
 			vkGetImageMemoryRequirements(vk_inst.device, image.vk_image, &mem_req);
 
+			VkMemoryAllocateFlagsInfo alloc_flags = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO };
+			alloc_flags.deviceMask = 0;
+			alloc_flags.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+
 			VkMemoryAllocateInfo alloc_info = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
 			alloc_info.allocationSize = mem_req.size;
 			alloc_info.memoryTypeIndex = Util::FindMemoryType(mem_req.memoryTypeBits, Util::ToVkMemoryPropertyFlags(GPU_MEMORY_DEVICE_LOCAL));
-			alloc_info.pNext = nullptr;
+			alloc_info.pNext = &alloc_flags;
 
 			VkDeviceMemory vk_device_memory = VK_NULL_HANDLE;
 			VkCheckResult(vkAllocateMemory(vk_inst.device, &alloc_info, nullptr, &vk_device_memory));

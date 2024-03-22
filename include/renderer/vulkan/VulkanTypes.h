@@ -67,7 +67,7 @@ struct VulkanCommandBuffer
 // NOTE: The order needs to match the DescriptorSetXYZ consts in assets/shaders/Shared.glsl.h
 enum VulkanDescriptorType
 {
-	VULKAN_DESCRIPTOR_TYPE_UNIFORM,
+	VULKAN_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
 	VULKAN_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 	VULKAN_DESCRIPTOR_TYPE_STORAGE_IMAGE,
 	VULKAN_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
@@ -81,7 +81,7 @@ struct VulkanDescriptorAllocation
 
 	uint32_t num_descriptors = 0u;
 	uint32_t descriptor_size_in_bytes = 0u;
-	uint64_t descriptor_offset = 0ull;
+	uint32_t descriptor_offset = 0u;
 	uint8_t* ptr = nullptr;
 };
 

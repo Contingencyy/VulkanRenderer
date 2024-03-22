@@ -194,45 +194,40 @@ namespace Vulkan
 
 			// Request Physical Device Properties
 			VkPhysicalDeviceDescriptorBufferPropertiesEXT descriptor_buffer_properties = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_PROPERTIES_EXT };
+			VkPhysicalDeviceExternalMemoryHostPropertiesEXT external_memory_host_properties = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_MEMORY_HOST_PROPERTIES_EXT };
+			external_memory_host_properties.pNext = &descriptor_buffer_properties;
 
 			VkPhysicalDeviceProperties2 device_properties2 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
-			device_properties2.pNext = &descriptor_buffer_properties;
+			device_properties2.pNext = &external_memory_host_properties;
 			vkGetPhysicalDeviceProperties2(device, &device_properties2);
 
-			// Enable device features
+			// Check for feature support
+			VkPhysicalDeviceVulkan11Features vulkan11_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES };
+			VkPhysicalDeviceVulkan12Features vulkan12_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
+			vulkan12_features.pNext = &vulkan11_features;
+			VkPhysicalDeviceVulkan13Features vulkan13_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
+			vulkan13_features.pNext = &vulkan12_features;
+
 			VkPhysicalDeviceDescriptorBufferFeaturesEXT descriptor_buffer_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT };
-
-			VkPhysicalDeviceBufferDeviceAddressFeaturesEXT buffer_device_address_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES_EXT };
-			descriptor_buffer_features.pNext = &buffer_device_address_features;
-
-			VkPhysicalDeviceMaintenance4Features maintenance4_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_4_FEATURES };
-			buffer_device_address_features.pNext = &maintenance4_features;
-
-			VkPhysicalDeviceDynamicRenderingFeatures dynamic_rendering_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES };
-			maintenance4_features.pNext = &dynamic_rendering_features;
-
-			VkPhysicalDeviceTimelineSemaphoreFeatures timeline_semaphore_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES };
-			dynamic_rendering_features.pNext = &timeline_semaphore_features;
-
-			VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT swapchain_maintenance_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_EXT };
-			timeline_semaphore_features.pNext = &swapchain_maintenance_features;
+			descriptor_buffer_features.pNext = &vulkan13_features;
 
 			VkPhysicalDeviceFeatures2 device_features2 = {};
 			device_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
 			device_features2.pNext = &descriptor_buffer_features;
-
+			
 			vkGetPhysicalDeviceFeatures2(device, &device_features2);
 
 			if (device_properties2.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU &&
 				required_extensions.empty() &&
 				device_features2.features.samplerAnisotropy &&
+				vulkan12_features.bufferDeviceAddress &&
+				vulkan12_features.bufferDeviceAddressCaptureReplay &&
+				vulkan12_features.timelineSemaphore &&
+				vulkan13_features.dynamicRendering &&
+				vulkan13_features.maintenance4 &&
+				vulkan13_features.synchronization2 &&
 				descriptor_buffer_features.descriptorBuffer &&
-				buffer_device_address_features.bufferDeviceAddress &&
-				buffer_device_address_features.bufferDeviceAddressCaptureReplay &&
-				maintenance4_features.maintenance4 &&
-				dynamic_rendering_features.dynamicRendering &&
-				timeline_semaphore_features.timelineSemaphore &&
-				swapchain_maintenance_features.swapchainMaintenance1)
+				descriptor_buffer_features.descriptorBufferCaptureReplay)
 			{
 				vk_inst.physical_device = device;
 
@@ -244,6 +239,8 @@ namespace Vulkan
 				vk_inst.descriptor_sizes.storage_image = descriptor_buffer_properties.storageImageDescriptorSize;
 				vk_inst.descriptor_sizes.sampled_image = descriptor_buffer_properties.sampledImageDescriptorSize;
 				vk_inst.descriptor_sizes.sampler = descriptor_buffer_properties.samplerDescriptorSize;
+
+				vk_inst.debug.min_imported_host_pointer_alignment = external_memory_host_properties.minImportedHostPointerAlignment;
 
 				break;
 			}
@@ -323,34 +320,21 @@ namespace Vulkan
 #endif
 
 		// Request additional features to be enabled
-		VkPhysicalDeviceDescriptorIndexingFeatures descriptor_indexing_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES };
+		VkPhysicalDeviceVulkan11Features vulkan11_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES };
+		VkPhysicalDeviceVulkan12Features vulkan12_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
+		vulkan12_features.pNext = &vulkan11_features;
+		VkPhysicalDeviceVulkan13Features vulkan13_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
+		vulkan13_features.pNext = &vulkan12_features;
 
 		VkPhysicalDeviceDescriptorBufferFeaturesEXT descriptor_buffer_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT };
-		descriptor_indexing_features.pNext = &descriptor_buffer_features;
-
-		VkPhysicalDeviceBufferDeviceAddressFeaturesEXT buffer_device_address_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES_EXT };
-		descriptor_buffer_features.pNext = &buffer_device_address_features;
-
-		VkPhysicalDeviceSynchronization2Features sync_2_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES };
-		buffer_device_address_features.pNext = &sync_2_features;
-
-		VkPhysicalDeviceMaintenance4Features maintenance4_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_4_FEATURES };
-		sync_2_features.pNext = &maintenance4_features;
-
-		VkPhysicalDeviceDynamicRenderingFeatures dynamic_rendering_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES };
-		maintenance4_features.pNext = &dynamic_rendering_features;
-
-		VkPhysicalDeviceTimelineSemaphoreFeatures timeline_semaphore_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES };
-		dynamic_rendering_features.pNext = &timeline_semaphore_features;
-
-		VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT swapchain_maintenance_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_EXT };
-		timeline_semaphore_features.pNext = &swapchain_maintenance_features;
+		descriptor_buffer_features.pNext = &vulkan13_features;
 
 		VkPhysicalDeviceFeatures2 device_features2 = {};
 		device_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
 		device_features2.features.samplerAnisotropy = VK_TRUE;
-		device_features2.pNext = &descriptor_indexing_features;
+		device_features2.pNext = &descriptor_buffer_features;
 		vkGetPhysicalDeviceFeatures2(vk_inst.physical_device, &device_features2);
+
 		device_create_info.pNext = &device_features2;
 
 #ifdef ENABLE_VK_DEBUG_LAYER
@@ -638,8 +622,7 @@ namespace Vulkan
 		vk_inst.current_frame_index++;
 		ResourceTracker::ReleaseStaleTempResources();
 
-		return false;
-		//return swapchain_resize;
+		return swapchain_resize;
 	}
 
 	void ResizeOutputResolution(uint32_t output_width, uint32_t output_height)

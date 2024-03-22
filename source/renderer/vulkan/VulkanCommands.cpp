@@ -41,6 +41,8 @@ namespace Vulkan
 		{
 			vkCmdBindPipeline(command_buffer.vk_command_buffer, Util::ToVkPipelineBindPoint(pipeline.type), pipeline.vk_pipeline);
 			command_buffer.pipeline_bound = pipeline;
+
+			Vulkan::Descriptor::BindDescriptors(command_buffer, command_buffer.pipeline_bound);
 		}
 
 		void PushConstants(const VulkanCommandBuffer& command_buffer, VkShaderStageFlags stage_flags, uint32_t byte_offset, uint32_t num_bytes, const void* data)
@@ -61,8 +63,6 @@ namespace Vulkan
 		void DrawGeometry(const VulkanCommandBuffer& command_buffer, uint32_t num_vertex_buffers, const VulkanBuffer* vertex_buffers,
 			uint32_t num_vertices, uint32_t num_instances, uint32_t first_vertex, uint32_t first_instance)
 		{
-			Vulkan::Descriptor::BindDescriptors(command_buffer, command_buffer.pipeline_bound);
-
 			std::vector<VkBuffer> vk_vertex_buffers;
 			std::vector<uint64_t> vk_vertex_buffer_offsets;
 
@@ -80,8 +80,6 @@ namespace Vulkan
 		void DrawGeometryIndexed(const VulkanCommandBuffer& command_buffer, uint32_t num_vertex_buffers, const VulkanBuffer* const vertex_buffers, const VulkanBuffer* const index_buffer,
 			uint32_t index_byte_size, uint32_t num_instances, uint32_t first_instance, uint32_t first_index, uint32_t vertex_offset)
 		{
-			Vulkan::Descriptor::BindDescriptors(command_buffer, command_buffer.pipeline_bound);
-
 			std::vector<VkBuffer> vk_vertex_buffers;
 			std::vector<uint64_t> vk_vertex_buffer_offsets;
 
@@ -124,7 +122,6 @@ namespace Vulkan
 
 		void Dispatch(const VulkanCommandBuffer& command_buffer, uint32_t group_x, uint32_t group_y, uint32_t group_z)
 		{
-			Vulkan::Descriptor::BindDescriptors(command_buffer, command_buffer.pipeline_bound);
 			vkCmdDispatch(command_buffer.vk_command_buffer, group_x, group_y, group_z);
 		}
 
