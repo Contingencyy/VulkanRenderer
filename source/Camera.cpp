@@ -2,12 +2,10 @@
 #include "Camera.h"
 #include "Input.h"
 
-Camera::Camera(const glm::vec3& pos, const glm::vec3& view_dir, float fov, float aspect)
-	: m_fov(fov), m_aspect(aspect)
+Camera::Camera(const glm::vec3& pos, const glm::vec3& view_dir, float vfov)
+	: m_vfov(vfov)
 {
 	m_view = glm::lookAtRH(pos, pos + view_dir, glm::vec3(0.0f, 1.0f, 0.0f));
-	m_projection = glm::perspective(glm::radians(m_fov), m_aspect, m_near, m_far);
-	m_projection[1][1] *= -1.0f;
 }
 
 void Camera::Update(float dt)
@@ -54,19 +52,12 @@ void Camera::Update(float dt)
 	m_view = glm::inverse(m_view);
 }
 
-void Camera::OnResolutionChanged(uint32_t new_width, uint32_t new_height)
-{
-	m_aspect = (float)new_width / new_height;
-	m_projection = glm::perspective(glm::radians(60.0f), m_aspect, m_near, m_far);
-	m_projection[1][1] *= -1.0f;
-}
-
 glm::mat4 Camera::GetView() const
 {
 	return m_view;
 }
 
-glm::mat4 Camera::GetProjection() const
+float Camera::GetVerticalFOV() const
 {
-	return m_projection;
+	return m_vfov;
 }

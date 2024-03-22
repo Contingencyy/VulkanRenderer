@@ -156,7 +156,8 @@ namespace Renderer
 
 		~Texture()
 		{
-			Vulkan::Descriptor::Free(view_descriptor);
+			if (Vulkan::Descriptor::IsValid(view_descriptor))
+				Vulkan::Descriptor::Free(view_descriptor);
 			Vulkan::ImageView::Destroy(view);
 			Vulkan::Image::Destroy(image);
 		}
@@ -188,7 +189,8 @@ namespace Renderer
 
 		~RenderTarget()
 		{
-			Vulkan::Descriptor::Free(descriptor);
+			if (Vulkan::Descriptor::IsValid(descriptor))
+				Vulkan::Descriptor::Free(descriptor);
 			Vulkan::ImageView::Destroy(view);
 			Vulkan::Image::Destroy(image);
 		}
@@ -215,6 +217,12 @@ namespace Renderer
 			VulkanCommandPool graphics_compute;
 			VulkanCommandPool transfer;
 		} command_pools;
+
+		struct Camera
+		{
+			float near_plane = 0.1f;
+			float far_plane = 10000.0f;
+		} camera_settings;
 
 		// Resource slotmaps
 		ResourceSlotmap<Texture> texture_slotmap;
@@ -1360,23 +1368,23 @@ namespace Renderer
 		Vulkan::CommandBuffer::BeginRecording(frame->command_buffer);
 
 		bool resized = Vulkan::BeginFrame();
+
 		if (resized)
 		{
-			int32_t window_width, window_height;
-			glfwGetFramebufferSize(data->glfw_window, &window_width, &window_height);
+			Vulkan::GetOutputResolution(data->output_resolution.width, data->output_resolution.height);
+			data->render_resolution = data->output_resolution;
 
-			data->render_resolution = { .width = static_cast<uint32_t>(window_width), .height = static_cast<uint32_t>(window_height) };
-			data->output_resolution = { .width = static_cast<uint32_t>(window_width), .height = static_cast<uint32_t>(window_height) };
-
-			Vulkan::ResizeOutputResolution(data->output_resolution.width, data->output_resolution.height);
 			CreateRenderTargets();
+			return;
 		}
 
 		// Set UBO data for the current frame, like camera data and settings
 		CameraData camera_data = {};
-		camera_data.view = frame_info.view;
-		camera_data.proj = frame_info.proj;
-		camera_data.view_pos = glm::inverse(frame_info.view)[3];
+		camera_data.view = frame_info.camera_view;
+		camera_data.proj = glm::perspectiveFov(glm::radians(frame_info.camera_vfov),
+			(float)data->render_resolution.width, (float)data->render_resolution.height, data->camera_settings.near_plane, data->camera_settings.far_plane);
+		camera_data.proj[1][1] *= -1.0f;
+		camera_data.view_pos = glm::inverse(frame_info.camera_view)[3];
 
 		// Allocate frame UBOs and instance buffer from ring buffer
 		frame->ubos.settings_ubo = data->ring_buffer.Allocate(sizeof(RenderSettings), alignof(RenderSettings));
@@ -1581,6 +1589,20 @@ namespace Renderer
 			}
 
 			// ------------------------------------------------------------------------------------------------------
+			// Camera settings
+
+			ImGui::SetNextItemOpen(false, ImGuiCond_Once);
+			if (ImGui::CollapsingHeader("Camera"))
+			{
+				ImGui::Indent(10.0f);
+
+				ImGui::SliderFloat("Camera near plane", &data->camera_settings.near_plane, 0.001f, FLT_MAX);
+				ImGui::SliderFloat("Camera far plane", &data->camera_settings.near_plane, 0.001f, FLT_MAX);
+
+				ImGui::Unindent(10.0f);
+			}
+
+			// ------------------------------------------------------------------------------------------------------
 			// Debug settings
 
 			ImGui::SetNextItemOpen(true, ImGuiCond_Once);
@@ -1757,22 +1779,19 @@ namespace Renderer
 
 		// Vulkan backend end frame, does the swapchain present
 		bool resized = Vulkan::EndFrame(frame->sync.render_finished_fence);
-		if (resized)
-		{
-			int32_t window_width, window_height;
-			glfwGetFramebufferSize(data->glfw_window, &window_width, &window_height);
-
-			data->render_resolution = { .width = static_cast<uint32_t>(window_width), .height = static_cast<uint32_t>(window_height) };
-			data->output_resolution = { .width = static_cast<uint32_t>(window_width), .height = static_cast<uint32_t>(window_height) };
-
-			Vulkan::ResizeOutputResolution(data->output_resolution.width, data->output_resolution.height);
-			CreateRenderTargets();
-		}
 
 		// Reset per-frame statistics, draw list, and other data
 		data->stats.Reset();
 		data->draw_list.Reset();
 		data->num_pointlights = 0;
+
+		if (resized)
+		{
+			Vulkan::GetOutputResolution(data->output_resolution.width, data->output_resolution.height);
+			data->render_resolution = data->output_resolution;
+
+			CreateRenderTargets();
+		}
 	}
 
 	TextureHandle_t CreateTexture(const CreateTextureArgs& args)

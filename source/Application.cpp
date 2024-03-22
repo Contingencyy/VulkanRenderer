@@ -37,11 +37,6 @@ namespace Application
 	{
 		data.window_width = static_cast<uint32_t>(width);
 		data.window_height = static_cast<uint32_t>(height);
-
-		if (width > 0 && height > 0)
-		{
-			data.active_scene.GetActiveCamera().OnResolutionChanged(width, height);
-		}
 	}
 
 	static void CreateWindow()
@@ -201,8 +196,8 @@ namespace Application
 	static void Render()
 	{
 		Renderer::BeginFrameInfo frame_info = {};
-		frame_info.view = data.active_scene.GetActiveCamera().GetView();
-		frame_info.proj = data.active_scene.GetActiveCamera().GetProjection();
+		frame_info.camera_view = data.active_scene.GetActiveCamera().GetView();
+		frame_info.camera_vfov = data.active_scene.GetActiveCamera().GetVerticalFOV();
 		frame_info.skybox_texture_handle = Assets::GetTexture("Env");
 		Renderer::BeginFrame(frame_info);
 

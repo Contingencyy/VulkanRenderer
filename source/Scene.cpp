@@ -6,7 +6,7 @@
 
 Scene::Scene()
 {
-	m_active_camera = Camera(glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, -1.0f), 60.0f, 16.0f / 9.0f);
+	m_active_camera = Camera(glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, -1.0f), 60.0f);
 }
 
 void Scene::Update(float dt)

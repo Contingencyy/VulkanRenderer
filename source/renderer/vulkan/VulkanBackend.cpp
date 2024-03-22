@@ -492,6 +492,24 @@ namespace Vulkan
 		return shader_module;
 	}
 
+	static void ResizeOutputResolution()
+	{
+		int32_t window_width = 0, window_height = 0;
+		while (window_width == 0 || window_height == 0)
+		{
+			glfwGetFramebufferSize(vk_inst.glfw_window, &window_width, &window_height);
+			glfwWaitEvents();
+		}
+
+		uint32_t new_output_width = static_cast<uint32_t>(window_width);
+		uint32_t new_output_height = static_cast<uint32_t>(window_height);
+
+		Vulkan::WaitDeviceIdle();
+
+		SwapChain::Destroy();
+		SwapChain::Create(new_output_width, new_output_height);
+	}
+
 	/*
 		============================ PUBLIC INTERFACE FUNCTIONS =================================
 	*/
@@ -545,14 +563,14 @@ namespace Vulkan
 	{
 		// Get the next available image from the swapchain
 		VkResult result = Vulkan::SwapChain::AcquireNextImage();
-		if ((result == VK_ERROR_OUT_OF_DATE_KHR) || (result == VK_SUBOPTIMAL_KHR))
-		{
-			if (result == VK_ERROR_OUT_OF_DATE_KHR)
-			{
-				return true;
-			}
 
-			return false;
+		// Release all temporary resources from the resource tracker
+		ResourceTracker::ReleaseStaleTempResources();
+
+		if (result == VK_ERROR_OUT_OF_DATE_KHR)
+		{
+			ResizeOutputResolution();
+			return true;
 		}
 		else
 		{
@@ -563,13 +581,6 @@ namespace Vulkan
 		ImGui_ImplGlfw_NewFrame();
 		ImGui_ImplVulkan_NewFrame();
 		ImGui::NewFrame();
-
-		// Update UBO descriptor buffer offset
-		// We need a UBO per in-flight frame, so we need to update the offset at which we want to bind our UBOs from the descriptor buffer
-		/*data->descriptor_buffers.offsets[DESCRIPTOR_SET_UBO] = VK_ALIGN_POW2(
-			RESERVED_DESCRIPTOR_UBO_COUNT * vk_inst.current_frame_index * vk_inst.descriptor_sizes.uniform_buffer,
-			vk_inst.device_props.descriptor_buffer_offset_alignment
-		);*/
 
 		return false;
 	}
@@ -604,15 +615,11 @@ namespace Vulkan
 	{
 		// Present, wait fence waits for the rendering to be finished before presenting
 		VkResult result = Vulkan::SwapChain::Present({ present_wait_fence });
-		bool swapchain_resize = false;
-		if ((result == VK_ERROR_OUT_OF_DATE_KHR) || (result == VK_SUBOPTIMAL_KHR))
-		{
-			swapchain_resize = true;
 
-			if (result == VK_ERROR_OUT_OF_DATE_KHR)
-			{
-				return swapchain_resize;
-			}
+		if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
+		{
+			ResizeOutputResolution();
+			return true;
 		}
 		else
 		{
@@ -620,27 +627,18 @@ namespace Vulkan
 		}
 
 		vk_inst.current_frame_index++;
-		ResourceTracker::ReleaseStaleTempResources();
-
-		return swapchain_resize;
-	}
-
-	void ResizeOutputResolution(uint32_t output_width, uint32_t output_height)
-	{
-		if (output_width == 0 || output_height == 0)
-		{
-			return;
-		}
-
-		vkDeviceWaitIdle(vk_inst.device);
-
-		SwapChain::Destroy();
-		SwapChain::Create(output_width, output_height);
+		return false;
 	}
 
 	void WaitDeviceIdle()
 	{
 		vkDeviceWaitIdle(vk_inst.device);
+	}
+
+	void GetOutputResolution(uint32_t& output_width, uint32_t& output_height)
+	{
+		output_width = vk_inst.swapchain.extent.width;
+		output_height = vk_inst.swapchain.extent.height;
 	}
 
 	uint32_t GetCurrentBackBufferIndex()
@@ -916,6 +914,8 @@ namespace Vulkan
 
 	void InitImGui(::GLFWwindow* window)
 	{
+		vk_inst.glfw_window = window;
+
 		IMGUI_CHECKVERSION();
 		ImGui::CreateContext();
 		ImGui::StyleColorsDark();

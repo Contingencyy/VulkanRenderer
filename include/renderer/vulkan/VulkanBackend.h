@@ -17,9 +17,9 @@ namespace Vulkan
 	void CopyToBackBuffer(VulkanCommandBuffer& command_buffer, const VulkanImage& src_image);
 	bool EndFrame(const VulkanFence& present_wait_fence);
 
-	void ResizeOutputResolution(uint32_t output_width, uint32_t output_height);
 	void WaitDeviceIdle();
 
+	void GetOutputResolution(uint32_t& output_width, uint32_t& output_height);
 	uint32_t GetCurrentBackBufferIndex();
 	uint32_t GetCurrentFrameIndex();
 	uint32_t GetLastFinishedFrameIndex();

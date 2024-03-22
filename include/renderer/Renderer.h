@@ -16,8 +16,10 @@ namespace Renderer
 
 	struct BeginFrameInfo
 	{
-		glm::mat4 view;
-		glm::mat4 proj;
+		// The camera's view matrix
+		glm::mat4 camera_view;
+		// The camera's vertical FOV, in degrees
+		float camera_vfov;
 
 		TextureHandle_t skybox_texture_handle;
 	};

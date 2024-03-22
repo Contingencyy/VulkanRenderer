@@ -1,10 +1,14 @@
 #pragma once
 
+typedef struct GLFWwindow;
+
 namespace Vulkan
 {
 
 	struct VulkanInstance
 	{
+		::GLFWwindow* glfw_window = nullptr;
+
 		std::vector<const char*> extensions =
 		{
 			VK_KHR_SWAPCHAIN_EXTENSION_NAME,
