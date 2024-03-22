@@ -67,6 +67,9 @@ namespace Vulkan
 
 		void Free(const VulkanMemory& memory)
 		{
+			if (!memory.vk_device_memory)
+				return;
+
 			vkFreeMemory(vk_inst.device, memory.vk_device_memory, nullptr);
 		}
 

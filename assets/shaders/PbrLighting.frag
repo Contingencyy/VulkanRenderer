@@ -273,7 +273,7 @@ void main()
 		}
 		case DEBUG_RENDER_MODE_NORMAL:
 		{
-			color = pixel.normal;
+			color = abs(pixel.normal);
 			break;
 		}
 		case DEBUG_RENDER_MODE_METALLIC_ROUGHNESS:

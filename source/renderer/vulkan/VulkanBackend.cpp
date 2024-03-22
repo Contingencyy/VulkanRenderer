@@ -537,6 +537,9 @@ namespace Vulkan
 		vkQueueWaitIdle(vk_inst.queues.graphics_compute.vk_queue);
 		vkQueueWaitIdle(vk_inst.queues.transfer.vk_queue);
 
+		CommandQueue::Destroy(vk_inst.queues.graphics_compute);
+		CommandQueue::Destroy(vk_inst.queues.transfer);
+
 		delete data;
 
 		Descriptor::Exit();
@@ -910,6 +913,12 @@ namespace Vulkan
 		pipeline.vk_pipeline_layout = vk_pipeline_layout;
 
 		return pipeline;
+	}
+
+	void DestroyPipeline(const VulkanPipeline& pipeline)
+	{
+		vkDestroyPipelineLayout(vk_inst.device, pipeline.vk_pipeline_layout, nullptr);
+		vkDestroyPipeline(vk_inst.device, pipeline.vk_pipeline, nullptr);
 	}
 
 	void InitImGui(::GLFWwindow* window)

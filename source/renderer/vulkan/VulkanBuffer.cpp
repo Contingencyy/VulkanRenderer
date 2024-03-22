@@ -58,10 +58,13 @@ namespace Vulkan
 
 		void Destroy(const VulkanBuffer& buffer)
 		{
+			if (!buffer.vk_buffer)
+				return;
+
 			ResourceTracker::RemoveBuffer(buffer);
 
-			vkDestroyBuffer(vk_inst.device, buffer.vk_buffer, nullptr);
 			DeviceMemory::Free(buffer.memory);
+			vkDestroyBuffer(vk_inst.device, buffer.vk_buffer, nullptr);
 		}
 
 		VkMemoryRequirements GetMemoryRequirements(const VulkanBuffer& buffer)

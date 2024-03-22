@@ -29,7 +29,7 @@
 namespace Renderer
 {
 
-#define RENDER_PASS_BEGIN(render_pass) { RenderPass& current_pass = render_pass
+#define RENDER_PASS_BEGIN(render_pass) { RenderPass& current_pass = *render_pass
 #define RENDER_PASS_STAGE_BEGIN(stage_index, command_buffer, render_width, render_height) VK_ASSERT(stage_index < current_pass.GetStageCount() && "Tried to begin more render pass stages than the render pass supports"); \
 	current_pass.BeginStage(command_buffer, stage_index, render_width, render_height)
 #define RENDER_PASS_STAGE_SET_ATTACHMENT(stage_index, attachment_slot, image_view) current_pass.SetStageAttachment(stage_index, attachment_slot, image_view)
@@ -156,8 +156,7 @@ namespace Renderer
 
 		~Texture()
 		{
-			if (Vulkan::Descriptor::IsValid(view_descriptor))
-				Vulkan::Descriptor::Free(view_descriptor);
+			Vulkan::Descriptor::Free(view_descriptor);
 			Vulkan::ImageView::Destroy(view);
 			Vulkan::Image::Destroy(image);
 		}
@@ -189,8 +188,7 @@ namespace Renderer
 
 		~RenderTarget()
 		{
-			if (Vulkan::Descriptor::IsValid(descriptor))
-				Vulkan::Descriptor::Free(descriptor);
+			Vulkan::Descriptor::Free(descriptor);
 			Vulkan::ImageView::Destroy(view);
 			Vulkan::Image::Destroy(image);
 		}
@@ -235,16 +233,16 @@ namespace Renderer
 		struct RenderPasses
 		{
 			// Frame render passes
-			RenderPass skybox;
-			RenderPass geometry;
-			RenderPass post_process;
+			std::unique_ptr<RenderPass> skybox;
+			std::unique_ptr<RenderPass> geometry;
+			std::unique_ptr<RenderPass> post_process;
 			
 			// Resource processing render passes
-			RenderPass gen_ibl_cubemaps;
-			RenderPass gen_brdf_lut;
+			std::unique_ptr<RenderPass> gen_ibl_cubemaps;
+			std::unique_ptr<RenderPass> gen_brdf_lut;
 
 			// Dear ImGui render pass
-			RenderPass imgui;
+			std::unique_ptr<RenderPass> imgui;
 		} render_passes;
 
 		struct RenderTargets
@@ -642,7 +640,7 @@ namespace Renderer
 			skybox_stage_depth_stencil.info.store_op = VK_ATTACHMENT_STORE_OP_STORE;
 			skybox_stage_depth_stencil.info.clear_value.depthStencil = { 1.0f, 0 };
 
-			data->render_passes.skybox = RenderPass(stages);
+			data->render_passes.skybox = std::make_unique<RenderPass>(stages);
 		}
 
 		// Geometry pass
@@ -681,7 +679,7 @@ namespace Renderer
 			lighting_stage_depth_stencil.info.load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
 			lighting_stage_depth_stencil.info.store_op = VK_ATTACHMENT_STORE_OP_STORE;
 
-			data->render_passes.geometry = RenderPass(stages);
+			data->render_passes.geometry = std::make_unique<RenderPass>(stages);
 		}
 
 		// Post processing pass
@@ -713,7 +711,7 @@ namespace Renderer
 			tonemap_stage_readwrite0.info.store_op = VK_ATTACHMENT_STORE_OP_STORE;
 			tonemap_stage_readwrite0.info.clear_value.color = { 0.0f, 0.0f, 0.0f, 0.0f };
 
-			data->render_passes.post_process = RenderPass(stages);
+			data->render_passes.post_process = std::make_unique<RenderPass>(stages);
 		}
 
 		// Generate IBL cubemaps pass
@@ -804,7 +802,7 @@ namespace Renderer
 				prefiltered_cubemap_color0.info.store_op = VK_ATTACHMENT_STORE_OP_STORE;
 			}
 
-			data->render_passes.gen_ibl_cubemaps = RenderPass(stages);
+			data->render_passes.gen_ibl_cubemaps = std::make_unique<RenderPass>(stages);
 		}
 
 		// Generate BRDF LUT pass
@@ -833,7 +831,7 @@ namespace Renderer
 			brdf_lut_color0.info.store_op = VK_ATTACHMENT_STORE_OP_STORE;
 			brdf_lut_color0.info.clear_value = { 0.0f, 0.0f, 0.0f, 0.0f };
 
-			data->render_passes.gen_brdf_lut = RenderPass(stages);
+			data->render_passes.gen_brdf_lut = std::make_unique<RenderPass>(stages);
 		}
 
 		// Dear ImGui pass
@@ -848,7 +846,7 @@ namespace Renderer
 			imgui_color0.info.load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
 			imgui_color0.info.store_op = VK_ATTACHMENT_STORE_OP_STORE;
 
-			data->render_passes.imgui = RenderPass(stages);
+			data->render_passes.imgui = std::make_unique<RenderPass>(stages);
 		}
 	}
 
@@ -1333,6 +1331,9 @@ namespace Renderer
 
 		Vulkan::ExitImGui();
 
+		Vulkan::Buffer::Destroy(data->unit_cube_vb);
+		Vulkan::Buffer::Destroy(data->unit_cube_ib);
+
 		Vulkan::DestroySampler(data->default_sampler);
 		Vulkan::DestroySampler(data->hdr_equirect_sampler);
 		Vulkan::DestroySampler(data->hdr_cube_sampler);
@@ -1344,13 +1345,11 @@ namespace Renderer
 		{
 			Vulkan::Descriptor::Free(data->per_frame[frame_index].ubos.descriptors, frame_index);
 			Vulkan::CommandPool::FreeCommandBuffer(data->command_pools.graphics_compute, data->per_frame[frame_index].command_buffer);
+			Vulkan::Sync::DestroyFence(data->per_frame[frame_index].sync.render_finished_fence);
 		}
 
 		Vulkan::CommandPool::Destroy(data->command_pools.graphics_compute);
 		Vulkan::CommandPool::Destroy(data->command_pools.transfer);
-
-		for (uint32_t i = 0; i < Vulkan::MAX_FRAMES_IN_FLIGHT; ++i)
-			Vulkan::Sync::DestroyFence(data->per_frame[i].sync.render_finished_fence);
 
 		// Clean up the renderer data
 		delete data;
@@ -1596,8 +1595,8 @@ namespace Renderer
 			{
 				ImGui::Indent(10.0f);
 
-				ImGui::SliderFloat("Camera near plane", &data->camera_settings.near_plane, 0.001f, FLT_MAX);
-				ImGui::SliderFloat("Camera far plane", &data->camera_settings.near_plane, 0.001f, FLT_MAX);
+				ImGui::DragFloat("Camera near plane", &data->camera_settings.near_plane, 0.01f, 0.01f, 10000.0f);
+				ImGui::DragFloat("Camera far plane", &data->camera_settings.far_plane, 0.01f, 0.01f, 10000.0f);
 
 				ImGui::Unindent(10.0f);
 			}
@@ -1605,7 +1604,7 @@ namespace Renderer
 			// ------------------------------------------------------------------------------------------------------
 			// Debug settings
 
-			ImGui::SetNextItemOpen(true, ImGuiCond_Once);
+			ImGui::SetNextItemOpen(false, ImGuiCond_Once);
 			if (ImGui::CollapsingHeader("Debug"))
 			{
 				ImGui::Indent(10.0f);
@@ -1641,7 +1640,7 @@ namespace Renderer
 			// ------------------------------------------------------------------------------------------------------
 			// PBR settings
 
-			ImGui::SetNextItemOpen(true, ImGuiCond_Once);
+			ImGui::SetNextItemOpen(false, ImGuiCond_Once);
 			if (ImGui::CollapsingHeader("PBR"))
 			{
 				ImGui::Indent(10.0f);
@@ -1658,7 +1657,7 @@ namespace Renderer
 					ImGui::SetTooltip("If enabled, specular direct lighting will be energy conserving, taking multiscatter specular bounces between microfacets into account");
 				}
 
-				ImGui::SetNextItemOpen(true, ImGuiCond_Once);
+				ImGui::SetNextItemOpen(false, ImGuiCond_Once);
 				if (ImGui::CollapsingHeader("General"))
 				{
 					ImGui::Indent(10.0f);
@@ -1700,7 +1699,7 @@ namespace Renderer
 					ImGui::Unindent(10.0f);
 				}
 
-				ImGui::SetNextItemOpen(true, ImGuiCond_Once);
+				ImGui::SetNextItemOpen(false, ImGuiCond_Once);
 				if (ImGui::CollapsingHeader("IBL"))
 				{
 					ImGui::Indent(10.0f);
@@ -1730,7 +1729,7 @@ namespace Renderer
 			// ------------------------------------------------------------------------------------------------------
 			// Post-processing settings
 
-			ImGui::SetNextItemOpen(true, ImGuiCond_Once);
+			ImGui::SetNextItemOpen(false, ImGuiCond_Once);
 			if (ImGui::CollapsingHeader("Post-processing"))
 			{
 				ImGui::Indent(10.0f);

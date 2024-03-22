@@ -57,6 +57,7 @@ namespace Vulkan
 	};
 
 	VulkanPipeline CreateComputePipeline(const ComputePipelineInfo& info);
+	void DestroyPipeline(const VulkanPipeline& pipeline);
 
 	void InitImGui(::GLFWwindow* window);
 	void ExitImGui();

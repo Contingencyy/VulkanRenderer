@@ -363,7 +363,6 @@ namespace Vulkan
 
 				vkDestroyDescriptorSetLayout(vk_inst.device, descriptor_buffer.vk_descriptor_set_layout, nullptr);
 				Vulkan::DeviceMemory::Unmap(descriptor_buffer.buffer.memory);
-				Vulkan::DeviceMemory::Free(descriptor_buffer.buffer.memory);
 				Vulkan::Buffer::Destroy(descriptor_buffer.buffer);
 			}
 		}
@@ -384,6 +383,9 @@ namespace Vulkan
 
 		void Free(const VulkanDescriptorAllocation& alloc, uint32_t frame_index)
 		{
+			if (!IsValid(alloc))
+				return;
+
 			FreeDescriptors(alloc.type, alloc.descriptor_offset, alloc.num_descriptors, frame_index);
 		}
 

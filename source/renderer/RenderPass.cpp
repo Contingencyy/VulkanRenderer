@@ -1,6 +1,7 @@
 #include "Precomp.h"
 #include "renderer/RenderPass.h"
 #include "renderer/vulkan/VulkanCommands.h"
+#include "renderer/vulkan/VulkanBackend.h"
 #include "renderer/vulkan/VulkanResourceTracker.h"
 
 static inline VkRenderingAttachmentInfo ToVkRenderingAttachmentInfo(const RenderPass::Attachment& attachment)
@@ -34,6 +35,10 @@ RenderPass::RenderPass(const std::vector<Stage>& stages)
 
 RenderPass::~RenderPass()
 {
+	for (const auto& stage : m_stages)
+	{
+		Vulkan::DestroyPipeline(stage.pipeline);
+	}
 }
 
 void RenderPass::BeginStage(VulkanCommandBuffer& command_buffer, uint32_t stage_index, uint32_t render_width, uint32_t render_height)
