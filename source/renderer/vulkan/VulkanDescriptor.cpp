@@ -252,6 +252,19 @@ namespace Vulkan
 			FreeDescriptorBlock* previous_block = nullptr;
 			FreeDescriptorBlock* free_block = descriptor_buffer.head;
 
+			if (!free_block)
+			{
+				// If there is no free block at all, it means that the whole freelist is allocated/occupied
+				// So we need to create a new free block at the head
+				FreeDescriptorBlock* new_block = new FreeDescriptorBlock();
+				new_block->num_descriptors = num_descriptors;
+				new_block->descriptor_offset = offset_in_descriptors;
+				new_block->ptr_next = nullptr;
+
+				descriptor_buffer.head = new_block;
+				return;
+			}
+
 			while (free_block)
 			{
 				// If the current free block is on the left of the descriptors to be freed,
