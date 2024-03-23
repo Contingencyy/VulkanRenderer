@@ -731,25 +731,40 @@ namespace Vulkan
 
 		// TODO: Vulkan extension for shader objects? No longer need to make compiled pipeline states then
 		// https://www.khronos.org/blog/you-can-use-vulkan-without-pipelines-today
-		std::vector<uint32_t> vert_spv = CompileShader(info.vs_path, shaderc_vertex_shader);
-		std::vector<uint32_t> frag_spv = CompileShader(info.fs_path, shaderc_fragment_shader);
+		std::vector<uint32_t> vert_spirv;
+		VkShaderModule vert_shader_module = VK_NULL_HANDLE;
 
-		VkShaderModule vert_shader_module = CreateShaderModule(vert_spv);
-		VkShaderModule frag_shader_module = CreateShaderModule(frag_spv);
+		std::vector<uint32_t> frag_spirv;
+		VkShaderModule frag_shader_module = VK_NULL_HANDLE;
 
-		VkPipelineShaderStageCreateInfo vert_shader_stage_info = {};
-		vert_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-		vert_shader_stage_info.stage = VK_SHADER_STAGE_VERTEX_BIT;
-		vert_shader_stage_info.module = vert_shader_module;
-		vert_shader_stage_info.pName = "main";
+		std::vector<VkPipelineShaderStageCreateInfo> shader_stage_infos;
 
-		VkPipelineShaderStageCreateInfo frag_shader_stage_info = {};
-		frag_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-		frag_shader_stage_info.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-		frag_shader_stage_info.module = frag_shader_module;
-		frag_shader_stage_info.pName = "main";
+		if (info.vs_path)
+		{
+			vert_spirv = CompileShader(info.vs_path, shaderc_vertex_shader);
+			vert_shader_module = CreateShaderModule(vert_spirv);
 
-		VkPipelineShaderStageCreateInfo shader_stages[] = { vert_shader_stage_info, frag_shader_stage_info };
+			VkPipelineShaderStageCreateInfo vert_shader_stage_info = {};
+			vert_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+			vert_shader_stage_info.stage = VK_SHADER_STAGE_VERTEX_BIT;
+			vert_shader_stage_info.module = vert_shader_module;
+			vert_shader_stage_info.pName = "main";
+
+			shader_stage_infos.push_back(vert_shader_stage_info);
+		}
+		if (info.fs_path)
+		{
+			frag_spirv = CompileShader(info.fs_path, shaderc_fragment_shader);
+			frag_shader_module = CreateShaderModule(frag_spirv);
+
+			VkPipelineShaderStageCreateInfo frag_shader_stage_info = {};
+			frag_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+			frag_shader_stage_info.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+			frag_shader_stage_info.module = frag_shader_module;
+			frag_shader_stage_info.pName = "main";
+
+			shader_stage_infos.push_back(frag_shader_stage_info);
+		}
 
 		// TODO: Vertex pulling, we won't need vertex input layouts, or maybe even mesh shaders
 		// https://www.khronos.org/blog/mesh-shading-for-vulkan
@@ -842,8 +857,8 @@ namespace Vulkan
 
 		VkGraphicsPipelineCreateInfo pipeline_info = {};
 		pipeline_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-		pipeline_info.stageCount = 2;
-		pipeline_info.pStages = shader_stages;
+		pipeline_info.stageCount = static_cast<uint32_t>(shader_stage_infos.size());
+		pipeline_info.pStages = shader_stage_infos.data();
 		pipeline_info.pVertexInputState = &vertex_input_info;
 		pipeline_info.pInputAssemblyState = &input_assembly_info;
 		pipeline_info.pViewportState = &viewport_state;

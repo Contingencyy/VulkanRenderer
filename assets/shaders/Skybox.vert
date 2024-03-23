@@ -2,12 +2,7 @@
 
 #extension GL_EXT_nonuniform_qualifier : enable
 
-#include "Shared.glsl.h"
-
-layout(set = DESCRIPTOR_SET_UBO, binding = RESERVED_DESCRIPTOR_UBO_CAMERA) uniform CameraUBO
-{
-	CameraData camera;
-};
+#include "Common.glsl"
 
 layout(location = 0) in vec3 position;
 

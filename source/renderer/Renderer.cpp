@@ -41,8 +41,9 @@ namespace Renderer
 		RENDER_PASS_SKYBOX_STAGE_SKYBOX = 0,
 		RENDER_PASS_SKYBOX_NUM_STAGES = 1,
 
-		RENDER_PASS_GEOMETRY_STAGE_LIGHTING = 0,
-		RENDER_PASS_GEOMETRY_NUM_STAGES = 1,
+		RENDER_PASS_GEOMETRY_STAGE_DEPTH_PREPASS = 0,
+		RENDER_PASS_GEOMETRY_STAGE_LIGHTING = 1,
+		RENDER_PASS_GEOMETRY_NUM_STAGES = 2,
 
 		RENDER_PASS_POST_PROCESS_STAGE_TONEMAP_GAMMA_EXPOSURE = 0,
 		RENDER_PASS_POST_PROCESS_NUM_STAGES = 1,
@@ -610,10 +611,10 @@ namespace Renderer
 			pipeline_info.input_bindings = cube_input_bindings;
 			pipeline_info.input_attributes = cube_input_attributes;
 			pipeline_info.color_attachment_formats = { TEXTURE_FORMAT_RGBA16_SFLOAT };
-			pipeline_info.depth_stencil_attachment_format = { TEXTURE_FORMAT_D32_SFLOAT };
-			pipeline_info.depth_test = true;
+			pipeline_info.depth_stencil_attachment_format = {};
+			pipeline_info.depth_test = false;
 			pipeline_info.depth_write = false;
-			pipeline_info.depth_func = VK_COMPARE_OP_LESS_OR_EQUAL;
+			pipeline_info.depth_func = VK_COMPARE_OP_ALWAYS;
 			pipeline_info.cull_mode = VK_CULL_MODE_FRONT_BIT;
 			pipeline_info.vs_path = "assets/shaders/Skybox.vert";
 			pipeline_info.fs_path = "assets/shaders/Skybox.frag";
@@ -633,13 +634,6 @@ namespace Renderer
 			skybox_stage_color0.info.store_op = VK_ATTACHMENT_STORE_OP_STORE;
 			skybox_stage_color0.info.clear_value.color = { 0.0f, 0.0f, 0.0f, 0.0f };
 
-			RenderPass::Attachment& skybox_stage_depth_stencil = skybox_stage.attachments[RenderPass::ATTACHMENT_SLOT_DEPTH_STENCIL];
-			skybox_stage_depth_stencil.info.format = TEXTURE_FORMAT_D32_SFLOAT;
-			skybox_stage_depth_stencil.info.expected_layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-			skybox_stage_depth_stencil.info.load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
-			skybox_stage_depth_stencil.info.store_op = VK_ATTACHMENT_STORE_OP_STORE;
-			skybox_stage_depth_stencil.info.clear_value.depthStencil = { 1.0f, 0 };
-
 			data->render_passes.skybox = std::make_unique<RenderPass>(stages);
 		}
 
@@ -647,37 +641,62 @@ namespace Renderer
 		{
 			std::vector<RenderPass::Stage> stages(RENDER_PASS_GEOMETRY_NUM_STAGES);
 			
+			// Depth pre-pass stage
+			{
+				Vulkan::GraphicsPipelineInfo pipeline_info = {};
+				pipeline_info.input_bindings = geo_input_bindings;
+				pipeline_info.input_attributes = geo_input_attributes;
+				pipeline_info.color_attachment_formats = {};
+				pipeline_info.depth_stencil_attachment_format = { TEXTURE_FORMAT_D32_SFLOAT };
+				pipeline_info.depth_test = true;
+				pipeline_info.depth_write = true;
+				pipeline_info.depth_func = VK_COMPARE_OP_LESS_OR_EQUAL;
+				pipeline_info.vs_path = "assets/shaders/DepthPrepass.vert";
+
+				RenderPass::Stage& depth_prepass_stage = stages[RENDER_PASS_GEOMETRY_STAGE_DEPTH_PREPASS];
+				depth_prepass_stage.pipeline = Vulkan::CreateGraphicsPipeline(pipeline_info);
+
+				RenderPass::Attachment& depth_prepass_depth_stencil = depth_prepass_stage.attachments[RenderPass::ATTACHMENT_SLOT_DEPTH_STENCIL];
+				depth_prepass_depth_stencil.info.format = TEXTURE_FORMAT_D32_SFLOAT;
+				depth_prepass_depth_stencil.info.expected_layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+				depth_prepass_depth_stencil.info.load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
+				depth_prepass_depth_stencil.info.store_op = VK_ATTACHMENT_STORE_OP_STORE;
+				depth_prepass_depth_stencil.info.clear_value.depthStencil = { 1.0f, 0 };
+			}
+
 			// Lighting stage
-			Vulkan::GraphicsPipelineInfo pipeline_info = {};
-			pipeline_info.input_bindings = geo_input_bindings;
-			pipeline_info.input_attributes = geo_input_attributes;
-			pipeline_info.color_attachment_formats = { TEXTURE_FORMAT_RGBA16_SFLOAT };
-			pipeline_info.depth_stencil_attachment_format = { TEXTURE_FORMAT_D32_SFLOAT };
-			pipeline_info.depth_test = true;
-			pipeline_info.depth_write = true;
-			pipeline_info.depth_func = VK_COMPARE_OP_LESS;
-			pipeline_info.vs_path = "assets/shaders/PbrLighting.vert";
-			pipeline_info.fs_path = "assets/shaders/PbrLighting.frag";
+			{
+				Vulkan::GraphicsPipelineInfo pipeline_info = {};
+				pipeline_info.input_bindings = geo_input_bindings;
+				pipeline_info.input_attributes = geo_input_attributes;
+				pipeline_info.color_attachment_formats = { TEXTURE_FORMAT_RGBA16_SFLOAT };
+				pipeline_info.depth_stencil_attachment_format = { TEXTURE_FORMAT_D32_SFLOAT };
+				pipeline_info.depth_test = true;
+				pipeline_info.depth_write = false;
+				pipeline_info.depth_func = VK_COMPARE_OP_EQUAL;
+				pipeline_info.vs_path = "assets/shaders/PbrLighting.vert";
+				pipeline_info.fs_path = "assets/shaders/PbrLighting.frag";
 
-			pipeline_info.push_ranges.resize(1);
-			pipeline_info.push_ranges[0].size = 8 * sizeof(uint32_t);
-			pipeline_info.push_ranges[0].offset = 0;
-			pipeline_info.push_ranges[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+				pipeline_info.push_ranges.resize(1);
+				pipeline_info.push_ranges[0].size = 8 * sizeof(uint32_t);
+				pipeline_info.push_ranges[0].offset = 0;
+				pipeline_info.push_ranges[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-			RenderPass::Stage& lighting_stage = stages[RENDER_PASS_GEOMETRY_STAGE_LIGHTING];
-			lighting_stage.pipeline = Vulkan::CreateGraphicsPipeline(pipeline_info);
+				RenderPass::Stage& lighting_stage = stages[RENDER_PASS_GEOMETRY_STAGE_LIGHTING];
+				lighting_stage.pipeline = Vulkan::CreateGraphicsPipeline(pipeline_info);
 
-			RenderPass::Attachment& lighting_stage_color0 = lighting_stage.attachments[RenderPass::ATTACHMENT_SLOT_COLOR0];
-			lighting_stage_color0.info.format = TEXTURE_FORMAT_RGBA16_SFLOAT;
-			lighting_stage_color0.info.expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-			lighting_stage_color0.info.load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
-			lighting_stage_color0.info.store_op = VK_ATTACHMENT_STORE_OP_STORE;
+				RenderPass::Attachment& lighting_stage_color0 = lighting_stage.attachments[RenderPass::ATTACHMENT_SLOT_COLOR0];
+				lighting_stage_color0.info.format = TEXTURE_FORMAT_RGBA16_SFLOAT;
+				lighting_stage_color0.info.expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+				lighting_stage_color0.info.load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
+				lighting_stage_color0.info.store_op = VK_ATTACHMENT_STORE_OP_STORE;
 
-			RenderPass::Attachment& lighting_stage_depth_stencil = lighting_stage.attachments[RenderPass::ATTACHMENT_SLOT_DEPTH_STENCIL];
-			lighting_stage_depth_stencil.info.format = TEXTURE_FORMAT_D32_SFLOAT;
-			lighting_stage_depth_stencil.info.expected_layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-			lighting_stage_depth_stencil.info.load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
-			lighting_stage_depth_stencil.info.store_op = VK_ATTACHMENT_STORE_OP_STORE;
+				RenderPass::Attachment& lighting_stage_depth_stencil = lighting_stage.attachments[RenderPass::ATTACHMENT_SLOT_DEPTH_STENCIL];
+				lighting_stage_depth_stencil.info.format = TEXTURE_FORMAT_D32_SFLOAT;
+				lighting_stage_depth_stencil.info.expected_layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+				lighting_stage_depth_stencil.info.load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
+				lighting_stage_depth_stencil.info.store_op = VK_ATTACHMENT_STORE_OP_STORE;
+			}
 
 			data->render_passes.geometry = std::make_unique<RenderPass>(stages);
 		}
@@ -959,14 +978,6 @@ namespace Renderer
 				Vulkan::Command::TransitionLayout(command_buffer, { .image = hdr_cubemap_image, .new_layout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL });
 			}
 
-			Vulkan::CommandBuffer::EndRecording(command_buffer);
-			Vulkan::CommandQueue::ExecuteBlocking(data->command_queues.graphics_compute, command_buffer);
-			Vulkan::CommandBuffer::Reset(command_buffer);
-			Vulkan::CommandPool::FreeCommandBuffer(data->command_pools.graphics_compute, command_buffer);
-
-			command_buffer = Vulkan::CommandPool::AllocateCommandBuffer(data->command_pools.graphics_compute);
-			Vulkan::CommandBuffer::BeginRecording(command_buffer);
-
 			// ----------------------------------------------------------------------------------------------------------------
 			// 2 - Render irradiance cubemap from hdr environment cubemap
 
@@ -1064,14 +1075,6 @@ namespace Renderer
 
 				Vulkan::Command::TransitionLayout(command_buffer, { .image = irradiance_cubemap_image, .new_layout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL });
 			}
-
-			Vulkan::CommandBuffer::EndRecording(command_buffer);
-			Vulkan::CommandQueue::ExecuteBlocking(data->command_queues.graphics_compute, command_buffer);
-			Vulkan::CommandBuffer::Reset(command_buffer);
-			Vulkan::CommandPool::FreeCommandBuffer(data->command_pools.graphics_compute, command_buffer);
-
-			command_buffer = Vulkan::CommandPool::AllocateCommandBuffer(data->command_pools.graphics_compute);
-			Vulkan::CommandBuffer::BeginRecording(command_buffer);
 
 			// ----------------------------------------------------------------------------------------------------------------
 			// 3 - Render prefiltered cubemap from hdr environment cubemap
@@ -1436,8 +1439,7 @@ namespace Renderer
 		RENDER_PASS_BEGIN(data->render_passes.skybox);
 		{
 			RENDER_PASS_STAGE_SET_ATTACHMENT(RENDER_PASS_SKYBOX_STAGE_SKYBOX, RenderPass::ATTACHMENT_SLOT_COLOR0, data->render_targets.hdr.view);
-			RENDER_PASS_STAGE_SET_ATTACHMENT(RENDER_PASS_SKYBOX_STAGE_SKYBOX, RenderPass::ATTACHMENT_SLOT_DEPTH_STENCIL, data->render_targets.depth.view);
-
+			
 			RENDER_PASS_STAGE_BEGIN(RENDER_PASS_SKYBOX_STAGE_SKYBOX, frame->command_buffer, data->render_resolution.width, data->render_resolution.height);
 
 			Vulkan::Command::SetViewport(frame->command_buffer, 0, 1, &viewport);
@@ -1464,77 +1466,109 @@ namespace Renderer
 
 		// ----------------------------------------------------------------------------------------------------------------
 		// Geometry Pass (1 stage)
-		// 1 - Render geometry with lighting
-		// TODO: Depth-prepass, culling
+		// 1 - Depth pre-pass stage
+		// 2 - Render geometry and evaluate lighting
+		// 3 - TODO: Transparent objects forward rendering stage
 
 		RENDER_PASS_BEGIN(data->render_passes.geometry);
 		{
-			RENDER_PASS_STAGE_SET_ATTACHMENT(RENDER_PASS_GEOMETRY_STAGE_LIGHTING, RenderPass::ATTACHMENT_SLOT_COLOR0, data->render_targets.hdr.view);
-			RENDER_PASS_STAGE_SET_ATTACHMENT(RENDER_PASS_GEOMETRY_STAGE_LIGHTING, RenderPass::ATTACHMENT_SLOT_DEPTH_STENCIL, data->render_targets.depth.view);
-
-			RENDER_PASS_STAGE_BEGIN(RENDER_PASS_GEOMETRY_STAGE_LIGHTING, frame->command_buffer, data->render_resolution.width, data->render_resolution.height);
-
-			// Viewport and scissor
-			Vulkan::Command::SetViewport(frame->command_buffer, 0, 1, &viewport);
-			Vulkan::Command::SetScissor(frame->command_buffer, 0, 1, &scissor_rect);
-
-			const Texture* skybox_texture = data->texture_slotmap.Find(data->skybox_texture_handle);
-			VK_ASSERT(skybox_texture && "Skybox cubemap is invalid for currently selected skybox");
-
-			const Texture* irradiance_cubemap = data->texture_slotmap.Find(skybox_texture->next);
-			VK_ASSERT(irradiance_cubemap && "Irradiance cubemap is invalid for currently selected skybox");
-
-			const Texture* prefiltered_cubemap = data->texture_slotmap.Find(irradiance_cubemap->next);
-			VK_ASSERT(prefiltered_cubemap && "Prefiltered cubemap is invalid for currently selected skybox");
-
-			const Texture* brdf_lut = data->texture_slotmap.Find(data->ibl.brdf_lut_handle);
-			VK_ASSERT(brdf_lut && "BRDF LUT is invalid");
-
-			// Push constants
-			struct PushConsts
+			// Depth pre-pass stage
 			{
-				uint32_t irradiance_cubemap_index;
-				uint32_t irradiance_sampler_index;
-				uint32_t prefiltered_cubemap_index;
-				uint32_t prefiltered_sampler_index;
-				uint32_t num_prefiltered_mips;
-				uint32_t brdf_lut_index;
-				uint32_t brdf_lut_sampler_index;
-				uint32_t mat_index;
-			} push_consts;
+				RENDER_PASS_STAGE_SET_ATTACHMENT(RENDER_PASS_GEOMETRY_STAGE_DEPTH_PREPASS, RenderPass::ATTACHMENT_SLOT_DEPTH_STENCIL, data->render_targets.depth.view);
 
-			push_consts.irradiance_cubemap_index = irradiance_cubemap->view_descriptor.descriptor_offset;
-			push_consts.irradiance_sampler_index = irradiance_cubemap->sampler.descriptor.descriptor_offset;
-			push_consts.prefiltered_cubemap_index = prefiltered_cubemap->view_descriptor.descriptor_offset;
-			push_consts.prefiltered_sampler_index = prefiltered_cubemap->sampler.descriptor.descriptor_offset;
-			push_consts.num_prefiltered_mips = prefiltered_cubemap->view.num_mips - 1;
-			push_consts.brdf_lut_index = brdf_lut->view_descriptor.descriptor_offset;
-			push_consts.brdf_lut_sampler_index = brdf_lut->sampler.descriptor.descriptor_offset;
+				RENDER_PASS_STAGE_BEGIN(RENDER_PASS_GEOMETRY_STAGE_DEPTH_PREPASS, frame->command_buffer, data->render_resolution.width, data->render_resolution.height);
 
-			Vulkan::Command::PushConstants(frame->command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 7 * sizeof(uint32_t), &push_consts);
+				Vulkan::Command::SetViewport(frame->command_buffer, 0, 1, &viewport);
+				Vulkan::Command::SetScissor(frame->command_buffer, 0, 1, &scissor_rect);
 
-			for (uint32_t i = 0; i < data->draw_list.next_free_entry; ++i)
-			{
-				const DrawList::Entry& entry = data->draw_list.entries[i];
-
-				// TODO: Default mesh
-				const Mesh* mesh = nullptr;
-				if (VK_RESOURCE_HANDLE_VALID(entry.mesh_handle))
+				for (uint32_t i = 0; i < data->draw_list.next_free_entry; ++i)
 				{
-					mesh = data->mesh_slotmap.Find(entry.mesh_handle);
+					const DrawList::Entry& entry = data->draw_list.entries[i];
+
+					// TODO: Default mesh
+					const Mesh* mesh = nullptr;
+					if (VK_RESOURCE_HANDLE_VALID(entry.mesh_handle))
+					{
+						mesh = data->mesh_slotmap.Find(entry.mesh_handle);
+					}
+					VK_ASSERT(mesh && "Tried to render a mesh with an invalid mesh handle");
+
+					VulkanBuffer vertex_buffers[2] = { mesh->vertex_buffer, frame->instance_buffer.buffer };
+					Vulkan::Command::DrawGeometryIndexed(frame->command_buffer, 2, vertex_buffers, &mesh->index_buffer, sizeof(uint32_t), 1, i);
 				}
-				VK_ASSERT(mesh && "Tried to render a mesh with an invalid mesh handle");
 
-				Vulkan::Command::PushConstants(frame->command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 7 * sizeof(uint32_t), sizeof(uint32_t), &i);
-
-				VulkanBuffer vertex_buffers[2] = {mesh->vertex_buffer, frame->instance_buffer.buffer};
-				Vulkan::Command::DrawGeometryIndexed(frame->command_buffer, 2, vertex_buffers, &mesh->index_buffer, sizeof(uint32_t), 1, i);
-
-				data->stats.total_vertex_count += mesh->vertex_buffer.size_in_bytes / sizeof(Vertex);
-				data->stats.total_triangle_count += (mesh->index_buffer.size_in_bytes / sizeof(uint32_t)) / 3;
+				RENDER_PASS_STAGE_END(RENDER_PASS_GEOMETRY_STAGE_DEPTH_PREPASS, frame->command_buffer);
 			}
 
-			RENDER_PASS_STAGE_END(RENDER_PASS_GEOMETRY_STAGE_LIGHTING, frame->command_buffer);
+			// Geometry and lighting stage
+			{
+				RENDER_PASS_STAGE_SET_ATTACHMENT(RENDER_PASS_GEOMETRY_STAGE_LIGHTING, RenderPass::ATTACHMENT_SLOT_COLOR0, data->render_targets.hdr.view);
+				RENDER_PASS_STAGE_SET_ATTACHMENT(RENDER_PASS_GEOMETRY_STAGE_LIGHTING, RenderPass::ATTACHMENT_SLOT_DEPTH_STENCIL, data->render_targets.depth.view);
+
+				RENDER_PASS_STAGE_BEGIN(RENDER_PASS_GEOMETRY_STAGE_LIGHTING, frame->command_buffer, data->render_resolution.width, data->render_resolution.height);
+
+				// Viewport and scissor
+				Vulkan::Command::SetViewport(frame->command_buffer, 0, 1, &viewport);
+				Vulkan::Command::SetScissor(frame->command_buffer, 0, 1, &scissor_rect);
+
+				const Texture* skybox_texture = data->texture_slotmap.Find(data->skybox_texture_handle);
+				VK_ASSERT(skybox_texture && "Skybox cubemap is invalid for currently selected skybox");
+
+				const Texture* irradiance_cubemap = data->texture_slotmap.Find(skybox_texture->next);
+				VK_ASSERT(irradiance_cubemap && "Irradiance cubemap is invalid for currently selected skybox");
+
+				const Texture* prefiltered_cubemap = data->texture_slotmap.Find(irradiance_cubemap->next);
+				VK_ASSERT(prefiltered_cubemap && "Prefiltered cubemap is invalid for currently selected skybox");
+
+				const Texture* brdf_lut = data->texture_slotmap.Find(data->ibl.brdf_lut_handle);
+				VK_ASSERT(brdf_lut && "BRDF LUT is invalid");
+
+				// Push constants
+				struct PushConsts
+				{
+					uint32_t irradiance_cubemap_index;
+					uint32_t irradiance_sampler_index;
+					uint32_t prefiltered_cubemap_index;
+					uint32_t prefiltered_sampler_index;
+					uint32_t num_prefiltered_mips;
+					uint32_t brdf_lut_index;
+					uint32_t brdf_lut_sampler_index;
+					uint32_t mat_index;
+				} push_consts;
+
+				push_consts.irradiance_cubemap_index = irradiance_cubemap->view_descriptor.descriptor_offset;
+				push_consts.irradiance_sampler_index = irradiance_cubemap->sampler.descriptor.descriptor_offset;
+				push_consts.prefiltered_cubemap_index = prefiltered_cubemap->view_descriptor.descriptor_offset;
+				push_consts.prefiltered_sampler_index = prefiltered_cubemap->sampler.descriptor.descriptor_offset;
+				push_consts.num_prefiltered_mips = prefiltered_cubemap->view.num_mips - 1;
+				push_consts.brdf_lut_index = brdf_lut->view_descriptor.descriptor_offset;
+				push_consts.brdf_lut_sampler_index = brdf_lut->sampler.descriptor.descriptor_offset;
+
+				Vulkan::Command::PushConstants(frame->command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 7 * sizeof(uint32_t), &push_consts);
+
+				for (uint32_t i = 0; i < data->draw_list.next_free_entry; ++i)
+				{
+					const DrawList::Entry& entry = data->draw_list.entries[i];
+
+					// TODO: Default mesh
+					const Mesh* mesh = nullptr;
+					if (VK_RESOURCE_HANDLE_VALID(entry.mesh_handle))
+					{
+						mesh = data->mesh_slotmap.Find(entry.mesh_handle);
+					}
+					VK_ASSERT(mesh && "Tried to render a mesh with an invalid mesh handle");
+
+					Vulkan::Command::PushConstants(frame->command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 7 * sizeof(uint32_t), sizeof(uint32_t), &i);
+
+					VulkanBuffer vertex_buffers[2] = { mesh->vertex_buffer, frame->instance_buffer.buffer };
+					Vulkan::Command::DrawGeometryIndexed(frame->command_buffer, 2, vertex_buffers, &mesh->index_buffer, sizeof(uint32_t), 1, i);
+
+					data->stats.total_vertex_count += mesh->vertex_buffer.size_in_bytes / sizeof(Vertex);
+					data->stats.total_triangle_count += (mesh->index_buffer.size_in_bytes / sizeof(uint32_t)) / 3;
+				}
+
+				RENDER_PASS_STAGE_END(RENDER_PASS_GEOMETRY_STAGE_LIGHTING, frame->command_buffer);
+			}
 		}
 		RENDER_PASS_END(data->render_passes.geometry);
 

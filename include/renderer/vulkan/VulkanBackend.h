@@ -38,8 +38,8 @@ namespace Vulkan
 		std::vector<TextureFormat> color_attachment_formats;
 		TextureFormat depth_stencil_attachment_format = TEXTURE_FORMAT_UNDEFINED;
 
-		const char* vs_path;
-		const char* fs_path;
+		const char* vs_path = nullptr;
+		const char* fs_path = nullptr;
 
 		bool depth_test = false;
 		bool depth_write = false;
