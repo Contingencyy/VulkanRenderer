@@ -189,6 +189,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="source\renderer\vulkan\VulkanRaytracing.cpp" />
     <ClCompile Include="source\renderer\Renderer.cpp" />
     <ClCompile Include="source\renderer\RenderPass.cpp" />
     <ClCompile Include="source\renderer\RingBuffer.cpp" />
@@ -220,6 +221,7 @@
     <ClInclude Include="include\Input.h" />
     <ClInclude Include="include\Logger.h" />
     <ClInclude Include="include\Precomp.h" />
+    <ClInclude Include="include\renderer\vulkan\VulkanRaytracing.h" />
     <ClInclude Include="include\renderer\Renderer.h" />
     <ClInclude Include="include\renderer\RenderPass.h" />
     <ClInclude Include="include\renderer\RenderTypes.h" />

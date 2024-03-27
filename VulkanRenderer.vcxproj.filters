@@ -114,6 +114,9 @@
     <ClCompile Include="source\renderer\vulkan\VulkanUtils.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="source\renderer\vulkan\VulkanRaytracing.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\Logger.h">
@@ -216,6 +219,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\renderer\vulkan\VulkanUtils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\renderer\vulkan\VulkanRaytracing.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

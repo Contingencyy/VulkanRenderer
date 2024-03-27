@@ -11,6 +11,7 @@
 #include "renderer/vulkan/VulkanCommands.h"
 #include "renderer/vulkan/VulkanSync.h"
 #include "renderer/vulkan/VulkanDescriptor.h"
+#include "renderer/vulkan/VulkanRaytracing.h"
 #include "renderer/ResourceSlotmap.h"
 #include "renderer/RenderPass.h"
 #include "renderer/RingBuffer.h"
@@ -167,10 +168,11 @@ namespace Renderer
 	{
 		VulkanBuffer vertex_buffer;
 		VulkanBuffer index_buffer;
+		VulkanBuffer blas_buffer;
 
 		Mesh() = default;
-		explicit Mesh(VulkanBuffer vertex_buffer, VulkanBuffer index_buffer)
-			: vertex_buffer(vertex_buffer), index_buffer(index_buffer)
+		explicit Mesh(VulkanBuffer vertex_buffer, VulkanBuffer index_buffer, VulkanBuffer blas_buffer)
+			: vertex_buffer(vertex_buffer), index_buffer(index_buffer), blas_buffer(blas_buffer)
 		{
 		}
 
@@ -178,6 +180,7 @@ namespace Renderer
 		{
 			Vulkan::Buffer::Destroy(vertex_buffer);
 			Vulkan::Buffer::Destroy(index_buffer);
+			Vulkan::Buffer::Destroy(blas_buffer);
 		}
 	};
 
@@ -1949,12 +1952,18 @@ namespace Renderer
 		Vulkan::Command::CopyBuffers(command_buffer, staging.buffer, staging.buffer.offset_in_bytes, vertex_buffer, vertex_buffer.offset_in_bytes, vb_size);
 		Vulkan::Command::CopyBuffers(command_buffer, staging.buffer, staging.buffer.offset_in_bytes + vb_size, index_buffer, index_buffer.offset_in_bytes, ib_size);
 
+		VulkanBuffer blas_scratch_buffer;
+		VulkanBuffer blas_buffer = Vulkan::Raytracing::BuildBLAS(command_buffer, vertex_buffer, index_buffer, blas_scratch_buffer,
+			0, args.vertices.size(), sizeof(Vertex), VK_INDEX_TYPE_UINT32, "BLAS " + args.name);
+
 		Vulkan::CommandBuffer::EndRecording(command_buffer);
 		Vulkan::CommandQueue::ExecuteBlocking(data->command_queues.transfer, command_buffer);
 		Vulkan::CommandBuffer::Reset(command_buffer);
 		Vulkan::CommandPool::FreeCommandBuffer(data->command_pools.transfer, command_buffer);
 
-		return data->mesh_slotmap.Emplace(vertex_buffer, index_buffer);
+		Vulkan::Buffer::Destroy(blas_scratch_buffer);
+
+		return data->mesh_slotmap.Emplace(vertex_buffer, index_buffer, blas_buffer);
 	}
 
 	void DestroyMesh(MeshHandle_t handle)

@@ -15,7 +15,8 @@ namespace Vulkan
 		{
 			BufferCreateInfo buffer_info = {};
 			buffer_info.size_in_bytes = size_in_bytes;
-			buffer_info.usage_flags = BUFFER_USAGE_COPY_DST | BUFFER_USAGE_VERTEX;
+			buffer_info.usage_flags = BUFFER_USAGE_COPY_DST | BUFFER_USAGE_VERTEX |
+				VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
 			buffer_info.memory_flags = GPU_MEMORY_DEVICE_LOCAL;
 			buffer_info.name = name;
 
@@ -26,7 +27,30 @@ namespace Vulkan
 		{
 			BufferCreateInfo buffer_info = {};
 			buffer_info.size_in_bytes = size_in_bytes;
-			buffer_info.usage_flags = BUFFER_USAGE_COPY_DST | BUFFER_USAGE_INDEX;
+			buffer_info.usage_flags = BUFFER_USAGE_COPY_DST | BUFFER_USAGE_INDEX |
+				VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+			buffer_info.memory_flags = GPU_MEMORY_DEVICE_LOCAL;
+			buffer_info.name = name;
+
+			return Create(buffer_info);
+		}
+
+		VulkanBuffer CreateBLAS(uint64_t size_in_bytes, const std::string& name)
+		{
+			BufferCreateInfo buffer_info = {};
+			buffer_info.size_in_bytes = size_in_bytes;
+			buffer_info.usage_flags = BUFFER_USAGE_RAYTRACING_ACCELERATION_STRUCTURE;
+			buffer_info.memory_flags = GPU_MEMORY_DEVICE_LOCAL;
+			buffer_info.name = name;
+
+			return Create(buffer_info);
+		}
+
+		VulkanBuffer CreateScratch(uint64_t size_in_bytes, const std::string& name)
+		{
+			BufferCreateInfo buffer_info = {};
+			buffer_info.size_in_bytes = size_in_bytes;
+			buffer_info.usage_flags = BUFFER_USAGE_RAYTRACING_SCRATCH;
 			buffer_info.memory_flags = GPU_MEMORY_DEVICE_LOCAL;
 			buffer_info.name = name;
 
@@ -35,9 +59,11 @@ namespace Vulkan
 
 		VulkanBuffer Create(const BufferCreateInfo& buffer_info)
 		{
+			VkBufferUsageFlags vk_usage_flags = Vulkan::Util::ToVkBufferUsageFlags(buffer_info.usage_flags);
+
 			VkBufferCreateInfo vk_buffer_info = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
 			vk_buffer_info.size = buffer_info.size_in_bytes;
-			vk_buffer_info.usage = Vulkan::Util::ToVkBufferUsageFlags(buffer_info.usage_flags);
+			vk_buffer_info.usage = vk_usage_flags;
 			vk_buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
 			VkBuffer vk_buffer = VK_NULL_HANDLE;
@@ -46,8 +72,9 @@ namespace Vulkan
 
 			VulkanBuffer buffer = {};
 			buffer.vk_buffer = vk_buffer;
-			buffer.vk_usage_flags = vk_buffer_info.usage;
+			buffer.vk_usage_flags = vk_usage_flags;
 			buffer.memory = DeviceMemory::Allocate(buffer, buffer_info);
+			buffer.vk_device_address = Util::GetBufferDeviceAddress(buffer);
 			buffer.size_in_bytes = buffer_info.size_in_bytes;
 			buffer.offset_in_bytes = 0;
 
@@ -62,6 +89,9 @@ namespace Vulkan
 				return;
 
 			ResourceTracker::RemoveBuffer(buffer);
+
+			if (buffer.vk_acceleration_structure)
+				vk_inst.pFunc.raytracing.destroy_acceleration_structure(vk_inst.device, buffer.vk_acceleration_structure, nullptr);
 
 			DeviceMemory::Free(buffer.memory);
 			vkDestroyBuffer(vk_inst.device, buffer.vk_buffer, nullptr);

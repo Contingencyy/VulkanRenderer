@@ -12,6 +12,9 @@ namespace Vulkan
 		std::vector<const char*> extensions =
 		{
 			VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+			VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
+			VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+			VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
 			VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME,
 			/*VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME,
 			VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
@@ -83,6 +86,15 @@ namespace Vulkan
 			PFN_vkCmdSetDescriptorBufferOffsetsEXT cmd_set_descriptor_buffer_offsets_ext;
 			PFN_vkCmdBindDescriptorBuffersEXT cmd_bind_descriptor_buffers_ext;
 			PFN_vkDebugMarkerSetObjectNameEXT debug_marker_set_object_name_ext;
+
+			struct Raytracing
+			{
+				PFN_vkCmdBuildAccelerationStructuresKHR cmd_build_acceleration_structures;
+				PFN_vkCreateAccelerationStructureKHR create_acceleration_structure;
+				PFN_vkDestroyAccelerationStructureKHR destroy_acceleration_structure;
+				PFN_vkGetAccelerationStructureBuildSizesKHR get_acceleration_structure_build_sizes;
+				PFN_vkGetAccelerationStructureDeviceAddressKHR get_acceleration_structure_device_address;
+			} raytracing;
 		} pFunc;
 
 		struct ImGui

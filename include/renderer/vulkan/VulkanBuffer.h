@@ -10,6 +10,8 @@ namespace Vulkan
 
 		VulkanBuffer CreateVertex(uint64_t size_in_bytes, const std::string& name);
 		VulkanBuffer CreateIndex(uint64_t size_in_bytes, const std::string& name);
+		VulkanBuffer CreateBLAS(uint64_t size_in_bytes, const std::string& name);
+		VulkanBuffer CreateScratch(uint64_t size_in_bytes, const std::string& name);
 
 		VulkanBuffer Create(const BufferCreateInfo& buffer_info);
 		void Destroy(const VulkanBuffer& buffer);

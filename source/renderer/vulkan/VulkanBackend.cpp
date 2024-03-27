@@ -204,16 +204,19 @@ namespace Vulkan
 			// Check for feature support
 			VkPhysicalDeviceVulkan11Features vulkan11_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES };
 			VkPhysicalDeviceVulkan12Features vulkan12_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
-			vulkan12_features.pNext = &vulkan11_features;
+			vulkan11_features.pNext = &vulkan12_features;
 			VkPhysicalDeviceVulkan13Features vulkan13_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
-			vulkan13_features.pNext = &vulkan12_features;
+			vulkan12_features.pNext = &vulkan13_features;
 
 			VkPhysicalDeviceDescriptorBufferFeaturesEXT descriptor_buffer_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT };
-			descriptor_buffer_features.pNext = &vulkan13_features;
+			vulkan13_features.pNext = &descriptor_buffer_features;
+
+			VkPhysicalDeviceAccelerationStructureFeaturesKHR acceleration_structure_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR };
+			descriptor_buffer_features.pNext = &acceleration_structure_features;
 
 			VkPhysicalDeviceFeatures2 device_features2 = {};
 			device_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-			device_features2.pNext = &descriptor_buffer_features;
+			device_features2.pNext = &vulkan11_features;
 			
 			vkGetPhysicalDeviceFeatures2(device, &device_features2);
 
@@ -227,7 +230,9 @@ namespace Vulkan
 				vulkan13_features.maintenance4 &&
 				vulkan13_features.synchronization2 &&
 				descriptor_buffer_features.descriptorBuffer &&
-				descriptor_buffer_features.descriptorBufferCaptureReplay)
+				descriptor_buffer_features.descriptorBufferCaptureReplay &&
+				acceleration_structure_features.accelerationStructure &&
+				acceleration_structure_features.accelerationStructureCaptureReplay)
 			{
 				vk_inst.physical_device = device;
 
@@ -322,17 +327,20 @@ namespace Vulkan
 		// Request additional features to be enabled
 		VkPhysicalDeviceVulkan11Features vulkan11_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES };
 		VkPhysicalDeviceVulkan12Features vulkan12_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
-		vulkan12_features.pNext = &vulkan11_features;
+		vulkan11_features.pNext = &vulkan12_features;
 		VkPhysicalDeviceVulkan13Features vulkan13_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
-		vulkan13_features.pNext = &vulkan12_features;
+		vulkan12_features.pNext = &vulkan13_features;
 
 		VkPhysicalDeviceDescriptorBufferFeaturesEXT descriptor_buffer_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT };
-		descriptor_buffer_features.pNext = &vulkan13_features;
+		vulkan13_features.pNext = &descriptor_buffer_features;
+
+		VkPhysicalDeviceAccelerationStructureFeaturesKHR acceleration_structure_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR };
+		descriptor_buffer_features.pNext = &acceleration_structure_features;
 
 		VkPhysicalDeviceFeatures2 device_features2 = {};
 		device_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
 		device_features2.features.samplerAnisotropy = VK_TRUE;
-		device_features2.pNext = &descriptor_buffer_features;
+		device_features2.pNext = &vulkan11_features;
 		vkGetPhysicalDeviceFeatures2(vk_inst.physical_device, &device_features2);
 
 		device_create_info.pNext = &device_features2;
@@ -357,6 +365,12 @@ namespace Vulkan
 		LoadVulkanFunction<PFN_vkGetDescriptorSetLayoutBindingOffsetEXT>("vkGetDescriptorSetLayoutBindingOffsetEXT", vk_inst.pFunc.get_descriptor_set_layout_binding_offset_ext);
 		LoadVulkanFunction<PFN_vkCmdSetDescriptorBufferOffsetsEXT>("vkCmdSetDescriptorBufferOffsetsEXT", vk_inst.pFunc.cmd_set_descriptor_buffer_offsets_ext);
 		LoadVulkanFunction<PFN_vkCmdBindDescriptorBuffersEXT>("vkCmdBindDescriptorBuffersEXT", vk_inst.pFunc.cmd_bind_descriptor_buffers_ext);
+
+		LoadVulkanFunction<PFN_vkCmdBuildAccelerationStructuresKHR>("vkCmdBuildAccelerationStructuresKHR", vk_inst.pFunc.raytracing.cmd_build_acceleration_structures);
+		LoadVulkanFunction<PFN_vkCreateAccelerationStructureKHR>("vkCreateAccelerationStructureKHR", vk_inst.pFunc.raytracing.create_acceleration_structure);
+		LoadVulkanFunction<PFN_vkDestroyAccelerationStructureKHR>("vkDestroyAccelerationStructureKHR", vk_inst.pFunc.raytracing.destroy_acceleration_structure);
+		LoadVulkanFunction<PFN_vkGetAccelerationStructureBuildSizesKHR>("vkGetAccelerationStructureBuildSizesKHR", vk_inst.pFunc.raytracing.get_acceleration_structure_build_sizes);
+		LoadVulkanFunction<PFN_vkGetAccelerationStructureDeviceAddressKHR>("vkGetAccelerationStructureDeviceAddressKHR", vk_inst.pFunc.raytracing.get_acceleration_structure_device_address);
 
 #ifdef _DEBUG
 		LoadVulkanFunction<PFN_vkDebugMarkerSetObjectNameEXT>("vkSetDebugUtilsObjectNameEXT", vk_inst.pFunc.debug_marker_set_object_name_ext);

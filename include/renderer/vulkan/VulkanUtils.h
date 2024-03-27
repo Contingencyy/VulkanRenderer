@@ -11,6 +11,9 @@ namespace Vulkan
 	namespace Util
 	{
 
+		VkDeviceAddress GetBufferDeviceAddress(const VulkanBuffer& buffer);
+		VkDeviceAddress GetAccelerationStructureDeviceAddress(VkAccelerationStructureKHR acceleration_structure);
+
 		VkMemoryPropertyFlags ToVkMemoryPropertyFlags(Flags memory_flags);
 		uint32_t FindMemoryType(uint32_t type_filter, VkMemoryPropertyFlags mem_properties);
 

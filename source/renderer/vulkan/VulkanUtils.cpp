@@ -28,6 +28,22 @@ namespace Vulkan
 	namespace Util
 	{
 
+		VkDeviceAddress GetBufferDeviceAddress(const VulkanBuffer& buffer)
+		{
+			VkBufferDeviceAddressInfo address_info = { VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO };
+			address_info.buffer = buffer.vk_buffer;
+
+			return vkGetBufferDeviceAddress(vk_inst.device, &address_info);
+		}
+
+		VkDeviceAddress GetAccelerationStructureDeviceAddress(VkAccelerationStructureKHR acceleration_structure)
+		{
+			VkAccelerationStructureDeviceAddressInfoKHR as_device_address_info = { VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR };
+			as_device_address_info.accelerationStructure = acceleration_structure;
+
+			return vk_inst.pFunc.raytracing.get_acceleration_structure_device_address(vk_inst.device, &as_device_address_info);
+		}
+
 		VkMemoryPropertyFlags ToVkMemoryPropertyFlags(Flags memory_flags)
 		{
 			VkMemoryPropertyFlags vk_mem_property_flags = 0;
@@ -61,26 +77,32 @@ namespace Vulkan
 
 		VkBufferUsageFlags ToVkBufferUsageFlags(Flags usage_flags)
 		{
-			VkBufferUsageFlags vk_usage_flags = 0;
+			VkBufferUsageFlags vk_usage_flags = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 
 			if (usage_flags & BUFFER_USAGE_STAGING)
 				vk_usage_flags |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 			if (usage_flags & BUFFER_USAGE_UNIFORM)
-				vk_usage_flags |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+				vk_usage_flags |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
 			if (usage_flags & BUFFER_USAGE_VERTEX)
-				vk_usage_flags |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+				vk_usage_flags |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
 			if (usage_flags & BUFFER_USAGE_INDEX)
-				vk_usage_flags |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+				vk_usage_flags |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
 			if ((usage_flags & BUFFER_USAGE_READ_ONLY) || (usage_flags & BUFFER_USAGE_READ_WRITE))
 				vk_usage_flags |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
 			if (usage_flags & BUFFER_USAGE_COPY_SRC)
 				vk_usage_flags |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 			if (usage_flags & BUFFER_USAGE_COPY_DST)
 				vk_usage_flags |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+			if (usage_flags & BUFFER_USAGE_RAYTRACING_ACCELERATION_STRUCTURE)
+				vk_usage_flags |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR;
+			if (usage_flags & BUFFER_USAGE_RAYTRACING_SCRATCH)
+				vk_usage_flags |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+			if (usage_flags & BUFFER_USAGE_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_INPUT)
+				vk_usage_flags |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
 			if (usage_flags & BUFFER_USAGE_RESOURCE_DESCRIPTORS)
-				vk_usage_flags |= VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+				vk_usage_flags |= VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT;
 			if (usage_flags & BUFFER_USAGE_SAMPLER_DESCRIPTORS)
-				vk_usage_flags |= VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+				vk_usage_flags |= VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT;
 
 			return vk_usage_flags;
 		}

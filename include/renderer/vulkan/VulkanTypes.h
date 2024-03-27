@@ -95,11 +95,15 @@ struct VulkanMemory
 struct VulkanBuffer
 {
 	VkBuffer vk_buffer = VK_NULL_HANDLE;
+	VkDeviceAddress vk_device_address = 0;
 	VkBufferUsageFlags vk_usage_flags = VK_BUFFER_USAGE_FLAG_BITS_MAX_ENUM;
 	VulkanMemory memory;
 
 	uint64_t size_in_bytes = 0ull;
 	uint64_t offset_in_bytes = 0ull;
+
+	// NOTE: Only used for raytracing acceleration structures
+	VkAccelerationStructureKHR vk_acceleration_structure = VK_NULL_HANDLE;
 };
 
 struct VulkanImage
