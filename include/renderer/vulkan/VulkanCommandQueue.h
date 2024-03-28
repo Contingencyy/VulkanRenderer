@@ -10,7 +10,7 @@ namespace Vulkan
 	{
 
 		VulkanCommandQueue Create(VulkanCommandBufferType type, uint32_t queue_family_index, uint32_t queue_index);
-		void Destroy(const VulkanCommandQueue& command_queue);
+		void Destroy(VulkanCommandQueue& command_queue);
 
 		uint64_t Execute(VulkanCommandQueue& queue, const VulkanCommandBuffer& command_buffer,
 			uint32_t num_signal_fences = 0, VulkanFence* const signal_fences = nullptr);

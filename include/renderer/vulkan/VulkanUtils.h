@@ -33,5 +33,8 @@ namespace Vulkan
 		VkPipelineBindPoint ToVkPipelineBindPoint(VulkanPipelineType type);
 		VkIndexType ToVkIndexType(uint32_t index_byte_size);
 
+		VkAccessFlags2 GetAccessFlagsFromImageLayout(VkImageLayout layout);
+		VkPipelineStageFlags2 GetPipelineStageFlagsFromImageLayout(VkImageLayout layout);
+
 	}
 }

@@ -45,12 +45,14 @@ namespace Vulkan
 			return image_view;
 		}
 
-		void Destroy(const VulkanImageView& image_view)
+		void Destroy(VulkanImageView& image_view)
 		{
 			if (!image_view.vk_image_view)
 				return;
 
 			vkDestroyImageView(vk_inst.device, image_view.vk_image_view, nullptr);
+
+			image_view = {};
 		}
 
 	}

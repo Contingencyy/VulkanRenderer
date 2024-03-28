@@ -198,6 +198,36 @@ namespace Renderer
 		}
 	};
 
+	struct Frame
+	{
+		VulkanCommandBuffer command_buffer;
+
+		struct Sync
+		{
+			VulkanFence render_finished_fence;
+			uint64_t frame_in_flight_fence_value = 0;
+		} sync;
+
+		struct UBOs
+		{
+			RingBuffer::Allocation settings_ubo;
+			RingBuffer::Allocation camera_ubo;
+			RingBuffer::Allocation light_ubo;
+			RingBuffer::Allocation material_ubo;
+
+			VulkanDescriptorAllocation descriptors;
+		} ubos;
+
+		struct Raytracing
+		{
+			VulkanBuffer tlas;
+			VulkanBuffer tlas_scratch;
+			VulkanBuffer tlas_instance_buffer;
+		} raytracing;
+
+		RingBuffer::Allocation instance_buffer;
+	};
+
 	struct Data
 	{
 		::GLFWwindow* glfw_window;
@@ -261,28 +291,7 @@ namespace Renderer
 			TextureHandle_t brdf_lut_handle;
 		} ibl;
 
-		struct Frame
-		{
-			VulkanCommandBuffer command_buffer;
-
-			struct Sync
-			{
-				VulkanFence render_finished_fence;
-				uint64_t frame_in_flight_fence_value = 0;
-			} sync;
-
-			struct UBOs
-			{
-				RingBuffer::Allocation settings_ubo;
-				RingBuffer::Allocation camera_ubo;
-				RingBuffer::Allocation light_ubo;
-				RingBuffer::Allocation material_ubo;
-
-				VulkanDescriptorAllocation descriptors;
-			} ubos;
-
-			RingBuffer::Allocation instance_buffer;
-		} per_frame[Vulkan::MAX_FRAMES_IN_FLIGHT];
+		Frame per_frame[Vulkan::MAX_FRAMES_IN_FLIGHT];
 
 		// Draw submission list
 		DrawList draw_list;
@@ -319,7 +328,7 @@ namespace Renderer
 		} stats;
 	} static *data;
 
-	static inline Data::Frame* GetFrameCurrent()
+	static inline Frame* GetFrameCurrent()
 	{
 		return &data->per_frame[Vulkan::GetCurrentFrameIndex() % Vulkan::MAX_FRAMES_IN_FLIGHT];
 	}
@@ -1352,6 +1361,10 @@ namespace Renderer
 			Vulkan::Descriptor::Free(data->per_frame[frame_index].ubos.descriptors, frame_index);
 			Vulkan::CommandPool::FreeCommandBuffer(data->command_pools.graphics_compute, data->per_frame[frame_index].command_buffer);
 			Vulkan::Sync::DestroyFence(data->per_frame[frame_index].sync.render_finished_fence);
+
+			Vulkan::Buffer::Destroy(data->per_frame[frame_index].raytracing.tlas);
+			Vulkan::Buffer::Destroy(data->per_frame[frame_index].raytracing.tlas_scratch);
+			Vulkan::Buffer::Destroy(data->per_frame[frame_index].raytracing.tlas_instance_buffer);
 		}
 
 		Vulkan::CommandPool::Destroy(data->command_pools.graphics_compute);
@@ -1366,11 +1379,17 @@ namespace Renderer
 
 	void BeginFrame(const BeginFrameInfo& frame_info)
 	{
-		Data::Frame* frame = GetFrameCurrent();
+		Frame* frame = GetFrameCurrent();
 
+		// Wait for the current frame to finish rendering, reset command buffer and begin recording
 		Vulkan::CommandQueue::WaitFenceValue(data->command_queues.graphics_compute, frame->sync.frame_in_flight_fence_value);
 		Vulkan::CommandBuffer::Reset(frame->command_buffer);
 		Vulkan::CommandBuffer::BeginRecording(frame->command_buffer);
+
+		// Release TLAS buffers
+		Vulkan::Buffer::Destroy(frame->raytracing.tlas);
+		Vulkan::Buffer::Destroy(frame->raytracing.tlas_scratch);
+		Vulkan::Buffer::Destroy(frame->raytracing.tlas_instance_buffer);
 
 		bool resized = Vulkan::BeginFrame();
 
@@ -1417,7 +1436,26 @@ namespace Renderer
 
 	void RenderFrame()
 	{
-		Data::Frame* frame = GetFrameCurrent();
+		Frame* frame = GetFrameCurrent();
+
+		// Before we start rendering anything, we need to build the TLAS for the current frame
+		uint32_t num_blas_meshes = data->draw_list.next_free_entry;
+		std::vector<VulkanBuffer> mesh_blas_buffers(num_blas_meshes);
+		std::vector<VkTransformMatrixKHR> mesh_transforms(num_blas_meshes);
+
+		for (uint32_t i = 0; i < data->draw_list.next_free_entry; ++i)
+		{
+			const DrawList::Entry& entry = data->draw_list.entries[i];
+
+			Mesh* mesh = data->mesh_slotmap.Find(entry.mesh_handle);
+			VK_ASSERT(mesh && "Tried to build the TLAS with an invalid mesh");
+
+			mesh_blas_buffers[i] = mesh->blas_buffer;
+			memcpy(&mesh_transforms[i], &entry.transform, sizeof(VkTransformMatrixKHR));
+		}
+
+		frame->raytracing.tlas = Vulkan::Raytracing::BuildTLAS(frame->command_buffer, frame->raytracing.tlas_scratch, frame->raytracing.tlas_instance_buffer,
+			num_blas_meshes, mesh_blas_buffers.data(), mesh_transforms.data(), "TLAS Scene");
 
 		// Update number of lights in the light ubo
 		frame->ubos.light_ubo.WriteBuffer(sizeof(PointlightData) * MAX_LIGHT_SOURCES, sizeof(uint32_t), &data->num_pointlights);
@@ -1489,11 +1527,7 @@ namespace Renderer
 					const DrawList::Entry& entry = data->draw_list.entries[i];
 
 					// TODO: Default mesh
-					const Mesh* mesh = nullptr;
-					if (VK_RESOURCE_HANDLE_VALID(entry.mesh_handle))
-					{
-						mesh = data->mesh_slotmap.Find(entry.mesh_handle);
-					}
+					const Mesh* mesh = data->mesh_slotmap.Find(entry.mesh_handle);
 					VK_ASSERT(mesh && "Tried to render a mesh with an invalid mesh handle");
 
 					VulkanBuffer vertex_buffers[2] = { mesh->vertex_buffer, frame->instance_buffer.buffer };
@@ -1785,7 +1819,7 @@ namespace Renderer
 
 	void EndFrame()
 	{
-		Data::Frame* frame = GetFrameCurrent();
+		Frame* frame = GetFrameCurrent();
 
 		// ----------------------------------------------------------------------------------------------------------------
 		// Dear ImGui Pass (1 stage)
@@ -1946,20 +1980,38 @@ namespace Renderer
 		VulkanBuffer index_buffer = Vulkan::Buffer::CreateIndex(ib_size, "Index Buffer " + args.name);
 
 		// Copy staging buffer data into vertex and index buffers
-		VulkanCommandBuffer command_buffer = Vulkan::CommandPool::AllocateCommandBuffer(data->command_pools.transfer);
+		VulkanCommandBuffer command_buffer = Vulkan::CommandPool::AllocateCommandBuffer(data->command_pools.graphics_compute);
 		Vulkan::CommandBuffer::BeginRecording(command_buffer);
 
 		Vulkan::Command::CopyBuffers(command_buffer, staging.buffer, staging.buffer.offset_in_bytes, vertex_buffer, vertex_buffer.offset_in_bytes, vb_size);
 		Vulkan::Command::CopyBuffers(command_buffer, staging.buffer, staging.buffer.offset_in_bytes + vb_size, index_buffer, index_buffer.offset_in_bytes, ib_size);
 
-		VulkanBuffer blas_scratch_buffer;
+		std::vector<VulkanBufferBarrier> copy_to_acceleration_structure_build_barriers =
+		{
+			{ vertex_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+			  VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR },
+			{ index_buffer, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+			  VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR }
+		};
+		Vulkan::Command::BufferMemoryBarriers(command_buffer, copy_to_acceleration_structure_build_barriers);
+
+		VulkanBuffer blas_scratch_buffer = {};
 		VulkanBuffer blas_buffer = Vulkan::Raytracing::BuildBLAS(command_buffer, vertex_buffer, index_buffer, blas_scratch_buffer,
-			0, args.vertices.size(), sizeof(Vertex), VK_INDEX_TYPE_UINT32, "BLAS " + args.name);
+			args.vertices.size(), sizeof(Vertex), args.indices.size() / 3, VK_INDEX_TYPE_UINT32, "BLAS " + args.name);
+
+		std::vector<VulkanBufferBarrier> acceleration_structure_build_to_vertex_index_barriers =
+		{
+			{ vertex_buffer, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+			  VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT, VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT },
+			{ index_buffer, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+			  VK_ACCESS_2_INDEX_READ_BIT, VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT }
+		};
+		Vulkan::Command::BufferMemoryBarriers(command_buffer, copy_to_acceleration_structure_build_barriers);
 
 		Vulkan::CommandBuffer::EndRecording(command_buffer);
-		Vulkan::CommandQueue::ExecuteBlocking(data->command_queues.transfer, command_buffer);
+		Vulkan::CommandQueue::ExecuteBlocking(data->command_queues.graphics_compute, command_buffer);
 		Vulkan::CommandBuffer::Reset(command_buffer);
-		Vulkan::CommandPool::FreeCommandBuffer(data->command_pools.transfer, command_buffer);
+		Vulkan::CommandPool::FreeCommandBuffer(data->command_pools.graphics_compute, command_buffer);
 
 		Vulkan::Buffer::Destroy(blas_scratch_buffer);
 
@@ -1978,7 +2030,7 @@ namespace Renderer
 		entry.transform = transform;
 
 		// Write mesh transform to the instance buffer for the currently active frame
-		Data::Frame* frame = GetFrameCurrent();
+		Frame* frame = GetFrameCurrent();
 		frame->instance_buffer.WriteBuffer(sizeof(glm::mat4) * entry.index, sizeof(glm::mat4), &entry.transform);
 
 		// Write material data to the material UBO
@@ -2038,7 +2090,7 @@ namespace Renderer
 			.color = color
 		};
 
-		Data::Frame* frame = GetFrameCurrent();
+		Frame* frame = GetFrameCurrent();
 		frame->ubos.light_ubo.WriteBuffer(sizeof(PointlightData) * data->num_pointlights, sizeof(PointlightData), &pointlight);
 		data->num_pointlights++;
 	}

@@ -1,6 +1,7 @@
 #include "Precomp.h"
 #include "renderer/vulkan/VulkanResourceTracker.h"
 #include "renderer/vulkan/VulkanSync.h"
+#include "renderer/vulkan/VulkanUtils.h"
 
 namespace Vulkan
 {
@@ -11,6 +12,8 @@ namespace Vulkan
 		struct TrackedBuffer
 		{
 			VulkanBuffer buffer;
+			VkAccessFlags2 last_access_flags = VK_ACCESS_2_NONE;
+			VkPipelineStageFlagBits2 last_stage_flags = VK_PIPELINE_STAGE_2_NONE;
 
 			VulkanFence fence;
 		};
@@ -18,7 +21,8 @@ namespace Vulkan
 		struct TrackedImage
 		{
 			VulkanImage image;
-			VkPipelineStageFlags last_pipeline_stage_used = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+			VkAccessFlags2 last_access_flags = VK_ACCESS_2_NONE;
+			VkPipelineStageFlags2 last_stage_flags = VK_PIPELINE_STAGE_2_NONE;
 
 			VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
 			std::vector<VkImageLayout> subresource_layouts;
@@ -70,6 +74,33 @@ namespace Vulkan
 			data->tracked_buffers.erase(buffer.vk_buffer);
 		}
 
+		VkBufferMemoryBarrier2 BufferMemoryBarrier(const VulkanBufferBarrier& barrier)
+		{
+			VkBufferMemoryBarrier2 memory_barrier = { VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2 };
+			memory_barrier.buffer = barrier.buffer.vk_buffer;
+			memory_barrier.size = barrier.buffer.size_in_bytes;
+			memory_barrier.offset = barrier.buffer.offset_in_bytes;
+
+			memory_barrier.srcAccessMask = barrier.src_access_flags;
+			memory_barrier.srcStageMask = barrier.src_stage_flags;
+			memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+
+			memory_barrier.dstAccessMask = barrier.dst_access_flags;
+			memory_barrier.dstStageMask = barrier.dst_stage_flags;
+			memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+
+			return memory_barrier;
+		}
+
+		void UpdateBufferAccessAndStageFlags(const VulkanBufferBarrier& barrier)
+		{
+			auto tracked = data->tracked_buffers.find(barrier.buffer.vk_buffer);
+			VK_ASSERT(tracked != data->tracked_buffers.end() && "Tried to update access and stage flags for a buffer that has not been tracked");
+
+			tracked->second.last_access_flags = barrier.dst_access_flags;
+			tracked->second.last_stage_flags = barrier.dst_stage_flags;
+		}
+
 		void TrackImage(const VulkanImage& image, VkImageLayout layout)
 		{
 			auto tracked = data->tracked_images.find(image.vk_image);
@@ -79,7 +110,7 @@ namespace Vulkan
 			{
 				data->tracked_images.emplace(image.vk_image, TrackedImage{
 						.image = image,
-						.last_pipeline_stage_used = VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT,
+						.last_stage_flags = VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT,
 						.layout = layout
 					}
 				);
@@ -103,115 +134,31 @@ namespace Vulkan
 			data->tracked_images.erase(image.vk_image);
 		}
 
-		static VkAccessFlags2 GetImageLayoutAccessFlags(VkImageLayout layout)
+		VkImageMemoryBarrier2 ImageMemoryBarrier(const VulkanImageBarrier& barrier)
 		{
-			VkAccessFlags2 access_flags = 0;
+			VK_ASSERT(data->tracked_images.find(barrier.image.vk_image) != data->tracked_images.end() && "Tried to create an image memory barrier for an image that has not been tracked");
+			auto& tracked_image = data->tracked_images.at(barrier.image.vk_image);
 
-			switch (layout)
-			{
-			case VK_IMAGE_LAYOUT_UNDEFINED:
-			case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
-				access_flags = VK_ACCESS_2_NONE;
-				break;
-			case VK_IMAGE_LAYOUT_GENERAL:
-				access_flags = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
-				break;
-			case VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL:
-			case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
-				access_flags = VK_ACCESS_2_SHADER_READ_BIT;
-				break;
-			case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
-				access_flags = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
-				break;
-			case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
-			case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-				access_flags = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-				break;
-			case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
-				access_flags = VK_ACCESS_2_TRANSFER_READ_BIT;
-				break;
-			case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-				access_flags = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-				break;
-			case VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL:
-				access_flags = VK_ACCESS_2_SHADER_WRITE_BIT;
-				break;
-			case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-				access_flags = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-				break;
-			default:
-				VK_EXCEPT("Vulkan", "No VkAccessFlags2 found for layout");
-				break;
-			}
-
-			return access_flags;
-		}
-
-		static VkPipelineStageFlags2 GetImageLayoutStageFlags(VkImageLayout layout)
-		{
-			VkPipelineStageFlags2 stage_flags = 0;
-
-			switch (layout)
-			{
-			case VK_IMAGE_LAYOUT_UNDEFINED:
-				stage_flags = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
-				break;
-			case VK_IMAGE_LAYOUT_GENERAL:
-			case VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL:
-			case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
-				stage_flags = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-				break;
-			case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
-				stage_flags = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
-				break;
-			case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
-			case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-				stage_flags = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-				break;
-			case VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL:
-				stage_flags = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-				break;
-			case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
-			case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
-			case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-				stage_flags = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
-				break;
-			case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-				stage_flags = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-				break;
-			default:
-				VK_EXCEPT("Vulkan", "No VkPipelineStageFlags2 found for layout");
-				break;
-			}
-
-			return stage_flags;
-		}
-
-		VkImageMemoryBarrier2 ImageMemoryBarrier(const VulkanImageLayoutTransition& layout_info)
-		{
-			VK_ASSERT(data->tracked_images.find(layout_info.image.vk_image) != data->tracked_images.end() && "Tried to create an image memory barrier for an image that has not been tracked");
-			auto& tracked_image = data->tracked_images.at(layout_info.image.vk_image);
-
-			uint32_t num_mips = layout_info.num_mips == UINT32_MAX ? tracked_image.image.num_mips : layout_info.num_mips;
-			uint32_t num_layers = layout_info.num_layers == UINT32_MAX ? tracked_image.image.num_layers : layout_info.num_layers;
+			uint32_t num_mips = barrier.num_mips == UINT32_MAX ? tracked_image.image.num_mips : barrier.num_mips;
+			uint32_t num_layers = barrier.num_layers == UINT32_MAX ? tracked_image.image.num_layers : barrier.num_layers;
 
 			VkImageMemoryBarrier2 image_memory_barrier = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
 			image_memory_barrier.image = tracked_image.image.vk_image;
 			image_memory_barrier.oldLayout = tracked_image.layout;
-			image_memory_barrier.newLayout = layout_info.new_layout;
+			image_memory_barrier.newLayout = barrier.new_layout;
 
 			image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 			image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 
-			image_memory_barrier.srcAccessMask = GetImageLayoutAccessFlags(tracked_image.layout);
-			image_memory_barrier.srcStageMask = GetImageLayoutStageFlags(tracked_image.layout);
-			image_memory_barrier.dstAccessMask = GetImageLayoutAccessFlags(layout_info.new_layout);
-			image_memory_barrier.dstStageMask = GetImageLayoutStageFlags(layout_info.new_layout);
+			image_memory_barrier.srcAccessMask = tracked_image.last_access_flags;
+			image_memory_barrier.srcStageMask = tracked_image.last_stage_flags;
+			image_memory_barrier.dstAccessMask = Util::GetAccessFlagsFromImageLayout(barrier.new_layout);
+			image_memory_barrier.dstStageMask = Util::GetPipelineStageFlagsFromImageLayout(barrier.new_layout);
 
-			if (layout_info.new_layout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL || layout_info.new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+			if (barrier.new_layout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL || barrier.new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
 			{
 				image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-				if (layout_info.new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+				if (barrier.new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
 				{
 					image_memory_barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
 				}
@@ -221,37 +168,38 @@ namespace Vulkan
 				image_memory_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 			}
 
-			image_memory_barrier.subresourceRange.baseMipLevel = layout_info.base_mip;
+			image_memory_barrier.subresourceRange.baseMipLevel = barrier.base_mip;
 			image_memory_barrier.subresourceRange.levelCount = num_mips;
-			image_memory_barrier.subresourceRange.baseArrayLayer = layout_info.base_layer;
+			image_memory_barrier.subresourceRange.baseArrayLayer = barrier.base_layer;
 			image_memory_barrier.subresourceRange.layerCount = num_layers;
 
 			return image_memory_barrier;
 		}
 
-		void UpdateImageLayout(const VulkanImageLayoutTransition& layout_info)
+		void UpdateImageAccessAndStageFlags(const VulkanImageBarrier& barrier)
 		{
-			VK_ASSERT(data->tracked_images.find(layout_info.image.vk_image) != data->tracked_images.end() && "Tried to create an image memory barrier for an image that has not been tracked");
-			auto& tracked_image = data->tracked_images.at(layout_info.image.vk_image);
+			VK_ASSERT(data->tracked_images.find(barrier.image.vk_image) != data->tracked_images.end() && "Tried to create an image memory barrier for an image that has not been tracked");
+			auto& tracked_image = data->tracked_images.at(barrier.image.vk_image);
 
-			uint32_t num_mips = layout_info.num_mips == UINT32_MAX ? tracked_image.image.num_mips : layout_info.num_mips;
-			uint32_t num_layers = layout_info.num_layers == UINT32_MAX ? tracked_image.image.num_layers : layout_info.num_layers;
+			uint32_t num_mips = barrier.num_mips == UINT32_MAX ? tracked_image.image.num_mips : barrier.num_mips;
+			uint32_t num_layers = barrier.num_layers == UINT32_MAX ? tracked_image.image.num_layers : barrier.num_layers;
 
-			tracked_image.last_pipeline_stage_used = GetImageLayoutStageFlags(layout_info.new_layout);
+			tracked_image.last_access_flags = Util::GetAccessFlagsFromImageLayout(barrier.new_layout);
+			tracked_image.last_stage_flags = Util::GetPipelineStageFlagsFromImageLayout(barrier.new_layout);
 
-			if (layout_info.base_mip != 0 || layout_info.base_layer != 0 || num_mips != tracked_image.image.num_mips || num_layers != tracked_image.image.num_layers)
+			if (barrier.base_mip != 0 || barrier.base_layer != 0 || num_mips != tracked_image.image.num_mips || num_layers != tracked_image.image.num_layers)
 			{
 				// NOTE: For most images, we do not need fine grained image layouts for individual mips and/or layers, so we only do this when we explicitly
 				// start tracking a subresource within an already tracked image
 				if (tracked_image.subresource_layouts.size() == 0)
 					tracked_image.subresource_layouts.resize(tracked_image.image.num_mips * tracked_image.image.num_layers);
 
-				for (uint32_t mip = layout_info.base_mip; mip < layout_info.base_mip + num_mips; ++mip)
+				for (uint32_t mip = barrier.base_mip; mip < barrier.base_mip + num_mips; ++mip)
 				{
-					for (uint32_t layer = layout_info.base_layer; layer < layout_info.base_layer + num_layers; ++layer)
+					for (uint32_t layer = barrier.base_layer; layer < barrier.base_layer + num_layers; ++layer)
 					{
 						uint32_t subresource_index = tracked_image.image.num_mips * layer + mip;
-						tracked_image.subresource_layouts[subresource_index] = layout_info.new_layout;
+						tracked_image.subresource_layouts[subresource_index] = barrier.new_layout;
 					}
 				}
 
@@ -259,27 +207,27 @@ namespace Vulkan
 			}
 			else
 			{
-				tracked_image.layout = layout_info.new_layout;
+				tracked_image.layout = barrier.new_layout;
 			}
 		}
 
-		VkImageLayout GetImageLayout(const VulkanImageLayoutTransition& layout_info)
+		VkImageLayout GetImageLayout(const VulkanImageBarrier& barrier)
 		{
-			VK_ASSERT(data->tracked_images.find(layout_info.image.vk_image) != data->tracked_images.end() && "Tried to retrieve the image layout for an image that has not been tracked");
-			auto& tracked_image = data->tracked_images.at(layout_info.image.vk_image);
+			VK_ASSERT(data->tracked_images.find(barrier.image.vk_image) != data->tracked_images.end() && "Tried to retrieve the image layout for an image that has not been tracked");
+			auto& tracked_image = data->tracked_images.at(barrier.image.vk_image);
 
-			uint32_t num_mips = layout_info.num_mips == UINT32_MAX ? tracked_image.image.num_mips : layout_info.num_mips;
-			uint32_t num_layers = layout_info.num_layers == UINT32_MAX ? tracked_image.image.num_layers : layout_info.num_layers;
+			uint32_t num_mips = barrier.num_mips == UINT32_MAX ? tracked_image.image.num_mips : barrier.num_mips;
+			uint32_t num_layers = barrier.num_layers == UINT32_MAX ? tracked_image.image.num_layers : barrier.num_layers;
 
-			if (layout_info.base_mip != 0 || layout_info.base_layer != 0 || num_mips != tracked_image.image.num_mips || num_layers != tracked_image.image.num_layers)
+			if (barrier.base_mip != 0 || barrier.base_layer != 0 || num_mips != tracked_image.image.num_mips || num_layers != tracked_image.image.num_layers)
 			{
-				uint32_t subresource_index = layout_info.base_layer * tracked_image.image.num_mips + layout_info.base_mip;
+				uint32_t subresource_index = barrier.base_layer * tracked_image.image.num_mips + barrier.base_mip;
 				VkImageLayout layout = tracked_image.subresource_layouts[subresource_index];
 				bool layout_changes_in_range = false;
 
-				for (uint32_t mip = layout_info.base_mip; mip < layout_info.base_mip + num_mips; ++mip)
+				for (uint32_t mip = barrier.base_mip; mip < barrier.base_mip + num_mips; ++mip)
 				{
-					for (uint32_t layer = layout_info.base_layer; layer < layout_info.base_layer + num_layers; ++layer)
+					for (uint32_t layer = barrier.base_layer; layer < barrier.base_layer + num_layers; ++layer)
 					{
 						uint32_t subresource_index = tracked_image.image.num_mips * layer + mip;
 

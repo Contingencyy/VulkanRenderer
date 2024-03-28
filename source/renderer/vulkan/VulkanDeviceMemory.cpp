@@ -65,12 +65,13 @@ namespace Vulkan
 			return memory;
 		}
 
-		void Free(const VulkanMemory& memory)
+		void Free(VulkanMemory& memory)
 		{
 			if (!memory.vk_device_memory)
 				return;
 
 			vkFreeMemory(vk_inst.device, memory.vk_device_memory, nullptr);
+			memory = {};
 		}
 
 		void* Map(const VulkanMemory& memory, uint64_t size, uint64_t offset)

@@ -10,7 +10,7 @@ namespace Vulkan
 
 		VulkanMemory Allocate(const VulkanBuffer& vk_buffer, const BufferCreateInfo& buffer_info);
 		VulkanMemory Allocate(const VulkanImage& vk_image, const TextureCreateInfo& texture_info);
-		void Free(const VulkanMemory& device_memory);
+		void Free(VulkanMemory& device_memory);
 
 		void* Map(const VulkanMemory& device_memory, uint64_t size, uint64_t offset);
 		void Unmap(const VulkanMemory& device_memory);

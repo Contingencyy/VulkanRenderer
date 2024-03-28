@@ -8,7 +8,7 @@ namespace Vulkan
 	{
 
 		VulkanFence CreateFence(VulkanFenceType type, uint64_t initial_fence_value = 0);
-		void DestroyFence(const VulkanFence& fence);
+		void DestroyFence(VulkanFence& fence);
 
 		void SignalFence(const VulkanFence& fence);
 		void WaitOnFence(const VulkanFence& fence, uint64_t wait_value);

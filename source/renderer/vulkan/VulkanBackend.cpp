@@ -607,7 +607,7 @@ namespace Vulkan
 		VulkanImage& backbuffer_image = Vulkan::SwapChain::GetBackBuffer();
 
 		// Transition SDR render target and swapchain image to TRANSFER_SRC and TRANSFER_DST
-		std::vector<VulkanImageLayoutTransition> back_buffer_copy_transitions =
+		std::vector<VulkanImageBarrier> back_buffer_copy_transitions =
 		{
 			{ .image = src_image, .new_layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL },
 			{ .image = backbuffer_image, .new_layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL }

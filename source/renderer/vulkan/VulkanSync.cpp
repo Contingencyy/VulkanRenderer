@@ -30,9 +30,10 @@ namespace Vulkan
 			return fence;
 		}
 
-		void DestroyFence(const VulkanFence& fence)
+		void DestroyFence(VulkanFence& fence)
 		{
 			vkDestroySemaphore(vk_inst.device, fence.vk_semaphore, nullptr);
+			fence = {};
 		}
 
 		void SignalFence(VulkanFence& fence)

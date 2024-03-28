@@ -381,12 +381,13 @@ namespace Vulkan
 			return alloc;
 		}
 
-		void Free(const VulkanDescriptorAllocation& alloc, uint32_t frame_index)
+		void Free(VulkanDescriptorAllocation& alloc, uint32_t frame_index)
 		{
 			if (!IsValid(alloc))
 				return;
 
 			FreeDescriptors(alloc.type, alloc.descriptor_offset, alloc.num_descriptors, frame_index);
+			alloc = {};
 		}
 
 		void Write(const VulkanDescriptorAllocation& descriptors, const VulkanBuffer& buffer, uint32_t descriptor_offset)

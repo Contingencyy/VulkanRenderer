@@ -277,29 +277,53 @@ namespace Vulkan
 				1, &barrier
 			);
 
-			VulkanImageLayoutTransition layout_info = {};
+			VulkanImageBarrier layout_info = {};
 			layout_info.image = image;
 			layout_info.new_layout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
-			ResourceTracker::UpdateImageLayout(layout_info);
+			ResourceTracker::UpdateImageAccessAndStageFlags(layout_info);
 		}
 
-		void TransitionLayout(const VulkanCommandBuffer& command_buffer, const VulkanImageLayoutTransition& layout_info)
+		void BufferMemoryBarrier(const VulkanCommandBuffer& command_buffer, const VulkanBufferBarrier& buffer_barrier)
 		{
-			TransitionLayouts(command_buffer, { layout_info });
+			BufferMemoryBarriers(command_buffer, { buffer_barrier });
 		}
 
-		void TransitionLayouts(const VulkanCommandBuffer& command_buffer, const std::vector<VulkanImageLayoutTransition> layout_infos)
+		void BufferMemoryBarriers(const VulkanCommandBuffer& command_buffer, const std::vector<VulkanBufferBarrier>& buffer_barriers)
 		{
-			std::vector<VkImageMemoryBarrier2> image_barriers;
-			for (auto& transition : layout_infos)
+			std::vector<VkBufferMemoryBarrier2> vk_buffer_memory_barriers(buffer_barriers.size());
+
+			for (uint32_t i = 0; i < buffer_barriers.size(); ++i)
 			{
-				image_barriers.push_back(ResourceTracker::ImageMemoryBarrier(transition));
-				ResourceTracker::UpdateImageLayout(transition);
+				vk_buffer_memory_barriers[i] = ResourceTracker::BufferMemoryBarrier(buffer_barriers[i]);
+				ResourceTracker::UpdateBufferAccessAndStageFlags(buffer_barriers[i]);
 			}
 
 			VkDependencyInfo dependency_info = { VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
-			dependency_info.imageMemoryBarrierCount = static_cast<uint32_t>(image_barriers.size());
-			dependency_info.pImageMemoryBarriers = image_barriers.data();
+			dependency_info.bufferMemoryBarrierCount = static_cast<uint32_t>(vk_buffer_memory_barriers.size());
+			dependency_info.pBufferMemoryBarriers = vk_buffer_memory_barriers.data();
+			dependency_info.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+			vkCmdPipelineBarrier2(command_buffer.vk_command_buffer, &dependency_info);
+		}
+
+		void TransitionLayout(const VulkanCommandBuffer& command_buffer, const VulkanImageBarrier& image_barrier)
+		{
+			TransitionLayouts(command_buffer, { image_barrier });
+		}
+
+		void TransitionLayouts(const VulkanCommandBuffer& command_buffer, const std::vector<VulkanImageBarrier>& image_barriers)
+		{
+			std::vector<VkImageMemoryBarrier2> vk_image_memory_barriers(image_barriers.size());
+
+			for (uint32_t i = 0; i < image_barriers.size(); ++i)
+			{
+				vk_image_memory_barriers[i] = ResourceTracker::ImageMemoryBarrier(image_barriers[i]);
+				ResourceTracker::UpdateImageAccessAndStageFlags(image_barriers[i]);
+			}
+
+			VkDependencyInfo dependency_info = { VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
+			dependency_info.imageMemoryBarrierCount = static_cast<uint32_t>(vk_image_memory_barriers.size());
+			dependency_info.pImageMemoryBarriers = vk_image_memory_barriers.data();
 			dependency_info.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
 			vkCmdPipelineBarrier2(command_buffer.vk_command_buffer, &dependency_info);

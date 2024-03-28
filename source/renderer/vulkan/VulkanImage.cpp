@@ -47,7 +47,7 @@ namespace Vulkan
 			return image;
 		}
 
-		void Destroy(const VulkanImage& image)
+		void Destroy(VulkanImage& image)
 		{
 			if (!image.vk_image)
 				return;
@@ -56,6 +56,8 @@ namespace Vulkan
 
 			DeviceMemory::Free(image.memory);
 			vkDestroyImage(vk_inst.device, image.vk_image, nullptr);
+
+			image = {};
 		}
 
 		VkMemoryRequirements GetMemoryRequirements(const VulkanImage& image)

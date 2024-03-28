@@ -35,7 +35,7 @@ namespace Vulkan
 			return Create(buffer_info);
 		}
 
-		VulkanBuffer CreateBLAS(uint64_t size_in_bytes, const std::string& name)
+		VulkanBuffer CreateAccelerationStructure(uint64_t size_in_bytes, const std::string& name)
 		{
 			BufferCreateInfo buffer_info = {};
 			buffer_info.size_in_bytes = size_in_bytes;
@@ -46,12 +46,23 @@ namespace Vulkan
 			return Create(buffer_info);
 		}
 
-		VulkanBuffer CreateScratch(uint64_t size_in_bytes, const std::string& name)
+		VulkanBuffer CreateAccelerationStructureScratch(uint64_t size_in_bytes, const std::string& name)
 		{
 			BufferCreateInfo buffer_info = {};
 			buffer_info.size_in_bytes = size_in_bytes;
 			buffer_info.usage_flags = BUFFER_USAGE_RAYTRACING_SCRATCH;
 			buffer_info.memory_flags = GPU_MEMORY_DEVICE_LOCAL;
+			buffer_info.name = name;
+
+			return Create(buffer_info);
+		}
+
+		VulkanBuffer CreateAccelerationStructureInstances(uint64_t size_in_bytes, const std::string& name)
+		{
+			BufferCreateInfo buffer_info = {};
+			buffer_info.size_in_bytes = size_in_bytes;
+			buffer_info.usage_flags = BUFFER_USAGE_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_INPUT;
+			buffer_info.memory_flags = GPU_MEMORY_HOST_VISIBLE | GPU_MEMORY_HOST_COHERENT;
 			buffer_info.name = name;
 
 			return Create(buffer_info);
@@ -74,7 +85,6 @@ namespace Vulkan
 			buffer.vk_buffer = vk_buffer;
 			buffer.vk_usage_flags = vk_usage_flags;
 			buffer.memory = DeviceMemory::Allocate(buffer, buffer_info);
-			buffer.vk_device_address = Util::GetBufferDeviceAddress(buffer);
 			buffer.size_in_bytes = buffer_info.size_in_bytes;
 			buffer.offset_in_bytes = 0;
 
@@ -83,7 +93,7 @@ namespace Vulkan
 			return buffer;
 		}
 
-		void Destroy(const VulkanBuffer& buffer)
+		void Destroy(VulkanBuffer& buffer)
 		{
 			if (!buffer.vk_buffer)
 				return;
@@ -95,6 +105,8 @@ namespace Vulkan
 
 			DeviceMemory::Free(buffer.memory);
 			vkDestroyBuffer(vk_inst.device, buffer.vk_buffer, nullptr);
+
+			buffer = {};
 		}
 
 		VkMemoryRequirements GetMemoryRequirements(const VulkanBuffer& buffer)

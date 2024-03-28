@@ -44,7 +44,7 @@ RenderPass::~RenderPass()
 void RenderPass::BeginStage(VulkanCommandBuffer& command_buffer, uint32_t stage_index, uint32_t render_width, uint32_t render_height)
 {
 	Stage& stage = m_stages[stage_index];
-	std::vector<VulkanImageLayoutTransition> attachment_transitions;
+	std::vector<VulkanImageBarrier> attachment_transitions;
 
 	for (uint32_t i = 0; i < ATTACHMENT_SLOT_NUM_SLOTS; ++i)
 	{

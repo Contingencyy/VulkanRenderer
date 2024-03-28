@@ -9,7 +9,7 @@ namespace Vulkan
 	{
 
 		VulkanImageView Create(const VulkanImage& image, const TextureViewCreateInfo& texture_view_info);
-		void Destroy(const VulkanImageView& image_view);
+		void Destroy(VulkanImageView& image_view);
 
 	}
 

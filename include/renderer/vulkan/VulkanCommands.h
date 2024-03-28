@@ -30,8 +30,11 @@ namespace Vulkan
 		void CopyImages(const VulkanCommandBuffer& command_buffer, const VulkanImage& src_image, const VulkanImage& dst_image);
 		void GenerateMips(const VulkanCommandBuffer& command_buffer, const VulkanImage& image);
 
-		void TransitionLayout(const VulkanCommandBuffer& command_buffer, const VulkanImageLayoutTransition& layout_info);
-		void TransitionLayouts(const VulkanCommandBuffer& command_buffers, const std::vector<VulkanImageLayoutTransition> layout_infos);
+		void BufferMemoryBarrier(const VulkanCommandBuffer& command_buffer, const VulkanBufferBarrier& buffer_barrier);
+		void BufferMemoryBarriers(const VulkanCommandBuffer& command_buffer, const std::vector<VulkanBufferBarrier>& buffer_barriers);
+
+		void TransitionLayout(const VulkanCommandBuffer& command_buffer, const VulkanImageBarrier& image_barrier);
+		void TransitionLayouts(const VulkanCommandBuffer& command_buffers, const std::vector<VulkanImageBarrier>& image_barriers);
 
 	}
 

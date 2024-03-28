@@ -14,13 +14,16 @@ namespace Vulkan
 		void TrackBufferTemp(const VulkanBuffer& buffer, const VulkanFence& fence, uint64_t fence_value);
 		void RemoveBuffer(const VulkanBuffer& buffer);
 
+		VkBufferMemoryBarrier2 BufferMemoryBarrier(const VulkanBufferBarrier& barrier);
+		void UpdateBufferAccessAndStageFlags(const VulkanBufferBarrier& barrier);
+
 		void TrackImage(const VulkanImage& image, VkImageLayout layout);
 		void TrackImageTemp(const VulkanImage& image, const VulkanFence& fence, uint64_t fence_value);
 		void RemoveImage(const VulkanImage& image);
 
-		VkImageMemoryBarrier2 ImageMemoryBarrier(const VulkanImageLayoutTransition& layout_info);
-		void UpdateImageLayout(const VulkanImageLayoutTransition& layout_info);
-		VkImageLayout GetImageLayout(const VulkanImageLayoutTransition& layout_info);
+		VkImageMemoryBarrier2 ImageMemoryBarrier(const VulkanImageBarrier& barrier);
+		void UpdateImageAccessAndStageFlags(const VulkanImageBarrier& barrier);
+		VkImageLayout GetImageLayout(const VulkanImageBarrier& barrier);
 
 		void ReleaseStaleTempResources();
 

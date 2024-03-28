@@ -25,7 +25,7 @@ namespace Vulkan
 			return command_queue;
 		}
 
-		void Destroy(const VulkanCommandQueue& command_queue)
+		void Destroy(VulkanCommandQueue& command_queue)
 		{
 			Sync::DestroyFence(command_queue.fence);
 		}

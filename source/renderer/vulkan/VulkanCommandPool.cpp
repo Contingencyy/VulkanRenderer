@@ -45,16 +45,20 @@ namespace Vulkan
 			return command_buffers;
 		}
 
-		void FreeCommandBuffer(const VulkanCommandPool& command_pool, const VulkanCommandBuffer& command_buffer)
+		void FreeCommandBuffer(const VulkanCommandPool& command_pool, VulkanCommandBuffer& command_buffer)
 		{
 			vkFreeCommandBuffers(vk_inst.device, command_pool.vk_command_pool, 1, &command_buffer.vk_command_buffer);
+			command_buffer = {};
 		}
 
-		void FreeCommandBuffers(const VulkanCommandPool& command_pool, uint32_t num_buffers, const VulkanCommandBuffer* const command_buffers)
+		void FreeCommandBuffers(const VulkanCommandPool& command_pool, uint32_t num_buffers, VulkanCommandBuffer* const command_buffers)
 		{
 			std::vector<VkCommandBuffer> vk_command_buffers;
 			for (uint32_t i = 0; i < num_buffers; ++i)
+			{
 				vk_command_buffers.push_back(command_buffers[i].vk_command_buffer);
+				command_buffers[i] = {};
+			}
 
 			vkFreeCommandBuffers(vk_inst.device, command_pool.vk_command_pool,
 				static_cast<uint32_t>(vk_command_buffers.size()), vk_command_buffers.data());

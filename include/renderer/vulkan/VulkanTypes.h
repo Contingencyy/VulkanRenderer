@@ -95,7 +95,6 @@ struct VulkanMemory
 struct VulkanBuffer
 {
 	VkBuffer vk_buffer = VK_NULL_HANDLE;
-	VkDeviceAddress vk_device_address = 0;
 	VkBufferUsageFlags vk_usage_flags = VK_BUFFER_USAGE_FLAG_BITS_MAX_ENUM;
 	VulkanMemory memory;
 
@@ -104,6 +103,17 @@ struct VulkanBuffer
 
 	// NOTE: Only used for raytracing acceleration structures
 	VkAccelerationStructureKHR vk_acceleration_structure = VK_NULL_HANDLE;
+};
+
+struct VulkanBufferBarrier
+{
+	VulkanBuffer buffer;
+
+	VkAccessFlags2 src_access_flags = VK_ACCESS_2_NONE;
+	VkPipelineStageFlags2 src_stage_flags = VK_PIPELINE_STAGE_2_NONE;
+
+	VkAccessFlags2 dst_access_flags = VK_ACCESS_2_NONE;
+	VkPipelineStageFlags2 dst_stage_flags = VK_PIPELINE_STAGE_2_NONE;
 };
 
 struct VulkanImage
@@ -133,7 +143,7 @@ struct VulkanImageView
 	uint32_t num_layers = UINT32_MAX;
 };
 
-struct VulkanImageLayoutTransition
+struct VulkanImageBarrier
 {
 	VulkanImage image;
 	VkImageLayout new_layout = VK_IMAGE_LAYOUT_UNDEFINED;

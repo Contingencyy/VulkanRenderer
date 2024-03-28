@@ -33,7 +33,10 @@ namespace Vulkan
 			VkBufferDeviceAddressInfo address_info = { VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO };
 			address_info.buffer = buffer.vk_buffer;
 
-			return vkGetBufferDeviceAddress(vk_inst.device, &address_info);
+			VkDeviceAddress base_address = vkGetBufferDeviceAddress(vk_inst.device, &address_info);
+			base_address += buffer.offset_in_bytes;
+
+			return base_address;
 		}
 
 		VkDeviceAddress GetAccelerationStructureDeviceAddress(VkAccelerationStructureKHR acceleration_structure)
@@ -270,6 +273,90 @@ namespace Vulkan
 			default:
 				VK_EXCEPT("Vulkan::Command::ToVkIndexType", "Index byte size is not supported");
 			}
+		}
+
+		VkAccessFlags2 GetAccessFlagsFromImageLayout(VkImageLayout layout)
+		{
+			VkAccessFlags2 access_flags = 0;
+
+			switch (layout)
+			{
+			case VK_IMAGE_LAYOUT_UNDEFINED:
+			case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
+				access_flags = VK_ACCESS_2_NONE;
+				break;
+			case VK_IMAGE_LAYOUT_GENERAL:
+				access_flags = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
+				break;
+			case VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL:
+			case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+				access_flags = VK_ACCESS_2_SHADER_READ_BIT;
+				break;
+			case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
+				access_flags = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+				break;
+			case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
+			case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+				access_flags = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+				break;
+			case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+				access_flags = VK_ACCESS_2_TRANSFER_READ_BIT;
+				break;
+			case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+				access_flags = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+				break;
+			case VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL:
+				access_flags = VK_ACCESS_2_SHADER_WRITE_BIT;
+				break;
+			case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+				access_flags = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+				break;
+			default:
+				VK_EXCEPT("Vulkan", "No VkAccessFlags2 found for layout");
+				break;
+			}
+
+			return access_flags;
+		}
+
+		VkPipelineStageFlags2 GetPipelineStageFlagsFromImageLayout(VkImageLayout layout)
+		{
+			VkPipelineStageFlags2 stage_flags = 0;
+
+			switch (layout)
+			{
+			case VK_IMAGE_LAYOUT_UNDEFINED:
+				stage_flags = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+				break;
+			case VK_IMAGE_LAYOUT_GENERAL:
+			case VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL:
+			case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+				stage_flags = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+				break;
+			case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
+				stage_flags = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
+				break;
+			case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+			case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+				stage_flags = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+				break;
+			case VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL:
+				stage_flags = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+				break;
+			case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
+			case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
+			case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+				stage_flags = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
+				break;
+			case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+				stage_flags = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+				break;
+			default:
+				VK_EXCEPT("Vulkan", "No VkPipelineStageFlags2 found for layout");
+				break;
+			}
+
+			return stage_flags;
 		}
 
 	}

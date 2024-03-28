@@ -10,11 +10,12 @@ namespace Vulkan
 
 		VulkanBuffer CreateVertex(uint64_t size_in_bytes, const std::string& name);
 		VulkanBuffer CreateIndex(uint64_t size_in_bytes, const std::string& name);
-		VulkanBuffer CreateBLAS(uint64_t size_in_bytes, const std::string& name);
-		VulkanBuffer CreateScratch(uint64_t size_in_bytes, const std::string& name);
+		VulkanBuffer CreateAccelerationStructure(uint64_t size_in_bytes, const std::string& name);
+		VulkanBuffer CreateAccelerationStructureScratch(uint64_t size_in_bytes, const std::string& name);
+		VulkanBuffer CreateAccelerationStructureInstances(uint64_t size_in_bytes, const std::string& name);
 
 		VulkanBuffer Create(const BufferCreateInfo& buffer_info);
-		void Destroy(const VulkanBuffer& buffer);
+		void Destroy(VulkanBuffer& buffer);
 
 		VkMemoryRequirements GetMemoryRequirements(const VulkanBuffer& buffer);
 

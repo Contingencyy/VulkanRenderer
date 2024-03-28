@@ -9,7 +9,7 @@ namespace Vulkan
 	{
 		
 		VulkanImage Create(const TextureCreateInfo& texture_info);
-		void Destroy(const VulkanImage& image);
+		void Destroy(VulkanImage& image);
 
 		VkMemoryRequirements GetMemoryRequirements(const VulkanImage& image);
 
