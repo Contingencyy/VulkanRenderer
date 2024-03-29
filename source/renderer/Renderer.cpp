@@ -221,6 +221,8 @@ namespace Renderer
 		struct Raytracing
 		{
 			VulkanBuffer tlas;
+			VulkanDescriptorAllocation tlas_descriptor;
+
 			VulkanBuffer tlas_scratch;
 			VulkanBuffer tlas_instance_buffer;
 		} raytracing;
@@ -690,7 +692,7 @@ namespace Renderer
 				pipeline_info.fs_path = "assets/shaders/PbrLighting.frag";
 
 				pipeline_info.push_ranges.resize(1);
-				pipeline_info.push_ranges[0].size = 8 * sizeof(uint32_t);
+				pipeline_info.push_ranges[0].size = 9 * sizeof(uint32_t);
 				pipeline_info.push_ranges[0].offset = 0;
 				pipeline_info.push_ranges[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
@@ -1313,6 +1315,7 @@ namespace Renderer
 		{
 			data->per_frame[frame_index].command_buffer = Vulkan::CommandPool::AllocateCommandBuffer(data->command_pools.graphics_compute);
 			data->per_frame[frame_index].ubos.descriptors = Vulkan::Descriptor::Allocate(VULKAN_DESCRIPTOR_TYPE_UNIFORM_BUFFER, RESERVED_DESCRIPTOR_UBO_COUNT, frame_index);
+			data->per_frame[frame_index].raytracing.tlas_descriptor = Vulkan::Descriptor::Allocate(VULKAN_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE, 1, frame_index);
 		}
 
 		CreateUnitCubeBuffers();
@@ -1358,6 +1361,7 @@ namespace Renderer
 		
 		for (uint32_t frame_index = 0; frame_index < Vulkan::MAX_FRAMES_IN_FLIGHT; ++frame_index)
 		{
+			Vulkan::Descriptor::Free(data->per_frame[frame_index].raytracing.tlas_descriptor, frame_index);
 			Vulkan::Descriptor::Free(data->per_frame[frame_index].ubos.descriptors, frame_index);
 			Vulkan::CommandPool::FreeCommandBuffer(data->command_pools.graphics_compute, data->per_frame[frame_index].command_buffer);
 			Vulkan::Sync::DestroyFence(data->per_frame[frame_index].sync.render_finished_fence);
@@ -1456,6 +1460,7 @@ namespace Renderer
 
 		frame->raytracing.tlas = Vulkan::Raytracing::BuildTLAS(frame->command_buffer, frame->raytracing.tlas_scratch, frame->raytracing.tlas_instance_buffer,
 			num_blas_meshes, mesh_blas_buffers.data(), mesh_transforms.data(), "TLAS Scene");
+		Vulkan::Descriptor::Write(frame->raytracing.tlas_descriptor, frame->raytracing.tlas);
 
 		// Update number of lights in the light ubo
 		frame->ubos.light_ubo.WriteBuffer(sizeof(PointlightData) * MAX_LIGHT_SOURCES, sizeof(uint32_t), &data->num_pointlights);
@@ -1570,6 +1575,7 @@ namespace Renderer
 					uint32_t num_prefiltered_mips;
 					uint32_t brdf_lut_index;
 					uint32_t brdf_lut_sampler_index;
+					uint32_t tlas_index;
 					uint32_t mat_index;
 				} push_consts;
 
@@ -1580,8 +1586,9 @@ namespace Renderer
 				push_consts.num_prefiltered_mips = prefiltered_cubemap->view.num_mips - 1;
 				push_consts.brdf_lut_index = brdf_lut->view_descriptor.descriptor_offset;
 				push_consts.brdf_lut_sampler_index = brdf_lut->sampler.descriptor.descriptor_offset;
+				push_consts.tlas_index = frame->raytracing.tlas_descriptor.descriptor_offset;
 
-				Vulkan::Command::PushConstants(frame->command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 7 * sizeof(uint32_t), &push_consts);
+				Vulkan::Command::PushConstants(frame->command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 8 * sizeof(uint32_t), &push_consts);
 
 				for (uint32_t i = 0; i < data->draw_list.next_free_entry; ++i)
 				{
@@ -1595,7 +1602,7 @@ namespace Renderer
 					}
 					VK_ASSERT(mesh && "Tried to render a mesh with an invalid mesh handle");
 
-					Vulkan::Command::PushConstants(frame->command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 7 * sizeof(uint32_t), sizeof(uint32_t), &i);
+					Vulkan::Command::PushConstants(frame->command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 8 * sizeof(uint32_t), sizeof(uint32_t), &i);
 
 					VulkanBuffer vertex_buffers[2] = { mesh->vertex_buffer, frame->instance_buffer.buffer };
 					Vulkan::Command::DrawGeometryIndexed(frame->command_buffer, 2, vertex_buffers, &mesh->index_buffer, sizeof(uint32_t), 1, i);
@@ -1994,7 +2001,7 @@ namespace Renderer
 			  VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR }
 		};
 		Vulkan::Command::BufferMemoryBarriers(command_buffer, copy_to_acceleration_structure_build_barriers);
-
+		
 		VulkanBuffer blas_scratch_buffer = {};
 		VulkanBuffer blas_buffer = Vulkan::Raytracing::BuildBLAS(command_buffer, vertex_buffer, index_buffer, blas_scratch_buffer,
 			args.vertices.size(), sizeof(Vertex), args.indices.size() / 3, VK_INDEX_TYPE_UINT32, "BLAS " + args.name);

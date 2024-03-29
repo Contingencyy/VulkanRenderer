@@ -15,6 +15,7 @@ namespace Vulkan
 			VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
 			VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
 			VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+			VK_KHR_RAY_QUERY_EXTENSION_NAME,
 			VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME,
 			/*VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME,
 			VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
@@ -46,6 +47,7 @@ namespace Vulkan
 			size_t storage_image = 0;
 			size_t sampled_image = 0;
 			size_t sampler = 0;
+			size_t acceleration_structure = 0;
 		} descriptor_sizes;
 
 		struct Swapchain

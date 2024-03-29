@@ -1,6 +1,9 @@
-#include "Shared.glsl.h"
-
 #extension GL_EXT_samplerless_texture_functions : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_ray_tracing : enable
+#extension GL_EXT_ray_query : enable
+
+#include "Shared.glsl.h"
 
 const float PI = 3.1415926535897932384626433832795;
 const float INV_PI = 1.0 / 3.1415926535897932384626433832795;
@@ -32,6 +35,8 @@ layout(set = DESCRIPTOR_SET_SAMPLED_IMAGE, binding = 0) uniform texture2D g_text
 layout(set = DESCRIPTOR_SET_SAMPLED_IMAGE, binding = 0) uniform textureCube g_cube_textures[];
 layout(set = DESCRIPTOR_SET_SAMPLER, binding = 0) uniform sampler g_samplers[];
 //layout(set = DESCRIPTOR_SET_SAMPLER, binding = 0) uniform samplerCube g_cube_samplers[];
+
+layout(set = DESCRIPTOR_SET_ACCELERATION_STRUCTURES, binding = 0) uniform accelerationStructureEXT tlas_scene[];
 
 /*
 

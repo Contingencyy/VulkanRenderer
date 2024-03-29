@@ -1,6 +1,4 @@
-#version 450
-
-#extension GL_EXT_nonuniform_qualifier : enable
+#version 460
 
 #include "BRDF.glsl"
 
@@ -13,7 +11,8 @@ layout(std140, push_constant) uniform constants
 	layout(offset = 16) uint num_prefiltered_mips;
 	layout(offset = 20) uint brdf_lut_index;
 	layout(offset = 24) uint brdf_lut_sampler_index;
-	layout(offset = 28) uint mat_index;
+	layout(offset = 28) uint tlas_index;
+	layout(offset = 32) uint mat_index;
 } push_consts;
 
 layout(location = 0) in vec4 frag_pos;
@@ -50,6 +49,28 @@ struct PixelInfo
 	vec3 f0;
 };
 
+bool TraceShadowRay(vec3 ray_origin, vec3 ray_dir, float tmax)
+{
+	const float tmin = 0.01f;
+	bool occluded = false;
+
+	rayQueryEXT ray_query;
+	rayQueryInitializeEXT(ray_query, tlas_scene[push_consts.tlas_index], gl_RayFlagsTerminateOnFirstHitEXT, 0xFF, ray_origin, tmin, ray_dir, tmax);
+	rayQueryProceedEXT(ray_query);
+
+	// Starts the traversal, once the traversal is complete, rayQueryProceedEXT will return false
+//	while (rayQueryProceedEXT(ray_query))
+//	{
+//	}
+
+	if (rayQueryGetIntersectionTypeEXT(ray_query, true) != gl_RayQueryCommittedIntersectionNoneEXT)
+	{
+		occluded = true;
+	}
+
+	return occluded;
+}
+
 vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 {
 	vec3 Lo = vec3(0.0);
@@ -70,37 +91,42 @@ vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 
 			if (NoL > 0.0)
 			{
-				vec3 H = normalize(view.dir + light_dir);
+				bool occluded = TraceShadowRay(pixel.pos_world + light_dir * 0.01f, light_dir, dist_to_light.x);
+
+				if (!occluded)
+				{
+					vec3 H = normalize(view.dir + light_dir);
 			
-				float NoH = clamp(dot(pixel.normal, H), 0.0, 1.0);
-				float NoV = abs(dot(pixel.normal, view.dir)) + 1e-5;
-				float LoH = clamp(dot(light_dir, H), 0.0, 1.0);
-				float LoV = clamp(dot(light_dir, view.dir), 0.0, 1.0);
+					float NoH = clamp(dot(pixel.normal, H), 0.0, 1.0);
+					float NoV = abs(dot(pixel.normal, view.dir)) + 1e-5;
+					float LoH = clamp(dot(light_dir, H), 0.0, 1.0);
+					float LoV = clamp(dot(light_dir, view.dir), 0.0, 1.0);
 
-				vec3 kD = vec3(0.0);
-				vec3 Fr = SpecularLobe(pixel.metallic, pixel.roughness, pixel.f0, NoL, NoH, NoV, LoH, kD);
-				vec3 Fd = DiffuseLobe(pixel.roughness, pixel.albedo, NoL, NoV, LoH, LoV, pixel.normal, view.dir);
+					vec3 kD = vec3(0.0);
+					vec3 Fr = SpecularLobe(pixel.metallic, pixel.roughness, pixel.f0, NoL, NoH, NoV, LoH, kD);
+					vec3 Fd = DiffuseLobe(pixel.roughness, pixel.albedo, NoL, NoV, LoH, LoV, pixel.normal, view.dir);
 
-				vec3 color = (kD * Fd) + Fr;
+					vec3 color = (kD * Fd) + Fr;
 
-				if (pixel.has_coat)
-				{
-					float NoLc = clamp(dot(pixel.normal_coat, light_dir), 0.0, 1.0);
-					float NoHc = clamp(dot(pixel.normal_coat, H), 0.0, 1.0);
-					float NoVc = abs(dot(pixel.normal_coat, view.dir)) + 1e-5;
+					if (pixel.has_coat)
+					{
+						float NoLc = clamp(dot(pixel.normal_coat, light_dir), 0.0, 1.0);
+						float NoHc = clamp(dot(pixel.normal_coat, H), 0.0, 1.0);
+						float NoVc = abs(dot(pixel.normal_coat, view.dir)) + 1e-5;
 
-					vec3 Fcc = vec3(0.0);
-					vec3 Frc = ClearCoatLobe(pixel.roughness_coat, pixel.alpha_coat, pixel.f0, NoLc, NoHc, NoVc, LoH, Fcc);
-					vec3 attenuation = 1.0 - Fcc;
+						vec3 Fcc = vec3(0.0);
+						vec3 Frc = ClearCoatLobe(pixel.roughness_coat, pixel.alpha_coat, pixel.f0, NoLc, NoHc, NoVc, LoH, Fcc);
+						vec3 attenuation = 1.0 - Fcc;
 
-					color *= attenuation * NoL;
-					color += Frc * NoLc;
+						color *= attenuation * NoL;
+						color += Frc * NoLc;
 
-					Lo += color * light_color * dist_attenuation;
-				}
-				else
-				{
-					Lo += color * light_color * NoL * dist_attenuation;
+						Lo += color * light_color * dist_attenuation;
+					}
+					else
+					{
+						Lo += color * light_color * NoL * dist_attenuation;
+					}
 				}
 			}
 		}

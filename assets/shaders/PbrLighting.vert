@@ -1,7 +1,5 @@
 #version 450
 
-#extension GL_EXT_nonuniform_qualifier : enable
-
 #include "Common.glsl"
 
 layout(location = 0) in vec3 position;

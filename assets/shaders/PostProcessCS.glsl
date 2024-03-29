@@ -1,13 +1,6 @@
-#version 450
+#version 460
 
-#extension GL_EXT_nonuniform_qualifier : enable
-
-#include "Shared.glsl.h"
-
-layout(set = DESCRIPTOR_SET_UBO, binding = RESERVED_DESCRIPTOR_UBO_SETTINGS) uniform SettingsUBO
-{
-	RenderSettings settings;
-};
+#include "Common.glsl"
 
 layout(set = DESCRIPTOR_SET_STORAGE_IMAGE, binding = 0, rgba16) uniform restrict readonly image2D g_inputs[];
 layout(set = DESCRIPTOR_SET_STORAGE_IMAGE, binding = 0, rgba8) uniform restrict writeonly image2D g_outputs[];

@@ -214,6 +214,9 @@ namespace Vulkan
 			VkPhysicalDeviceAccelerationStructureFeaturesKHR acceleration_structure_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR };
 			descriptor_buffer_features.pNext = &acceleration_structure_features;
 
+			VkPhysicalDeviceRayQueryFeaturesKHR ray_query_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR };
+			acceleration_structure_features.pNext = &ray_query_features;
+
 			VkPhysicalDeviceFeatures2 device_features2 = {};
 			device_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
 			device_features2.pNext = &vulkan11_features;
@@ -232,7 +235,8 @@ namespace Vulkan
 				descriptor_buffer_features.descriptorBuffer &&
 				descriptor_buffer_features.descriptorBufferCaptureReplay &&
 				acceleration_structure_features.accelerationStructure &&
-				acceleration_structure_features.accelerationStructureCaptureReplay)
+				acceleration_structure_features.accelerationStructureCaptureReplay &&
+				ray_query_features.rayQuery)
 			{
 				vk_inst.physical_device = device;
 
@@ -244,6 +248,7 @@ namespace Vulkan
 				vk_inst.descriptor_sizes.storage_image = descriptor_buffer_properties.storageImageDescriptorSize;
 				vk_inst.descriptor_sizes.sampled_image = descriptor_buffer_properties.sampledImageDescriptorSize;
 				vk_inst.descriptor_sizes.sampler = descriptor_buffer_properties.samplerDescriptorSize;
+				vk_inst.descriptor_sizes.acceleration_structure = descriptor_buffer_properties.accelerationStructureDescriptorSize;
 
 				vk_inst.debug.min_imported_host_pointer_alignment = external_memory_host_properties.minImportedHostPointerAlignment;
 
@@ -336,6 +341,9 @@ namespace Vulkan
 
 		VkPhysicalDeviceAccelerationStructureFeaturesKHR acceleration_structure_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR };
 		descriptor_buffer_features.pNext = &acceleration_structure_features;
+
+		VkPhysicalDeviceRayQueryFeaturesKHR ray_query_features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR };
+		acceleration_structure_features.pNext = &ray_query_features;
 
 		VkPhysicalDeviceFeatures2 device_features2 = {};
 		device_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;

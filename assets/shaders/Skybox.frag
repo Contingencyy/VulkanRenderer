@@ -1,6 +1,4 @@
-#version 450
-
-#extension GL_EXT_nonuniform_qualifier : enable
+#version 460
 
 #include "Common.glsl"
 

@@ -60,6 +60,8 @@ namespace Vulkan
 				return VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
 			case VULKAN_DESCRIPTOR_TYPE_SAMPLER:
 				return VK_DESCRIPTOR_TYPE_SAMPLER;
+			case VULKAN_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE:
+				return VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
 			default:
 				VK_EXCEPT("Descriptor::GetVkDescriptorType", "Tried to get the VkDescriptorType for an unknown descriptor type");
 			}
@@ -79,6 +81,8 @@ namespace Vulkan
 				return vk_inst.descriptor_sizes.sampled_image;
 			case VULKAN_DESCRIPTOR_TYPE_SAMPLER:
 				return vk_inst.descriptor_sizes.sampler;
+			case VULKAN_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE:
+				return vk_inst.descriptor_sizes.acceleration_structure;
 			default:
 				VK_EXCEPT("Descriptor::GetDescriptorTypeSize", "Tried to get the descriptor size for an unknown descriptor type");
 			}
@@ -94,6 +98,7 @@ namespace Vulkan
 			case VULKAN_DESCRIPTOR_TYPE_STORAGE_IMAGE:
 			case VULKAN_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
 			case VULKAN_DESCRIPTOR_TYPE_SAMPLER:
+			case VULKAN_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE:
 				return data.descriptor_buffers[type + MAX_FRAMES_IN_FLIGHT - 1];
 			default:
 				VK_EXCEPT("Descriptor::GetDescriptorBuffer", "Tried to get the descriptor buffer for an unknown descriptor type");
@@ -417,6 +422,10 @@ namespace Vulkan
 			{
 				descriptor_info.data.pStorageBuffer = &descriptor_address_info;
 			} break;
+			case VULKAN_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE:
+			{
+				descriptor_info.data.accelerationStructure = Util::GetAccelerationStructureDeviceAddress(buffer.vk_acceleration_structure);
+			} break;
 			default:
 				VK_EXCEPT("Descriptor::Write", "Tried to write a buffer descriptor for an invalid descriptor type");
 			}
@@ -512,11 +521,17 @@ namespace Vulkan
 				static_cast<uint32_t>(descriptor_buffer_binding_infos.size()), descriptor_buffer_binding_infos.data());
 
 			// Set the descriptor buffer indices and offsets
-			uint32_t buffer_indices[VULKAN_DESCRIPTOR_TYPE_NUM_TYPES] = { 0, 1, 2, 3, 4 };
-			uint64_t buffer_offsets[VULKAN_DESCRIPTOR_TYPE_NUM_TYPES] = { 0, 0, 0, 0, 0 };
+			std::vector<uint32_t> buffer_indices(VULKAN_DESCRIPTOR_TYPE_NUM_TYPES);
+			std::vector<uint64_t> buffer_offsets(VULKAN_DESCRIPTOR_TYPE_NUM_TYPES);
+
+			for (uint32_t i = 0; i < VULKAN_DESCRIPTOR_TYPE_NUM_TYPES; ++i)
+			{
+				buffer_indices[i] = i;
+				buffer_offsets[i] = 0;
+			}
 
 			vk_inst.pFunc.cmd_set_descriptor_buffer_offsets_ext(command_buffer.vk_command_buffer,
-				Util::ToVkPipelineBindPoint(pipeline.type), pipeline.vk_pipeline_layout, 0, VULKAN_DESCRIPTOR_TYPE_NUM_TYPES, buffer_indices, buffer_offsets);
+				Util::ToVkPipelineBindPoint(pipeline.type), pipeline.vk_pipeline_layout, 0, VULKAN_DESCRIPTOR_TYPE_NUM_TYPES, buffer_indices.data(), buffer_offsets.data());
 		}
 
 	}
