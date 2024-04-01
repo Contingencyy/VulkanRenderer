@@ -130,3 +130,39 @@ void Pointlight::RenderUI()
 		ImGui::PopID();
 	}
 }
+
+AreaLight::AreaLight(const glm::vec3 verts[4], const glm::vec3& color, float intensity, bool two_sided, const std::string& label)
+	: Entity(label), m_color(color), m_intensity(intensity), m_two_sided(two_sided)
+{
+	memcpy(m_vertices, verts, 4 * sizeof(glm::vec3));
+}
+
+void AreaLight::Update(float dt)
+{
+}
+
+void AreaLight::Render()
+{
+	Renderer::SubmitAreaLight(m_vertices, m_color, m_intensity, m_two_sided);
+}
+
+void AreaLight::RenderUI()
+{
+	if (ImGui::CollapsingHeader(m_label.c_str()))
+	{
+		ImGui::PushID(m_label.c_str());
+		ImGui::Indent(10.0f);
+
+		ImGui::DragFloat3("Vertex 0", &m_vertices[0].x, 0.01f, -FLT_MAX, FLT_MAX, "%.2f");
+		ImGui::DragFloat3("Vertex 1", &m_vertices[1].x, 0.01f, -FLT_MAX, FLT_MAX, "%.2f");
+		ImGui::DragFloat3("Vertex 2", &m_vertices[2].x, 0.01f, -FLT_MAX, FLT_MAX, "%.2f");
+		ImGui::DragFloat3("Vertex 3", &m_vertices[3].x, 0.01f, -FLT_MAX, FLT_MAX, "%.2f");
+
+		ImGui::ColorEdit3("Color", &m_color[0], ImGuiColorEditFlags_DisplayRGB);
+		ImGui::DragFloat("Intensity", &m_intensity, 0.01f, 0.0f, 10000.0f, "%.2f");
+		ImGui::Checkbox("Two-sided", &m_two_sided);
+
+		ImGui::Unindent(10.0f);
+		ImGui::PopID();
+	}
+}

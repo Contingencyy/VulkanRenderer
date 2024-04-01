@@ -26,6 +26,10 @@ layout(location = 1) out vec4 debug_color;
 
 const vec3 falloff = vec3(1.0f, 0.007f, 0.0002f);
 
+const float LUT_SIZE = 64;
+const float LUT_SCALE = (LUT_SIZE - 1.0) / LUT_SIZE;
+const float LUT_BIAS = 0.5 / LUT_SIZE;
+
 struct ViewInfo
 {
 	vec3 pos;
@@ -59,6 +63,7 @@ bool TraceShadowRay(vec3 ray_origin, vec3 ray_dir, float tmax)
 	rayQueryProceedEXT(ray_query);
 
 	// Starts the traversal, once the traversal is complete, rayQueryProceedEXT will return false
+	// TODO: Add transparency check, return an occlusion factor (1 - alpha) instead of a bool
 //	while (rayQueryProceedEXT(ray_query))
 //	{
 //	}
@@ -71,6 +76,79 @@ bool TraceShadowRay(vec3 ray_origin, vec3 ray_dir, float tmax)
 	return occluded;
 }
 
+vec3 IntegrateEdgeVec(vec3 v1, vec3 v2)
+{
+    float x = dot(v1, v2);
+    float y = abs(x);
+
+    float a = 0.8543985 + (0.4965155 + 0.0145206 * y) * y;
+    float b = 3.4175940 + (4.1616724 + y) * y;
+    float v = a / b;
+
+    float theta_sintheta = (x > 0.0) ? v : 0.5 * inversesqrt(max(1.0 - x * x, 1e-7)) - v;
+
+    return cross(v1, v2) * theta_sintheta;
+}
+
+// Uses Linearly Transformed Cosines approach
+vec3 AreaLightIrradiance(ViewInfo view, PixelInfo pixel, mat3 Minv, vec3 area_light_verts[4], bool two_sided)
+{
+	// Orthonormal basis around surface normal
+	vec3 T1, T2;
+    T1 = normalize(view.dir - pixel.normal * dot(view.dir, pixel.normal));
+    T2 = cross(pixel.normal, T1);
+
+	// Rotate area light in (T1, T2, N) basis
+    Minv = Minv * transpose(mat3(T1, T2, pixel.normal));
+
+	vec3 L[4];
+	L[0] = Minv * (area_light_verts[0] - pixel.pos_world);
+	L[1] = Minv * (area_light_verts[1] - pixel.pos_world);
+	L[2] = Minv * (area_light_verts[2] - pixel.pos_world);
+	L[3] = Minv * (area_light_verts[3] - pixel.pos_world);
+
+	// Check if the surface point is behind the light
+	vec3 dir = area_light_verts[0] - pixel.pos_world;
+	vec3 light_normal = cross(area_light_verts[1] - area_light_verts[0], area_light_verts[3] - area_light_verts[0]);
+	bool back_face = (dot(dir, light_normal) < 0.0f);
+
+	L[0] = normalize(L[0]);
+	L[1] = normalize(L[1]);
+	L[2] = normalize(L[2]);
+	L[3] = normalize(L[3]);
+
+	vec3 vsum = vec3(0.0);
+	vsum += IntegrateEdgeVec(L[0], L[1]);
+	vsum += IntegrateEdgeVec(L[1], L[2]);
+	vsum += IntegrateEdgeVec(L[2], L[3]);
+	vsum += IntegrateEdgeVec(L[3], L[0]);
+
+	// Form factor of the area light polygon
+	float len = length(vsum);
+
+	float z = vsum.z / len;
+	if (back_face)
+	{
+		z = -z;
+	}
+
+	vec2 uv_form_factor = vec2(z * 0.5f + 0.5f, len);
+	uv_form_factor = uv_form_factor * LUT_SCALE + LUT_BIAS;
+
+	// Fetch form factor for the horizon clipping
+	float scale = SampleTexture(ltc2_index, materials[push_consts.mat_index].sampler_index, uv_form_factor).w;
+
+	float sum = len * scale;
+	if (!back_face && !two_sided)
+	{
+		sum = 0.0f;
+	}
+
+	// Outgoing radiance of the area light towards surface
+	vec3 Lo_i = vec3(sum, sum, sum);
+	return Lo_i;
+}
+
 vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 {
 	vec3 Lo = vec3(0.0);
@@ -78,57 +156,87 @@ vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 	// Direct lighting
 	if (settings.use_direct_light == 1)
 	{
-		for (uint i = 0; i < num_pointlights; ++i)
+//		for (uint i = 0; i < num_pointlights; ++i)
+//		{
+//			PointlightData pointlight = pointlights[i];
+//			vec3 light_color = pointlight.color * pointlight.intensity;
+//
+//			vec3 light_dir = normalize(pointlight.pos - pixel.pos_world);
+//			vec3 dist_to_light = vec3(length(pointlight.pos - pixel.pos_world));
+//			vec3 dist_attenuation = clamp(1.0 / (falloff.x + (falloff.y * dist_to_light) + (falloff.z * (dist_to_light * dist_to_light))), 0.0, 1.0);
+//			
+//			float NoL = clamp(dot(pixel.normal, light_dir), 0.0, 1.0);
+//
+//			if (NoL > 0.0)
+//			{
+//				bool occluded = TraceShadowRay(pixel.pos_world + light_dir * 0.01f, light_dir, dist_to_light.x);
+//
+//				if (!occluded)
+//				{
+//					vec3 H = normalize(view.dir + light_dir);
+//			
+//					float NoH = clamp(dot(pixel.normal, H), 0.0, 1.0);
+//					float NoV = abs(dot(pixel.normal, view.dir)) + 1e-5;
+//					float LoH = clamp(dot(light_dir, H), 0.0, 1.0);
+//					float LoV = clamp(dot(light_dir, view.dir), 0.0, 1.0);
+//
+//					vec3 kD = vec3(0.0);
+//					vec3 Fr = SpecularLobe(pixel.metallic, pixel.roughness, pixel.f0, NoL, NoH, NoV, LoH, kD);
+//					vec3 Fd = DiffuseLobe(pixel.roughness, pixel.albedo, NoL, NoV, LoH, LoV, pixel.normal, view.dir);
+//
+//					vec3 color = (kD * Fd) + Fr;
+//
+//					if (pixel.has_coat)
+//					{
+//						float NoLc = clamp(dot(pixel.normal_coat, light_dir), 0.0, 1.0);
+//						float NoHc = clamp(dot(pixel.normal_coat, H), 0.0, 1.0);
+//						float NoVc = abs(dot(pixel.normal_coat, view.dir)) + 1e-5;
+//
+//						vec3 Fcc = vec3(0.0);
+//						vec3 Frc = ClearCoatLobe(pixel.roughness_coat, pixel.alpha_coat, pixel.f0, NoLc, NoHc, NoVc, LoH, Fcc);
+//						vec3 attenuation = 1.0 - Fcc;
+//
+//						color *= attenuation * NoL;
+//						color += Frc * NoLc;
+//
+//						Lo += color * light_color * dist_attenuation;
+//					}
+//					else
+//					{
+//						Lo += color * light_color * NoL * dist_attenuation;
+//					}
+//				}
+//			}
+//		}
+
+		for (uint i = 0; i < num_area_lights; ++i)
 		{
-			PointlightData pointlight = pointlights[i];
-			vec3 light_color = pointlight.color * pointlight.intensity;
+			GPUAreaLight area_light = area_lights[i];
 
-			vec3 light_dir = normalize(pointlight.pos - pixel.pos_world);
-			vec3 dist_to_light = vec3(length(pointlight.pos - pixel.pos_world));
-			vec3 dist_attenuation = clamp(1.0 / (falloff.x + (falloff.y * dist_to_light) + (falloff.z * (dist_to_light * dist_to_light))), 0.0, 1.0);
-			
-			float NoL = clamp(dot(pixel.normal, light_dir), 0.0, 1.0);
+			float NoV = clamp(dot(pixel.normal, view.dir), 0.0f, 1.0f);
 
-			if (NoL > 0.0)
-			{
-				bool occluded = TraceShadowRay(pixel.pos_world + light_dir * 0.01f, light_dir, dist_to_light.x);
+			// Fetch matrix
+			vec2 uv = vec2(pixel.roughness, sqrt(1.0 - NoV));
+			uv = uv * LUT_SCALE + LUT_BIAS;
 
-				if (!occluded)
-				{
-					vec3 H = normalize(view.dir + light_dir);
-			
-					float NoH = clamp(dot(pixel.normal, H), 0.0, 1.0);
-					float NoV = abs(dot(pixel.normal, view.dir)) + 1e-5;
-					float LoH = clamp(dot(light_dir, H), 0.0, 1.0);
-					float LoV = clamp(dot(light_dir, view.dir), 0.0, 1.0);
+			vec4 ltc1 = SampleTexture(ltc1_index, materials[push_consts.mat_index].sampler_index, uv);
+			vec4 ltc2 = SampleTexture(ltc2_index, materials[push_consts.mat_index].sampler_index, uv);
 
-					vec3 kD = vec3(0.0);
-					vec3 Fr = SpecularLobe(pixel.metallic, pixel.roughness, pixel.f0, NoL, NoH, NoV, LoH, kD);
-					vec3 Fd = DiffuseLobe(pixel.roughness, pixel.albedo, NoL, NoV, LoH, LoV, pixel.normal, view.dir);
+			mat3 Minv = mat3(
+				vec3(ltc1.x, 0.0f, ltc1.y),
+				vec3(0.0f,   1.0f, 0.0f),
+				vec3(ltc1.z, 0.0f, ltc1.w)
+			);
 
-					vec3 color = (kD * Fd) + Fr;
+			vec3 area_light_color = vec3(area_light.color_red, area_light.color_green, area_light.color_blue);
+			vec3 area_light_verts[4] = { area_light.vert0, area_light.vert1, area_light.vert2, area_light.vert3 };
 
-					if (pixel.has_coat)
-					{
-						float NoLc = clamp(dot(pixel.normal_coat, light_dir), 0.0, 1.0);
-						float NoHc = clamp(dot(pixel.normal_coat, H), 0.0, 1.0);
-						float NoVc = abs(dot(pixel.normal_coat, view.dir)) + 1e-5;
+			vec3 diffuse = AreaLightIrradiance(view, pixel, mat3(1), area_light_verts, area_light.two_sided);
+			vec3 specular = AreaLightIrradiance(view, pixel, Minv, area_light_verts, area_light.two_sided);
+			specular *= pixel.f0 * ltc2.x + (1.0f - pixel.f0) * ltc2.y;
 
-						vec3 Fcc = vec3(0.0);
-						vec3 Frc = ClearCoatLobe(pixel.roughness_coat, pixel.alpha_coat, pixel.f0, NoLc, NoHc, NoVc, LoH, Fcc);
-						vec3 attenuation = 1.0 - Fcc;
-
-						color *= attenuation * NoL;
-						color += Frc * NoLc;
-
-						Lo += color * light_color * dist_attenuation;
-					}
-					else
-					{
-						Lo += color * light_color * NoL * dist_attenuation;
-					}
-				}
-			}
+			Lo += area_light_color * area_light.intensity * (specular + pixel.albedo * diffuse);
+			//Lo = area_light_color;
 		}
 	}
 
@@ -237,7 +345,7 @@ void main()
 	view.pos = camera.view_pos.xyz;
 	view.dir = normalize(view.pos - frag_pos.xyz);
 
-	MaterialData material = materials[push_consts.mat_index];
+	GPUMaterial material = materials[push_consts.mat_index];
 
 	PixelInfo pixel;
 	pixel.has_coat = false;

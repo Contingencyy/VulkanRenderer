@@ -17,18 +17,21 @@ layout(set = DESCRIPTOR_SET_UBO, binding = RESERVED_DESCRIPTOR_UBO_SETTINGS) uni
 
 layout(set = DESCRIPTOR_SET_UBO, binding = RESERVED_DESCRIPTOR_UBO_CAMERA) uniform CameraUBO
 {
-	CameraData camera;
+	GPUCamera camera;
 };
 
-layout(set = DESCRIPTOR_SET_UBO, binding = RESERVED_DESCRIPTOR_UBO_LIGHTS) uniform LightUBO
+layout(set = DESCRIPTOR_SET_UBO, binding = RESERVED_DESCRIPTOR_UBO_LIGHTS, std140) uniform LightUBO
 {
-	PointlightData pointlights[MAX_LIGHT_SOURCES];
-	uint num_pointlights;
+	uint num_area_lights;
+	uint ltc1_index;
+	uint ltc2_index;
+
+	GPUAreaLight area_lights[MAX_AREA_LIGHTS];
 };
 
 layout(set = DESCRIPTOR_SET_UBO, binding = RESERVED_DESCRIPTOR_UBO_MATERIALS) uniform MaterialUBO
 {
-	MaterialData materials[MAX_UNIQUE_MATERIALS];
+	GPUMaterial materials[MAX_UNIQUE_MATERIALS];
 };
 
 layout(set = DESCRIPTOR_SET_SAMPLED_IMAGE, binding = 0) uniform texture2D g_textures[];

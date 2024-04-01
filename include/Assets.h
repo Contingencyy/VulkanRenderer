@@ -33,13 +33,12 @@ namespace Assets
 	{
 		struct Node
 		{
+			std::vector<std::string> mesh_names;
 			std::vector<MeshHandle_t> mesh_handles;
 			std::vector<Material> materials;
 			std::vector<uint32_t> children;
 
 			glm::mat4 transform;
-
-			std::string name;
 		};
 
 		std::vector<Node> nodes;

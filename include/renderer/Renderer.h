@@ -31,16 +31,16 @@ namespace Renderer
 
 	struct CreateTextureArgs
 	{
-		TextureFormat format;
-		uint32_t width;
-		uint32_t height;
-		uint32_t src_stride;
-		std::vector<uint8_t> pixels;
+		TextureFormat format = TEXTURE_FORMAT_UNDEFINED;
+		uint32_t width = 0;
+		uint32_t height = 0;
+		uint32_t src_stride = 0;
+		const void* data = nullptr;
 
-		bool generate_mips;
-		bool is_environment_map;
+		bool generate_mips = false;
+		bool is_environment_map = false;
 
-		std::string name;
+		std::string name = "Unnamed";
 	};
 
 	TextureHandle_t CreateTexture(const CreateTextureArgs& args);
@@ -52,7 +52,7 @@ namespace Renderer
 		std::vector<Vertex> vertices;
 		std::vector<uint32_t> indices;
 
-		std::string name;
+		std::string name = "Unnamed";
 	};
 
 	MeshHandle_t CreateMesh(const CreateMeshArgs& args);
@@ -60,5 +60,6 @@ namespace Renderer
 	void SubmitMesh(MeshHandle_t mesh_handle, const Assets::Material& material, const glm::mat4& transform);
 	
 	void SubmitPointlight(const glm::vec3& pos, const glm::vec3& color, float intensity);
+	void SubmitAreaLight(const glm::vec3 verts[4], const glm::vec3& color, float intensity, bool two_sided);
 
 }

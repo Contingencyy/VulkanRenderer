@@ -38,7 +38,7 @@ const uint RESERVED_DESCRIPTOR_STORAGE_IMAGE_SDR = 1;
 
 // Max values
 const uint MAX_UNIQUE_MATERIALS = 1000;
-const uint MAX_LIGHT_SOURCES = 100;
+const uint MAX_AREA_LIGHTS = 100;
 
 // Debug render modes
 const uint DEBUG_RENDER_MODE_NONE = 0;
@@ -96,14 +96,14 @@ DECLARE_STRUCT(RenderSettings)
 	uint white_furnace_test;
 };
 
-DECLARE_STRUCT(CameraData)
+DECLARE_STRUCT(GPUCamera)
 {
 	mat4 view;
 	mat4 proj;
 	vec4 view_pos;
 };
 
-DECLARE_STRUCT(MaterialData)
+DECLARE_STRUCT(GPUMaterial)
 {
 	uint albedo_texture_index;
 	uint normal_texture_index;
@@ -123,9 +123,15 @@ DECLARE_STRUCT(MaterialData)
 	float clearcoat_roughness_factor;
 };
 
-DECLARE_STRUCT(PointlightData)
+DECLARE_STRUCT(GPUAreaLight)
 {
-	vec3 pos;
+	vec3 vert0;
+	float color_red;
+	vec3 vert1;
+	float color_green;
+	vec3 vert2;
+	float color_blue;
+	vec3 vert3;
 	float intensity;
-	vec3 color;
+	bool two_sided;
 };

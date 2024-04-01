@@ -18,6 +18,9 @@
 #include "Shared.glsl.h"
 #include "Assets.h"
 
+// Used for area lights
+#include "renderer/LTCMatrices.h"
+
 #include "vulkan/vulkan.h"
 #include "vulkan/vk_enum_string_helper.h"
 
@@ -115,7 +118,7 @@ namespace Renderer
 			uint32_t index;
 
 			MeshHandle_t mesh_handle;
-			MaterialData material_data;
+			GPUMaterial gpu_material;
 			glm::mat4 transform;
 		};
 
@@ -297,11 +300,15 @@ namespace Renderer
 
 		// Draw submission list
 		DrawList draw_list;
-		uint32_t num_pointlights;
+		uint32_t num_area_lights;
 
 		// Default resources
 		TextureHandle_t default_white_texture_handle;
 		TextureHandle_t default_normal_texture_handle;
+		
+		TextureHandle_t ltc_matrices_texture_handle;
+		TextureHandle_t ltc_ggx_fresnel_sphere_clipping_texture_handle;
+
 		TextureHandle_t white_furnace_skybox_handle;
 
 		VulkanSampler default_sampler;
@@ -458,7 +465,7 @@ namespace Renderer
 		texture_args.width = 1;
 		texture_args.height = 1;
 		texture_args.src_stride = 4;
-		texture_args.pixels = white_pixel;
+		texture_args.data = white_pixel.data();
 
 		data->default_white_texture_handle = CreateTexture(texture_args);
 
@@ -469,11 +476,23 @@ namespace Renderer
 
 		// Default normal texture
 		std::vector<uint8_t> normal_pixel = { 127, 127, 255, 255 };
-		texture_args.pixels = normal_pixel;
+		texture_args.data = normal_pixel.data();
 		texture_args.generate_mips = false;
 		texture_args.is_environment_map = false;
 
 		data->default_normal_texture_handle = CreateTexture(texture_args);
+
+		const uint32_t num_samples = 64;
+		texture_args.format = TEXTURE_FORMAT_RGBA32_SFLOAT;
+		texture_args.data = &LTC1[0];
+		texture_args.width = num_samples;
+		texture_args.height = num_samples;
+		texture_args.src_stride = 16;
+
+		data->ltc_matrices_texture_handle = CreateTexture(texture_args);
+
+		texture_args.data = &LTC2[0];
+		data->ltc_ggx_fresnel_sphere_clipping_texture_handle = CreateTexture(texture_args);
 	}
 
 	static void CreateUnitCubeBuffers()
@@ -1407,7 +1426,7 @@ namespace Renderer
 		}
 
 		// Set UBO data for the current frame, like camera data and settings
-		CameraData camera_data = {};
+		GPUCamera camera_data = {};
 		camera_data.view = frame_info.camera_view;
 		camera_data.proj = glm::perspectiveFov(glm::radians(frame_info.camera_vfov),
 			(float)data->render_resolution.width, (float)data->render_resolution.height, data->camera_settings.near_plane, data->camera_settings.far_plane);
@@ -1416,9 +1435,9 @@ namespace Renderer
 
 		// Allocate frame UBOs and instance buffer from ring buffer
 		frame->ubos.settings_ubo = data->ring_buffer.Allocate(sizeof(RenderSettings), alignof(RenderSettings));
-		frame->ubos.camera_ubo = data->ring_buffer.Allocate(sizeof(CameraData), alignof(CameraData));
-		frame->ubos.light_ubo = data->ring_buffer.Allocate(sizeof(uint32_t) + sizeof(PointlightData) * MAX_LIGHT_SOURCES);
-		frame->ubos.material_ubo = data->ring_buffer.Allocate(sizeof(MaterialData) * MAX_UNIQUE_MATERIALS);
+		frame->ubos.camera_ubo = data->ring_buffer.Allocate(sizeof(GPUCamera), alignof(GPUCamera));
+		frame->ubos.light_ubo = data->ring_buffer.Allocate(3 * sizeof(uint32_t) + sizeof(GPUAreaLight) * MAX_AREA_LIGHTS);
+		frame->ubos.material_ubo = data->ring_buffer.Allocate(sizeof(GPUMaterial) * MAX_UNIQUE_MATERIALS);
 		frame->instance_buffer = data->ring_buffer.Allocate(sizeof(glm::mat4) * MAX_DRAW_LIST_ENTRIES);
 
 		// Write UBO descriptors
@@ -1428,7 +1447,7 @@ namespace Renderer
 		Vulkan::Descriptor::Write(frame->ubos.descriptors, frame->ubos.material_ubo.buffer, RESERVED_DESCRIPTOR_UBO_MATERIALS);
 
 		// Write camera data to the camera UBO
-		frame->ubos.camera_ubo.WriteBuffer(0, sizeof(CameraData), &camera_data);
+		frame->ubos.camera_ubo.WriteBuffer(0, sizeof(GPUCamera), &camera_data);
 		frame->ubos.settings_ubo.WriteBuffer(0, sizeof(data->settings), &data->settings);
 
 		// If white furnace test is enabled, we want to use the white furnace environment map to render instead of the one passed in
@@ -1463,7 +1482,12 @@ namespace Renderer
 		Vulkan::Descriptor::Write(frame->raytracing.tlas_descriptor, frame->raytracing.tlas);
 
 		// Update number of lights in the light ubo
-		frame->ubos.light_ubo.WriteBuffer(sizeof(PointlightData) * MAX_LIGHT_SOURCES, sizeof(uint32_t), &data->num_pointlights);
+		Texture* ltc1_texture = data->texture_slotmap.Find(data->ltc_matrices_texture_handle);
+		Texture* ltc2_texture = data->texture_slotmap.Find(data->ltc_ggx_fresnel_sphere_clipping_texture_handle);
+
+		frame->ubos.light_ubo.WriteBuffer(0, sizeof(uint32_t), &data->num_area_lights);
+		frame->ubos.light_ubo.WriteBuffer(sizeof(uint32_t), sizeof(uint32_t), &ltc1_texture->view_descriptor.descriptor_offset);
+		frame->ubos.light_ubo.WriteBuffer(2 * sizeof(uint32_t), sizeof(uint32_t), &ltc2_texture->view_descriptor.descriptor_offset);
 
 		// Viewport and scissor rect
 		VkViewport viewport = {};
@@ -1860,7 +1884,7 @@ namespace Renderer
 		// Reset per-frame statistics, draw list, and other data
 		data->stats.Reset();
 		data->draw_list.Reset();
-		data->num_pointlights = 0;
+		data->num_area_lights = 0;
 
 		if (resized)
 		{
@@ -1877,7 +1901,7 @@ namespace Renderer
 		Vulkan::CommandBuffer::BeginRecording(command_buffer);
 
 		// Determine the texture byte size
-		VkDeviceSize image_size = args.pixels.size();
+		VkDeviceSize image_size = args.width * args.height * args.src_stride;
 
 		// Create texture image
 		uint32_t num_mips = args.generate_mips ? (uint32_t)std::floor(std::log2(std::max(args.width, args.height))) + 1 : 1;
@@ -1901,7 +1925,7 @@ namespace Renderer
 
 		// Create ring buffer staging allocation and write the data to it
 		RingBuffer::Allocation staging = data->ring_buffer.Allocate(image_size, Vulkan::Image::GetMemoryRequirements(image).alignment);
-		staging.WriteBuffer(0, image_size, args.pixels.data());
+		staging.WriteBuffer(0, image_size, args.data);
 		
 		// Copy staging buffer data into final texture image memory (device local)
 		Vulkan::Command::TransitionLayout(command_buffer, { .image = image, .new_layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL });
@@ -2044,54 +2068,55 @@ namespace Renderer
 		Texture* albedo_texture = data->texture_slotmap.Find(material.albedo_texture_handle);
 		if (!albedo_texture)
 			albedo_texture = data->texture_slotmap.Find(data->default_white_texture_handle);
-		entry.material_data.albedo_texture_index = albedo_texture->view_descriptor.descriptor_offset;
+		entry.gpu_material.albedo_texture_index = albedo_texture->view_descriptor.descriptor_offset;
 
 		Texture* normal_texture = data->texture_slotmap.Find(material.normal_texture_handle);
 		if (!normal_texture)
 			normal_texture = data->texture_slotmap.Find(data->default_normal_texture_handle);
-		entry.material_data.normal_texture_index = normal_texture->view_descriptor.descriptor_offset;
+		entry.gpu_material.normal_texture_index = normal_texture->view_descriptor.descriptor_offset;
 
 		Texture* metallic_roughness_texture = data->texture_slotmap.Find(material.metallic_roughness_texture_handle);
 		if (!metallic_roughness_texture)
 			metallic_roughness_texture = data->texture_slotmap.Find(data->default_white_texture_handle);
-		entry.material_data.metallic_roughness_texture_index = metallic_roughness_texture->view_descriptor.descriptor_offset;
+		entry.gpu_material.metallic_roughness_texture_index = metallic_roughness_texture->view_descriptor.descriptor_offset;
 
-		entry.material_data.albedo_factor = material.albedo_factor;
-		entry.material_data.metallic_factor = material.metallic_factor;
-		entry.material_data.roughness_factor = material.roughness_factor;
+		entry.gpu_material.albedo_factor = material.albedo_factor;
+		entry.gpu_material.metallic_factor = material.metallic_factor;
+		entry.gpu_material.roughness_factor = material.roughness_factor;
 
-		entry.material_data.has_clearcoat = material.has_clearcoat ? 1 : 0;
+		entry.gpu_material.has_clearcoat = material.has_clearcoat ? 1 : 0;
 
 		Texture* clearcoat_alpha_texture = data->texture_slotmap.Find(material.clearcoat_alpha_texture_handle);
 		if (!clearcoat_alpha_texture)
 			clearcoat_alpha_texture = data->texture_slotmap.Find(data->default_white_texture_handle);
-		entry.material_data.clearcoat_alpha_texture_index = clearcoat_alpha_texture->view_descriptor.descriptor_offset;
+		entry.gpu_material.clearcoat_alpha_texture_index = clearcoat_alpha_texture->view_descriptor.descriptor_offset;
 
 		Texture* clearcoat_normal_texture = data->texture_slotmap.Find(material.clearcoat_normal_texture_handle);
 		if (!clearcoat_normal_texture)
 			clearcoat_normal_texture = data->texture_slotmap.Find(data->default_normal_texture_handle);
-		entry.material_data.clearcoat_normal_texture_index = clearcoat_normal_texture->view_descriptor.descriptor_offset;
+		entry.gpu_material.clearcoat_normal_texture_index = clearcoat_normal_texture->view_descriptor.descriptor_offset;
 
 		Texture* clearcoat_roughness_texture = data->texture_slotmap.Find(material.clearcoat_roughness_texture_handle);
 		if (!clearcoat_roughness_texture)
 			clearcoat_roughness_texture = data->texture_slotmap.Find(data->default_white_texture_handle);
-		entry.material_data.clearcoat_roughness_texture_index = clearcoat_roughness_texture->view_descriptor.descriptor_offset;
+		entry.gpu_material.clearcoat_roughness_texture_index = clearcoat_roughness_texture->view_descriptor.descriptor_offset;
 
-		entry.material_data.clearcoat_alpha_factor = material.clearcoat_alpha_factor;
-		entry.material_data.clearcoat_roughness_factor = material.clearcoat_roughness_factor;
+		entry.gpu_material.clearcoat_alpha_factor = material.clearcoat_alpha_factor;
+		entry.gpu_material.clearcoat_roughness_factor = material.clearcoat_roughness_factor;
 
 		// Default sampler
-		entry.material_data.sampler_index = data->default_sampler.descriptor.descriptor_offset;
+		entry.gpu_material.sampler_index = data->default_sampler.descriptor.descriptor_offset;
 
 		// Write material data to the material ubo for the currently active frame
-		frame->ubos.material_ubo.WriteBuffer(sizeof(MaterialData) * entry.index, sizeof(MaterialData), &entry.material_data);
+		frame->ubos.material_ubo.WriteBuffer(sizeof(GPUMaterial) * entry.index, sizeof(GPUMaterial), &entry.gpu_material);
 	}
 
 	void SubmitPointlight(const glm::vec3& pos, const glm::vec3& color, float intensity)
 	{
-		VK_ASSERT(data->num_pointlights < MAX_LIGHT_SOURCES && "Exceeded the maximum amount of light sources");
+		return;
+		/*VK_ASSERT(data->num_light_sources < MAX_LIGHT_SOURCES && "Exceeded the maximum amount of point lights");
 
-		PointlightData pointlight = {
+		GPULightSource pointlight = {
 			.pos = pos,
 			.intensity = intensity,
 			.color = color
@@ -2099,7 +2124,29 @@ namespace Renderer
 
 		Frame* frame = GetFrameCurrent();
 		frame->ubos.light_ubo.WriteBuffer(sizeof(PointlightData) * data->num_pointlights, sizeof(PointlightData), &pointlight);
-		data->num_pointlights++;
+		data->num_pointlights++;*/
+	}
+
+	void SubmitAreaLight(const glm::vec3 verts[4], const glm::vec3& color, float intensity, bool two_sided)
+	{
+		VK_ASSERT(data->num_area_lights < MAX_AREA_LIGHTS && "Exceeded the maximum amount of area lights");
+
+		// TODO: Vertices for area lights can be added from a ring buffer allocation to draw them in world as well
+		GPUAreaLight gpu_area_light = {};
+		gpu_area_light.vert0 = verts[0];
+		gpu_area_light.color_red = color.r;
+		gpu_area_light.vert1 = verts[1];
+		gpu_area_light.color_green = color.g;
+		gpu_area_light.vert2 = verts[2];
+		gpu_area_light.color_blue = color.b;
+		gpu_area_light.vert3 = verts[3];
+		gpu_area_light.intensity = intensity;
+		gpu_area_light.two_sided = two_sided;
+
+		Frame* frame = GetFrameCurrent();
+		frame->ubos.light_ubo.WriteBuffer(4 * sizeof(uint32_t) + data->num_area_lights * sizeof(GPUAreaLight), sizeof(GPUAreaLight), &gpu_area_light);
+
+		data->num_area_lights++;
 	}
 
 }

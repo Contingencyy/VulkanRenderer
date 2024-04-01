@@ -52,3 +52,20 @@ private:
 	float m_intensity = 1.0f;
 
 };
+
+class AreaLight : public Entity
+{
+public:
+	AreaLight(const glm::vec3 verts[4], const glm::vec3& color, float intensity, bool two_sided, const std::string& label);
+
+	virtual void Update(float dt) override;
+	virtual void Render() override;
+	virtual void RenderUI() override;
+
+private:
+	glm::vec3 m_vertices[4];
+	glm::vec3 m_color = glm::vec3(0.0);
+	float m_intensity = 1.0f;
+	bool m_two_sided = false;
+
+};

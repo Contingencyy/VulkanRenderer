@@ -87,7 +87,7 @@ namespace Application
 	{
 		for (uint32_t i = 0; i < node.mesh_handles.size(); ++i)
 		{
-			data.active_scene.AddEntity<MeshObject>(node.mesh_handles[i], node.materials[i], node_transform, node.name);
+			data.active_scene.AddEntity<MeshObject>(node.mesh_handles[i], node.materials[i], node_transform, node.mesh_names[i]);
 		}
 
 		for (uint32_t i = 0; i < node.children.size(); ++i)
@@ -148,8 +148,23 @@ namespace Application
 		glm::mat4 transform = glm::scale(glm::identity<glm::mat4>(), glm::vec3(10.0f));
 		SpawnModelEntity("model", transform);
 
-		data.active_scene.AddEntity<Pointlight>(glm::vec3(50.0f, 50.0f, -50.0f), glm::vec3(1.0f), 25.0f, "Pointlight1");
-		data.active_scene.AddEntity<Pointlight>(glm::vec3(-50.0f, 50.0f, 50.0f), glm::vec3(1.0f), 25.0f, "Pointlight2");
+		glm::vec3 area_light_verts0[4] =
+		{
+			glm::vec3(0.0f, 20.0f,  10.0f),
+			glm::vec3(0.0f, 20.0f, -10.0f),
+			glm::vec3(0.0f, 0.0f,  -10.0f),
+			glm::vec3(0.0f, 0.0f,   10.0f),
+		};
+		data.active_scene.AddEntity<AreaLight>(area_light_verts0, glm::vec3(1.0f, 0.95f, 0.8f), 5.0f, true, "AreaLight0");
+
+		glm::vec3 area_light_verts1[4] =
+		{
+			glm::vec3(50.0f, 20.0f,  10.0f),
+			glm::vec3(50.0f, 20.0f, -10.0f),
+			glm::vec3(50.0f, 0.0f,  -10.0f),
+			glm::vec3(50.0f, 0.0f,   10.0f),
+		};
+		data.active_scene.AddEntity<AreaLight>(area_light_verts1, glm::vec3(1.0f, 0.95f, 0.8f), 5.0f, true, "AreaLight1");
 
 		data.is_running = true;
 	}

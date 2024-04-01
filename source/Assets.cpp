@@ -426,11 +426,6 @@ namespace Assets
 			Model::Node& model_node = model.nodes[i];
 			model_node.transform = CGLTFNodeGetTransform(gltf_node);
 
-			if (gltf_node.name)
-				model_node.name = gltf_node.name;
-			else
-				model_node.name = filepath + std::to_string(i);
-
 			model_node.children.resize(gltf_node.children_count);
 			for (size_t j = 0; j < gltf_node.children_count; ++j)
 			{
@@ -439,18 +434,24 @@ namespace Assets
 
 			if (gltf_node.mesh)
 			{
+				model_node.mesh_names.resize(gltf_node.mesh->primitives_count);
 				model_node.mesh_handles.resize(gltf_node.mesh->primitives_count);
 				model_node.materials.resize(gltf_node.mesh->primitives_count);
 
 				for (size_t j = 0; j < gltf_node.mesh->primitives_count; ++j)
 				{
-					cgltf_primitive& primitive = gltf_node.mesh->primitives[j];
+					cgltf_primitive& gltf_primitive = gltf_node.mesh->primitives[j];
+
+					if (gltf_node.name)
+						model_node.mesh_names[j] = gltf_node.name + std::to_string(j);
+					else
+						model_node.mesh_names[j] = filepath + std::to_string(j);
 
 					size_t mesh_handle_index = CGLTFGetIndex<cgltf_mesh>(gltf_data->meshes, gltf_node.mesh) +
-						CGLTFGetIndex<cgltf_primitive>(gltf_node.mesh->primitives, &primitive);
+						CGLTFGetIndex<cgltf_primitive>(gltf_node.mesh->primitives, &gltf_primitive);
 					model_node.mesh_handles[j] = mesh_handles[mesh_handle_index];
 
-					size_t material_handle_index = CGLTFGetIndex<cgltf_material>(gltf_data->materials, primitive.material);
+					size_t material_handle_index = CGLTFGetIndex<cgltf_material>(gltf_data->materials, gltf_primitive.material);
 					model_node.materials[j] = materials[material_handle_index];
 				}
 			}
@@ -484,7 +485,7 @@ namespace Assets
 		args.height = (uint32_t)image.height;
 		args.src_stride = (uint32_t)(image.num_components * image.component_size);
 		args.format = format;
-		args.pixels = std::vector<uint8_t>(image.pixels, image.pixels + (image.width * image.height * args.src_stride));
+		args.data = image.pixels;
 		args.generate_mips = gen_mips;
 		args.is_environment_map = is_environment_map;
 

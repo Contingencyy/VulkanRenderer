@@ -224,5 +224,8 @@
     <ClInclude Include="include\renderer\vulkan\VulkanRaytracing.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="include\renderer\LTCMatrices.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

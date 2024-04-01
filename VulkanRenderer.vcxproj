@@ -221,6 +221,7 @@
     <ClInclude Include="include\Input.h" />
     <ClInclude Include="include\Logger.h" />
     <ClInclude Include="include\Precomp.h" />
+    <ClInclude Include="include\renderer\LTCMatrices.h" />
     <ClInclude Include="include\renderer\vulkan\VulkanRaytracing.h" />
     <ClInclude Include="include\renderer\Renderer.h" />
     <ClInclude Include="include\renderer\RenderPass.h" />
