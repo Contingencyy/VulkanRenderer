@@ -78,7 +78,7 @@ namespace Vulkan
 		}
 
 		void DrawGeometryIndexed(const VulkanCommandBuffer& command_buffer, uint32_t num_vertex_buffers, const VulkanBuffer* const vertex_buffers, const VulkanBuffer* const index_buffer,
-			uint32_t index_byte_size, uint32_t num_instances, uint32_t first_instance, uint32_t first_index, uint32_t vertex_offset)
+			VkIndexType index_type, uint32_t num_indices, uint32_t num_instances, uint32_t first_instance, uint32_t first_index, uint32_t vertex_offset)
 		{
 			std::vector<VkBuffer> vk_vertex_buffers;
 			std::vector<uint64_t> vk_vertex_buffer_offsets;
@@ -90,8 +90,8 @@ namespace Vulkan
 			}
 
 			vkCmdBindVertexBuffers(command_buffer.vk_command_buffer, 0, static_cast<uint32_t>(vk_vertex_buffers.size()), vk_vertex_buffers.data(), vk_vertex_buffer_offsets.data());
-			vkCmdBindIndexBuffer(command_buffer.vk_command_buffer, index_buffer->vk_buffer, index_buffer->offset_in_bytes, Util::ToVkIndexType(index_byte_size));
-			vkCmdDrawIndexed(command_buffer.vk_command_buffer, index_buffer->size_in_bytes / index_byte_size, num_instances, first_index, vertex_offset, first_instance);
+			vkCmdBindIndexBuffer(command_buffer.vk_command_buffer, index_buffer->vk_buffer, index_buffer->offset_in_bytes, index_type);
+			vkCmdDrawIndexed(command_buffer.vk_command_buffer, num_indices, num_instances, first_index, vertex_offset, first_instance);
 		}
 
 		void ClearImage(const VulkanCommandBuffer& command_buffer, const VulkanImage& image, const VkClearColorValue& clear_value)

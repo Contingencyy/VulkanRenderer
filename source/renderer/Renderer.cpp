@@ -12,6 +12,7 @@
 #include "renderer/vulkan/VulkanSync.h"
 #include "renderer/vulkan/VulkanDescriptor.h"
 #include "renderer/vulkan/VulkanRaytracing.h"
+#include "renderer/vulkan/VulkanUtils.h"
 #include "renderer/ResourceSlotmap.h"
 #include "renderer/RenderPass.h"
 #include "renderer/RingBuffer.h"
@@ -73,7 +74,7 @@ namespace Renderer
 	static constexpr uint32_t IBL_BRDF_LUT_RESOLUTION = 1024;
 	static constexpr uint32_t IBL_BRDF_LUT_SAMPLES = 1024;
 
-	static constexpr std::array<glm::vec3, 8> UNIT_CUBE_VERTICES =
+	static std::array<glm::vec3, 8> UNIT_CUBE_VERTICES =
 	{
 		glm::vec3(1.0, -1.0, -1.0),
 		glm::vec3(1.0, -1.0, 1.0),
@@ -85,7 +86,7 @@ namespace Renderer
 		glm::vec3(-1.0, 1.0, -1.0)
 	};
 
-	static constexpr std::array<uint16_t, 36> UNIT_CUBE_INDICES =
+	static std::array<uint16_t, 36> UNIT_CUBE_INDICES =
 	{
 		0, 1, 3, 3, 1, 2,
 		1, 5, 2, 2, 5, 6,
@@ -109,37 +110,6 @@ namespace Renderer
 		glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
 		// NEGATIVE_Z
 		glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
-	};
-
-	struct DrawList
-	{
-		struct Entry
-		{
-			uint32_t index;
-
-			MeshHandle_t mesh_handle;
-			GPUMaterial gpu_material;
-			glm::mat4 transform;
-		};
-
-		uint32_t next_free_entry = 0;
-		std::array<Entry, MAX_DRAW_LIST_ENTRIES> entries;
-
-		Entry& GetNextEntry()
-		{
-			VK_ASSERT(next_free_entry < MAX_DRAW_LIST_ENTRIES &&
-				"Exceeded the maximum amount of draw list entries");
-
-			Entry& entry = entries[next_free_entry];
-			entry.index = next_free_entry;
-			next_free_entry++;
-			return entry;
-		}
-
-		void Reset()
-		{
-			next_free_entry = 0;
-		}
 	};
 
 	struct Texture
@@ -173,9 +143,12 @@ namespace Renderer
 		VulkanBuffer index_buffer;
 		VulkanBuffer blas_buffer;
 
+		VkIndexType index_type = VK_INDEX_TYPE_MAX_ENUM;
+		uint32_t num_indices = 0;
+
 		Mesh() = default;
-		explicit Mesh(VulkanBuffer vertex_buffer, VulkanBuffer index_buffer, VulkanBuffer blas_buffer)
-			: vertex_buffer(vertex_buffer), index_buffer(index_buffer), blas_buffer(blas_buffer)
+		explicit Mesh(VulkanBuffer vertex_buffer, VulkanBuffer index_buffer, VulkanBuffer blas_buffer, VkIndexType index_type, uint32_t num_indices)
+			: vertex_buffer(vertex_buffer), index_buffer(index_buffer), blas_buffer(blas_buffer), index_type(index_type), num_indices(num_indices)
 		{
 		}
 
@@ -198,6 +171,37 @@ namespace Renderer
 			Vulkan::Descriptor::Free(descriptor);
 			Vulkan::ImageView::Destroy(view);
 			Vulkan::Image::Destroy(image);
+		}
+	};
+
+	struct DrawList
+	{
+		struct Entry
+		{
+			uint32_t index;
+
+			Mesh* mesh;
+			GPUMaterial gpu_material;
+			glm::mat4 transform;
+		};
+
+		uint32_t next_free_entry = 0;
+		std::array<Entry, MAX_DRAW_LIST_ENTRIES> entries;
+
+		Entry& GetNextEntry()
+		{
+			VK_ASSERT(next_free_entry < MAX_DRAW_LIST_ENTRIES &&
+				"Exceeded the maximum amount of draw list entries");
+
+			Entry& entry = entries[next_free_entry];
+			entry.index = next_free_entry;
+			next_free_entry++;
+			return entry;
+		}
+
+		void Reset()
+		{
+			next_free_entry = 0;
 		}
 	};
 
@@ -318,8 +322,7 @@ namespace Renderer
 		VulkanSampler prefiltered_cube_sampler;
 		VulkanSampler brdf_lut_sampler;
 
-		VulkanBuffer unit_cube_vb;
-		VulkanBuffer unit_cube_ib;
+		MeshHandle_t unit_cube_mesh_handle;
 
 		TextureHandle_t skybox_texture_handle;
 		RenderSettings settings;
@@ -465,7 +468,7 @@ namespace Renderer
 		texture_args.width = 1;
 		texture_args.height = 1;
 		texture_args.src_stride = 4;
-		texture_args.data = white_pixel.data();
+		texture_args.pixel_bytes = std::span<uint8_t>(white_pixel.data(), 4);
 
 		data->default_white_texture_handle = CreateTexture(texture_args);
 
@@ -476,52 +479,43 @@ namespace Renderer
 
 		// Default normal texture
 		std::vector<uint8_t> normal_pixel = { 127, 127, 255, 255 };
-		texture_args.data = normal_pixel.data();
+		texture_args.pixel_bytes = std::span<uint8_t>(normal_pixel.data(), 4);
 		texture_args.generate_mips = false;
 		texture_args.is_environment_map = false;
 
 		data->default_normal_texture_handle = CreateTexture(texture_args);
 
+		// TODO: num_samples should be defined somewhere so that the shader can also use it
 		const uint32_t num_samples = 64;
 		texture_args.format = TEXTURE_FORMAT_RGBA32_SFLOAT;
-		texture_args.data = &LTC1[0];
 		texture_args.width = num_samples;
 		texture_args.height = num_samples;
 		texture_args.src_stride = 16;
+		uint32_t total_texture_bytes = texture_args.width * texture_args.height * texture_args.src_stride;
+		texture_args.pixel_bytes = std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&LTC1[0]), total_texture_bytes);
 
 		data->ltc_matrices_texture_handle = CreateTexture(texture_args);
 
-		texture_args.data = &LTC2[0];
+		texture_args.pixel_bytes = std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&LTC2[0]), total_texture_bytes);
 		data->ltc_ggx_fresnel_sphere_clipping_texture_handle = CreateTexture(texture_args);
 	}
 
 	static void CreateUnitCubeBuffers()
 	{
-		// Calculate the vertex and index buffer size
-		VkDeviceSize vb_size = UNIT_CUBE_VERTICES.size() * sizeof(glm::vec3);
-		VkDeviceSize ib_size = UNIT_CUBE_INDICES.size() * sizeof(uint16_t);
+		CreateMeshArgs mesh_args = {};
+		mesh_args.num_vertices = static_cast<uint32_t>(UNIT_CUBE_VERTICES.size());
+		mesh_args.vertex_stride = sizeof(UNIT_CUBE_VERTICES[0]);
+		uint32_t total_bytes_vertices = mesh_args.num_vertices * mesh_args.vertex_stride;
+		mesh_args.vertices_bytes = std::span<uint8_t>(reinterpret_cast<uint8_t*>(UNIT_CUBE_VERTICES.data()), total_bytes_vertices);
 
-		// Create the staging buffer and write the data to it
-		RingBuffer::Allocation staging = data->ring_buffer.Allocate(vb_size + ib_size);
-		staging.WriteBuffer(0, vb_size, UNIT_CUBE_VERTICES.data());
-		staging.WriteBuffer(vb_size, ib_size, UNIT_CUBE_INDICES.data());
+		mesh_args.num_indices = static_cast<uint32_t>(UNIT_CUBE_INDICES.size());
+		mesh_args.index_stride = sizeof(UNIT_CUBE_INDICES[0]);
+		uint32_t total_bytes_indices = mesh_args.num_indices * mesh_args.index_stride;
+		mesh_args.indices_bytes = std::span<uint8_t>(reinterpret_cast<uint8_t*>(UNIT_CUBE_INDICES.data()), total_bytes_indices);
 
-		// Create cube vertex and index buffer
-		data->unit_cube_vb = Vulkan::Buffer::CreateVertex(vb_size, "Unit Cube VB");
-		data->unit_cube_ib = Vulkan::Buffer::CreateIndex(vb_size, "Unit Cube IB");
+		mesh_args.name = "Unit Cube";
 
-		// Get command buffer
-		VulkanCommandBuffer command_buffer = Vulkan::CommandPool::AllocateCommandBuffer(data->command_pools.transfer);
-		Vulkan::CommandBuffer::BeginRecording(command_buffer);
-
-		// Copy staged vertex and index data to the device local buffers
-		Vulkan::Command::CopyBuffers(command_buffer, staging.buffer, staging.buffer.offset_in_bytes, data->unit_cube_vb, 0, vb_size);
-		Vulkan::Command::CopyBuffers(command_buffer, staging.buffer, staging.buffer.offset_in_bytes + vb_size, data->unit_cube_ib, 0, ib_size);
-
-		Vulkan::CommandBuffer::EndRecording(command_buffer);
-		Vulkan::CommandQueue::ExecuteBlocking(data->command_queues.transfer, command_buffer);
-		Vulkan::CommandBuffer::Reset(command_buffer);
-		Vulkan::CommandPool::FreeCommandBuffer(data->command_pools.transfer, command_buffer);
+		data->unit_cube_mesh_handle = CreateMesh(mesh_args);
 	}
 
 	static void CreateRenderTargets()
@@ -907,6 +901,9 @@ namespace Renderer
 		VulkanCommandBuffer command_buffer = Vulkan::CommandPool::AllocateCommandBuffer(data->command_pools.graphics_compute);
 		Vulkan::CommandBuffer::BeginRecording(command_buffer);
 
+		const Mesh* unit_cube_mesh = data->mesh_slotmap.Find(data->unit_cube_mesh_handle);
+		VK_ASSERT(unit_cube_mesh && "Unit cube mesh is invalid");
+
 		Texture* hdr_equirect_texture = data->texture_slotmap.Find(src_texture_handle);
 		TextureHandle_t hdr_cubemap_handle, irradiance_cubemap_handle, prefiltered_cubemap_handle;
 		Texture* hdr_cubemap, *irradiance_cubemap, *prefiltered_cubemap;
@@ -1002,7 +999,8 @@ namespace Renderer
 						Vulkan::Command::PushConstants(command_buffer, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &push_consts);
 						Vulkan::Command::PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(glm::mat4), 2 * sizeof(uint32_t), &push_consts.src_texture_index);
 
-						Vulkan::Command::DrawGeometryIndexed(command_buffer, 1, &data->unit_cube_vb, &data->unit_cube_ib, 2);
+						Vulkan::Command::DrawGeometryIndexed(command_buffer, 1, &unit_cube_mesh->vertex_buffer,
+							&unit_cube_mesh->index_buffer, unit_cube_mesh->index_type, unit_cube_mesh->num_indices);
 
 						RENDER_PASS_STAGE_END(RENDER_PASS_GEN_IBL_CUBEMAPS_STAGE_HDR_CUBEMAP, command_buffer);
 					}
@@ -1100,7 +1098,8 @@ namespace Renderer
 						Vulkan::Command::PushConstants(command_buffer, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &push_consts);
 						Vulkan::Command::PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(glm::mat4), 2 * sizeof(uint32_t) + 2 * sizeof(float), &push_consts.src_texture_index);
 
-						Vulkan::Command::DrawGeometryIndexed(command_buffer, 1, &data->unit_cube_vb, &data->unit_cube_ib, 2);
+						Vulkan::Command::DrawGeometryIndexed(command_buffer, 1, &unit_cube_mesh->vertex_buffer,
+							&unit_cube_mesh->index_buffer, unit_cube_mesh->index_type, unit_cube_mesh->num_indices);
 
 						RENDER_PASS_STAGE_END(RENDER_PASS_GEN_IBL_CUBEMAPS_STAGE_IRRADIANCE_CUBEMAP, command_buffer);
 					}
@@ -1193,7 +1192,8 @@ namespace Renderer
 							Vulkan::Command::PushConstants(command_buffer, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &push_consts);
 							Vulkan::Command::PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(glm::mat4), 3 * sizeof(uint32_t) + sizeof(float), &push_consts.src_texture_index);
 
-							Vulkan::Command::DrawGeometryIndexed(command_buffer, 1, &data->unit_cube_vb, &data->unit_cube_ib, 2);
+							Vulkan::Command::DrawGeometryIndexed(command_buffer, 1, &unit_cube_mesh->vertex_buffer,
+								&unit_cube_mesh->index_buffer, unit_cube_mesh->index_type, unit_cube_mesh->num_indices);
 						}
 						RENDER_PASS_STAGE_END(RENDER_PASS_GEN_IBL_CUBEMAPS_STAGE_PREFILTERED_CUBEMAP, command_buffer, data->render_passes.gen_prefiltered_cube);
 					}
@@ -1368,9 +1368,6 @@ namespace Renderer
 
 		Vulkan::ExitImGui();
 
-		Vulkan::Buffer::Destroy(data->unit_cube_vb);
-		Vulkan::Buffer::Destroy(data->unit_cube_ib);
-
 		Vulkan::DestroySampler(data->default_sampler);
 		Vulkan::DestroySampler(data->hdr_equirect_sampler);
 		Vulkan::DestroySampler(data->hdr_cube_sampler);
@@ -1469,11 +1466,9 @@ namespace Renderer
 		for (uint32_t i = 0; i < data->draw_list.next_free_entry; ++i)
 		{
 			const DrawList::Entry& entry = data->draw_list.entries[i];
+			VK_ASSERT(entry.mesh && "Tried to build the TLAS with an invalid mesh");
 
-			Mesh* mesh = data->mesh_slotmap.Find(entry.mesh_handle);
-			VK_ASSERT(mesh && "Tried to build the TLAS with an invalid mesh");
-
-			mesh_blas_buffers[i] = mesh->blas_buffer;
+			mesh_blas_buffers[i] = entry.mesh->blas_buffer;
 			memcpy(&mesh_transforms[i], &entry.transform, sizeof(VkTransformMatrixKHR));
 		}
 
@@ -1527,8 +1522,11 @@ namespace Renderer
 			push_consts.env_texture_index = skybox_texture->view_descriptor.descriptor_offset;
 			push_consts.env_sampler_index = 0;
 
+			const Mesh* unit_cube_mesh = data->mesh_slotmap.Find(data->unit_cube_mesh_handle);
+
 			Vulkan::Command::PushConstants(frame->command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push_consts), &push_consts);
-			Vulkan::Command::DrawGeometryIndexed(frame->command_buffer, 1, &data->unit_cube_vb, &data->unit_cube_ib, 2);
+			Vulkan::Command::DrawGeometryIndexed(frame->command_buffer, 1, &unit_cube_mesh->vertex_buffer,
+				&unit_cube_mesh->index_buffer, unit_cube_mesh->index_type, unit_cube_mesh->num_indices);
 
 			RENDER_PASS_STAGE_END(RENDER_PASS_SKYBOX_STAGE_SKYBOX, frame->command_buffer);
 		}
@@ -1553,14 +1551,14 @@ namespace Renderer
 
 				for (uint32_t i = 0; i < data->draw_list.next_free_entry; ++i)
 				{
+					// NOTE: When we do vertex pulling instead, we can store the vertex/index buffer descriptor indices inside the instance data
+					// And then we could simply render all meshes with a single draw call
 					const DrawList::Entry& entry = data->draw_list.entries[i];
+					VK_ASSERT(entry.mesh && "Tried to render a mesh with an invalid mesh handle");
 
-					// TODO: Default mesh
-					const Mesh* mesh = data->mesh_slotmap.Find(entry.mesh_handle);
-					VK_ASSERT(mesh && "Tried to render a mesh with an invalid mesh handle");
-
-					VulkanBuffer vertex_buffers[2] = { mesh->vertex_buffer, frame->instance_buffer.buffer };
-					Vulkan::Command::DrawGeometryIndexed(frame->command_buffer, 2, vertex_buffers, &mesh->index_buffer, sizeof(uint32_t), 1, i);
+					VulkanBuffer vertex_buffers[2] = { entry.mesh->vertex_buffer, frame->instance_buffer.buffer };
+					Vulkan::Command::DrawGeometryIndexed(frame->command_buffer, 2, vertex_buffers,
+						&entry.mesh->index_buffer, entry.mesh->index_type, entry.mesh->num_indices, 1, i);
 				}
 
 				RENDER_PASS_STAGE_END(RENDER_PASS_GEOMETRY_STAGE_DEPTH_PREPASS, frame->command_buffer);
@@ -1617,22 +1615,16 @@ namespace Renderer
 				for (uint32_t i = 0; i < data->draw_list.next_free_entry; ++i)
 				{
 					const DrawList::Entry& entry = data->draw_list.entries[i];
-
-					// TODO: Default mesh
-					const Mesh* mesh = nullptr;
-					if (VK_RESOURCE_HANDLE_VALID(entry.mesh_handle))
-					{
-						mesh = data->mesh_slotmap.Find(entry.mesh_handle);
-					}
-					VK_ASSERT(mesh && "Tried to render a mesh with an invalid mesh handle");
+					VK_ASSERT(entry.mesh && "Tried to render a mesh with an invalid mesh handle");
 
 					Vulkan::Command::PushConstants(frame->command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 8 * sizeof(uint32_t), sizeof(uint32_t), &i);
 
-					VulkanBuffer vertex_buffers[2] = { mesh->vertex_buffer, frame->instance_buffer.buffer };
-					Vulkan::Command::DrawGeometryIndexed(frame->command_buffer, 2, vertex_buffers, &mesh->index_buffer, sizeof(uint32_t), 1, i);
+					VulkanBuffer vertex_buffers[2] = { entry.mesh->vertex_buffer, frame->instance_buffer.buffer };
+					Vulkan::Command::DrawGeometryIndexed(frame->command_buffer, 2, vertex_buffers,
+						&entry.mesh->index_buffer, entry.mesh->index_type, entry.mesh->num_indices, 1, i);
 
-					data->stats.total_vertex_count += mesh->vertex_buffer.size_in_bytes / sizeof(Vertex);
-					data->stats.total_triangle_count += (mesh->index_buffer.size_in_bytes / sizeof(uint32_t)) / 3;
+					data->stats.total_vertex_count += entry.mesh->vertex_buffer.size_in_bytes / sizeof(Vertex);
+					data->stats.total_triangle_count += (entry.mesh->index_buffer.size_in_bytes / sizeof(uint32_t)) / 3;
 				}
 
 				RENDER_PASS_STAGE_END(RENDER_PASS_GEOMETRY_STAGE_LIGHTING, frame->command_buffer);
@@ -1925,7 +1917,7 @@ namespace Renderer
 
 		// Create ring buffer staging allocation and write the data to it
 		RingBuffer::Allocation staging = data->ring_buffer.Allocate(image_size, Vulkan::Image::GetMemoryRequirements(image).alignment);
-		staging.WriteBuffer(0, image_size, args.data);
+		staging.WriteBuffer(0, image_size, args.pixel_bytes.data());
 		
 		// Copy staging buffer data into final texture image memory (device local)
 		Vulkan::Command::TransitionLayout(command_buffer, { .image = image, .new_layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL });
@@ -1998,13 +1990,13 @@ namespace Renderer
 	MeshHandle_t CreateMesh(const CreateMeshArgs& args)
 	{
 		// Determine vertex and index buffer byte size
-		VkDeviceSize vb_size = sizeof(Vertex) * args.vertices.size();
-		VkDeviceSize ib_size = sizeof(uint32_t) * args.indices.size();
+		VkDeviceSize vb_size = args.vertices_bytes.size();
+		VkDeviceSize ib_size = args.indices_bytes.size();
 
 		// Allocate from ring buffer and write data to it
 		RingBuffer::Allocation staging = data->ring_buffer.Allocate(vb_size + ib_size);
-		staging.WriteBuffer(0, vb_size, (void*)args.vertices.data());
-		staging.WriteBuffer(vb_size, ib_size, (void*)args.indices.data());
+		staging.WriteBuffer(0, vb_size, args.vertices_bytes.data());
+		staging.WriteBuffer(vb_size, ib_size, args.indices_bytes.data());
 
 		// Create vertex and index buffers
 		VulkanBuffer vertex_buffer = Vulkan::Buffer::CreateVertex(vb_size, "Vertex Buffer " + args.name);
@@ -2028,7 +2020,7 @@ namespace Renderer
 		
 		VulkanBuffer blas_scratch_buffer = {};
 		VulkanBuffer blas_buffer = Vulkan::Raytracing::BuildBLAS(command_buffer, vertex_buffer, index_buffer, blas_scratch_buffer,
-			args.vertices.size(), sizeof(Vertex), args.indices.size() / 3, VK_INDEX_TYPE_UINT32, "BLAS " + args.name);
+			args.num_vertices, sizeof(Vertex), args.num_indices / 3, Vulkan::Util::ToVkIndexType(args.index_stride), "BLAS " + args.name);
 
 		std::vector<VulkanBufferBarrier> acceleration_structure_build_to_vertex_index_barriers =
 		{
@@ -2046,7 +2038,7 @@ namespace Renderer
 
 		Vulkan::Buffer::Destroy(blas_scratch_buffer);
 
-		return data->mesh_slotmap.Emplace(vertex_buffer, index_buffer, blas_buffer);
+		return data->mesh_slotmap.Emplace(vertex_buffer, index_buffer, blas_buffer, Vulkan::Util::ToVkIndexType(args.index_stride), args.num_indices);
 	}
 
 	void DestroyMesh(MeshHandle_t handle)
@@ -2057,7 +2049,11 @@ namespace Renderer
 	void SubmitMesh(MeshHandle_t mesh_handle, const Assets::Material& material, const glm::mat4& transform)
 	{
 		DrawList::Entry& entry = data->draw_list.GetNextEntry();
-		entry.mesh_handle = mesh_handle;
+		// Get the mesh from the slotmap. If it does not exist/is invalid, use the unit cube mesh as a default placeholder
+		entry.mesh = data->mesh_slotmap.Find(mesh_handle);
+		if (!entry.mesh)
+			entry.mesh = data->mesh_slotmap.Find(data->unit_cube_mesh_handle);
+
 		entry.transform = transform;
 
 		// Write mesh transform to the instance buffer for the currently active frame
@@ -2147,6 +2143,8 @@ namespace Renderer
 		if (!area_light_texture)
 			area_light_texture = data->texture_slotmap.Find(data->default_white_texture_handle);
 		gpu_area_light.texture_index = area_light_texture->view_descriptor.descriptor_offset;
+
+
 
 		Frame* frame = GetFrameCurrent();
 		frame->ubos.light_ubo.WriteBuffer(4 * sizeof(uint32_t) + data->num_area_lights * sizeof(GPUAreaLight), sizeof(GPUAreaLight), &gpu_area_light);

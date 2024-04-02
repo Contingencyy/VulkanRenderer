@@ -222,7 +222,6 @@ vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 			vec4 ltc1 = SampleTexture(ltc1_index, materials[push_consts.mat_index].sampler_index, uv);
 			vec4 ltc2 = SampleTexture(ltc2_index, materials[push_consts.mat_index].sampler_index, uv);
 
-			// TODO: This UV needs to be calculated somehow by intersecting the surface normal with the area light
 			vec3 area_light_color = SampleTexture(area_light.texture_index, materials[push_consts.mat_index].sampler_index, uv).rgb;
 			area_light_color = area_light_color * vec3(area_light.color_red, area_light.color_green, area_light.color_blue);
 			//vec4 area_light_texture = SampleTextureLod(area_light.texture_index, materials[push_consts.mat_index].sampler_index, uv, 0.0f);

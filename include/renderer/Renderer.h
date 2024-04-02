@@ -35,7 +35,7 @@ namespace Renderer
 		uint32_t width = 0;
 		uint32_t height = 0;
 		uint32_t src_stride = 0;
-		const void* data = nullptr;
+		std::span<const uint8_t> pixel_bytes;
 
 		bool generate_mips = false;
 		bool is_environment_map = false;
@@ -49,8 +49,13 @@ namespace Renderer
 
 	struct CreateMeshArgs
 	{
-		std::vector<Vertex> vertices;
-		std::vector<uint32_t> indices;
+		uint32_t num_vertices = 0;
+		uint32_t vertex_stride = 0;
+		std::span<const uint8_t> vertices_bytes;
+
+		uint32_t num_indices = 0;
+		uint32_t index_stride = 0;
+		std::span<const uint8_t> indices_bytes;
 
 		std::string name = "Unnamed";
 	};

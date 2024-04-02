@@ -8,6 +8,7 @@
 
 #include <array>
 #include <vector>
+#include <span>
 #include <unordered_map>
 #include <queue>
 #include <memory>

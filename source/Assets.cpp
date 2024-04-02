@@ -26,27 +26,74 @@ public:
 		m_mikkt_context.m_pInterface = &m_mikkt_interface;
 	}
 
-	void Calculate(Renderer::CreateMeshArgs* mesh)
+	void Calculate(Vertex* vertices, uint32_t num_indices, uint32_t index_stride, const uint8_t* indices)
 	{
-		m_mikkt_context.m_pUserData = mesh;
+		UserData* user_data = reinterpret_cast<UserData*>(m_mikkt_context.m_pUserData);
+		if (user_data)
+			delete user_data;
+
+		user_data = new UserData;
+		m_mikkt_context.m_pUserData = user_data;
+
+		user_data->vertices_ptr = vertices;
+		user_data->num_indices = num_indices;
+		user_data->index_stride = index_stride;
+		user_data->indices_ptr = indices;
+
 		genTangSpaceDefault(&m_mikkt_context);
+	}
+
+private:
+	static Vertex* GetVertexPtr(const SMikkTSpaceContext* context)
+	{
+		UserData& user_data = *reinterpret_cast<UserData*>(context->m_pUserData);
+		return user_data.vertices_ptr;
+	}
+
+	static uint32_t GetNumIndices(const SMikkTSpaceContext* context)
+	{
+		UserData& user_data = *reinterpret_cast<UserData*>(context->m_pUserData);
+		return user_data.num_indices;
+	}
+
+	static uint32_t GetIndexStride(const SMikkTSpaceContext* context)
+	{
+		UserData& user_data = *reinterpret_cast<UserData*>(context->m_pUserData);
+		return user_data.index_stride;
+	}
+
+	static const uint8_t* GetIndexPtr(const SMikkTSpaceContext* context)
+	{
+		UserData& user_data = *reinterpret_cast<UserData*>(context->m_pUserData);
+		return user_data.indices_ptr;
+	}
+
+	static int32_t GetIndex(const SMikkTSpaceContext* context, uint32_t offset)
+	{
+		UserData& user_data = *reinterpret_cast<UserData*>(context->m_pUserData);
+		int32_t index = 0;
+		uint32_t index_stride = GetIndexStride(context);
+
+		if (index_stride == 4)
+			index = *reinterpret_cast<const int32_t*>(GetIndexPtr(context) + index_stride * offset);
+		else
+			index = *reinterpret_cast<const int16_t*>(GetIndexPtr(context) + index_stride * offset);
+
+		return index;
 	}
 
 private:
 	static int GetNumFaces(const SMikkTSpaceContext* context)
 	{
-		Renderer::CreateMeshArgs* mesh = static_cast<Renderer::CreateMeshArgs*>(context->m_pUserData);
-		return mesh->indices.size() / 3;
+		return GetNumIndices(context) / 3;
 	}
 
 	static int GetVertexIndex(const SMikkTSpaceContext* context, int iFace, int iVert)
 	{
-		Renderer::CreateMeshArgs* mesh = static_cast<Renderer::CreateMeshArgs*>(context->m_pUserData);
-
 		uint32_t face_size = GetNumVerticesOfFace(context, iFace);
 		uint32_t indices_index = (iFace * face_size) + iVert;
-
-		return mesh->indices[indices_index];
+		
+		return GetIndex(context, indices_index);
 	}
 
 	static int GetNumVerticesOfFace(const SMikkTSpaceContext* context, int iFace)
@@ -56,10 +103,8 @@ private:
 
 	static void GetPosition(const SMikkTSpaceContext* context, float outpos[], int iFace, int iVert)
 	{
-		Renderer::CreateMeshArgs* mesh = static_cast<Renderer::CreateMeshArgs*>(context->m_pUserData);
-
 		uint32_t index = GetVertexIndex(context, iFace, iVert);
-		const Vertex& vertex = mesh->vertices[index];
+		const Vertex& vertex = GetVertexPtr(context)[index];
 
 		outpos[0] = vertex.pos.x;
 		outpos[1] = vertex.pos.y;
@@ -68,10 +113,8 @@ private:
 
 	static void GetNormal(const SMikkTSpaceContext* context, float outnormal[], int iFace, int iVert)
 	{
-		Renderer::CreateMeshArgs* mesh = static_cast<Renderer::CreateMeshArgs*>(context->m_pUserData);
-
 		uint32_t index = GetVertexIndex(context, iFace, iVert);
-		const Vertex& vertex = mesh->vertices[index];
+		const Vertex& vertex = GetVertexPtr(context)[index];
 
 		outnormal[0] = vertex.normal.x;
 		outnormal[1] = vertex.normal.y;
@@ -80,10 +123,8 @@ private:
 
 	static void GetTexCoord(const SMikkTSpaceContext* context, float outuv[], int iFace, int iVert)
 	{
-		Renderer::CreateMeshArgs* mesh = static_cast<Renderer::CreateMeshArgs*>(context->m_pUserData);
-
 		uint32_t index = GetVertexIndex(context, iFace, iVert);
-		const Vertex& vertex = mesh->vertices[index];
+		const Vertex& vertex = GetVertexPtr(context)[index];
 
 		outuv[0] = vertex.tex_coord.x;
 		outuv[1] = vertex.tex_coord.y;
@@ -91,10 +132,8 @@ private:
 
 	static void SetTSpaceBasic(const SMikkTSpaceContext* context, const float tangentu[], float fSign, int iFace, int iVert)
 	{
-		Renderer::CreateMeshArgs* mesh = static_cast<Renderer::CreateMeshArgs*>(context->m_pUserData);
-
 		uint32_t index = GetVertexIndex(context, iFace, iVert);
-		Vertex& vertex = mesh->vertices[index];
+		Vertex& vertex = GetVertexPtr(context)[index];
 
 		vertex.tangent.x = tangentu[0];
 		vertex.tangent.y = tangentu[1];
@@ -105,6 +144,15 @@ private:
 private:
 	SMikkTSpaceInterface m_mikkt_interface = {};
 	SMikkTSpaceContext m_mikkt_context = {};
+
+	struct UserData
+	{
+		Vertex* vertices_ptr = nullptr;
+
+		uint32_t num_indices = 0;
+		uint32_t index_stride = 0;
+		const uint8_t* indices_ptr = nullptr;
+	};
 
 };
 
@@ -276,25 +324,16 @@ namespace Assets
 
 				// Prepare mesh creation arguments for renderer upload
 				Renderer::CreateMeshArgs mesh_args = {};
-				mesh_args.indices.resize(gltf_prim.indices->count);
 
-				// Load indices for current primitive
-				if (gltf_prim.indices->component_type == cgltf_component_type_r_32u)
-				{
-					memcpy(mesh_args.indices.data(), CGLTFGetDataPointer<uint32_t>(gltf_prim.indices), sizeof(uint32_t) * gltf_prim.indices->count);
-				}
-				else if (gltf_prim.indices->component_type == cgltf_component_type_r_16u)
-				{
-					uint16_t* indices_ptr = CGLTFGetDataPointer<uint16_t>(gltf_prim.indices);
+				// Load all indices as bytes
+				mesh_args.num_indices = gltf_prim.indices->count;
+				mesh_args.index_stride = gltf_prim.indices->stride;
 
-					for (size_t k = 0; k < gltf_prim.indices->count; ++k)
-					{
-						mesh_args.indices[k] = indices_ptr[k];
-					}
-				}
+				uint32_t total_bytes_indices = mesh_args.num_indices * mesh_args.index_stride;
+				mesh_args.indices_bytes = std::span<uint8_t>(CGLTFGetDataPointer<uint8_t>(gltf_prim.indices), total_bytes_indices);
 
 				// Load vertices for current primitive
-				mesh_args.vertices.resize(gltf_prim.attributes[0].data->count);
+				std::vector<Vertex> vertices(gltf_prim.attributes[0].data->count);
 				bool calc_tangents = true;
 
 				for (size_t k = 0; k < gltf_prim.attributes_count; ++k)
@@ -309,7 +348,7 @@ namespace Assets
 
 						for (size_t l = 0; l < attribute.data->count; ++l)
 						{
-							mesh_args.vertices[l].pos = pos_ptr[l];
+							vertices[l].pos = pos_ptr[l];
 						}
 						break;
 					}
@@ -319,7 +358,7 @@ namespace Assets
 
 						for (size_t l = 0; l < attribute.data->count; ++l)
 						{
-							mesh_args.vertices[l].tex_coord = texcoord_ptr[l];
+							vertices[l].tex_coord = texcoord_ptr[l];
 						}
 						break;
 					}
@@ -329,7 +368,7 @@ namespace Assets
 
 						for (size_t l = 0; l < attribute.data->count; ++l)
 						{
-							mesh_args.vertices[l].normal = normal_ptr[l];
+							vertices[l].normal = normal_ptr[l];
 						}
 						break;
 					}
@@ -339,7 +378,7 @@ namespace Assets
 
 						for (size_t l = 0; l < attribute.data->count; ++l)
 						{
-							mesh_args.vertices[l].tangent = tangent_ptr[l];
+							vertices[l].tangent = tangent_ptr[l];
 						}
 						calc_tangents = false;
 						break;
@@ -350,7 +389,14 @@ namespace Assets
 				// No tangents found, so we need to calculate them ourselves
 				// Bitangents will be made in the shaders to reduce memory bandwidth
 				if (calc_tangents)
-					data.tangent_calc.Calculate(&mesh_args);
+					data.tangent_calc.Calculate(vertices.data(), mesh_args.num_indices, mesh_args.index_stride, mesh_args.indices_bytes.data());
+
+				// Set the mesh arguments for the vertices
+				mesh_args.num_vertices = vertices.size();
+				mesh_args.vertex_stride = sizeof(vertices[0]);
+
+				uint32_t total_bytes_vertices = mesh_args.num_vertices * mesh_args.vertex_stride;
+				mesh_args.vertices_bytes = std::span<uint8_t>(reinterpret_cast<uint8_t*>(vertices.data()), total_bytes_vertices);
 
 				mesh_handles[mesh_handle_index_current++] = Renderer::CreateMesh(mesh_args);
 			}
@@ -485,7 +531,8 @@ namespace Assets
 		args.height = (uint32_t)image.height;
 		args.src_stride = (uint32_t)(image.num_components * image.component_size);
 		args.format = format;
-		args.data = image.pixels;
+		uint32_t total_image_byte_size = args.width * args.height * args.src_stride;
+		args.pixel_bytes = std::span<uint8_t>(image.pixels, total_image_byte_size);
 		args.generate_mips = gen_mips;
 		args.is_environment_map = is_environment_map;
 

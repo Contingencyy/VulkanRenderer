@@ -19,7 +19,7 @@ namespace Vulkan
 		void DrawGeometry(const VulkanCommandBuffer& command_buffer, uint32_t num_vertex_buffers, const VulkanBuffer* vertex_buffers,
 			uint32_t num_vertices, uint32_t num_instances = 1, uint32_t first_vertex = 0, uint32_t first_instance = 0);
 		void DrawGeometryIndexed(const VulkanCommandBuffer& command_buffer, uint32_t num_vertex_buffers, const VulkanBuffer* const vertex_buffers, const VulkanBuffer* const index_buffer,
-			uint32_t index_byte_size = 4, uint32_t num_instances = 1, uint32_t first_instance = 0, uint32_t first_index = 0, uint32_t vertex_offset = 0);
+			VkIndexType index_type, uint32_t num_indices, uint32_t num_instances = 1, uint32_t first_instance = 0, uint32_t first_index = 0, uint32_t vertex_offset = 0);
 
 		void ClearImage(const VulkanCommandBuffer& command_buffer, const VulkanImage& image, const VkClearColorValue& clear_value);
 		void ClearImage(const VulkanCommandBuffer& command_buffer, const VulkanImage& image, const VkClearDepthStencilValue& clear_value);
