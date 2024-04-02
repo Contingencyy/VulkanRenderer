@@ -74,7 +74,20 @@ namespace Renderer
 	static constexpr uint32_t IBL_BRDF_LUT_RESOLUTION = 1024;
 	static constexpr uint32_t IBL_BRDF_LUT_SAMPLES = 1024;
 
-	static std::array<glm::vec3, 8> UNIT_CUBE_VERTICES =
+	static constexpr std::array<Vertex, 4> UNIT_QUAD_VERTICES =
+	{
+		Vertex{ .pos = glm::vec3(-1.0f, -1.0f, 0.0f), .tex_coord = glm::vec2(0.0f, 0.0f), .normal = glm::vec3(0.0f, 0.0f, -1.0f), .tangent = glm::vec4(0.0f, -1.0f, 0.0f, -1.0f) },
+		Vertex{ .pos = glm::vec3(1.0f, -1.0f, 0.0f), .tex_coord = glm::vec2(1.0f, 0.0f), .normal = glm::vec3(0.0f, 0.0f, -1.0f), .tangent = glm::vec4(0.0f, -1.0f, 0.0f, -1.0f) },
+		Vertex{ .pos = glm::vec3(-1.0f, 1.0f, 0.0f), .tex_coord = glm::vec2(0.0f, 1.0f), .normal = glm::vec3(0.0f, 0.0f, -1.0f), .tangent = glm::vec4(0.0f, -1.0f, 0.0f, -1.0f) },
+		Vertex{ .pos = glm::vec3(1.0f, 1.0f, 0.0f), .tex_coord = glm::vec2(1.0f, 1.0f), .normal = glm::vec3(0.0f, 0.0f, -1.0f), .tangent = glm::vec4(0.0f, -1.0f, 0.0f, -1.0f) }
+	};
+
+	static constexpr std::array<uint16_t, 6> UNIT_QUAD_INDICES =
+	{
+		0, 1, 2, 3, 1, 2
+	};
+
+	static constexpr std::array<glm::vec3, 8> UNIT_CUBE_VERTICES =
 	{
 		glm::vec3(1.0, -1.0, -1.0),
 		glm::vec3(1.0, -1.0, 1.0),
@@ -86,7 +99,7 @@ namespace Renderer
 		glm::vec3(-1.0, 1.0, -1.0)
 	};
 
-	static std::array<uint16_t, 36> UNIT_CUBE_INDICES =
+	static constexpr std::array<uint16_t, 36> UNIT_CUBE_INDICES =
 	{
 		0, 1, 3, 3, 1, 2,
 		1, 5, 2, 2, 5, 6,
@@ -322,6 +335,7 @@ namespace Renderer
 		VulkanSampler prefiltered_cube_sampler;
 		VulkanSampler brdf_lut_sampler;
 
+		MeshHandle_t unit_quad_mesh_handle;
 		MeshHandle_t unit_cube_mesh_handle;
 
 		TextureHandle_t skybox_texture_handle;
@@ -500,18 +514,32 @@ namespace Renderer
 		data->ltc_ggx_fresnel_sphere_clipping_texture_handle = CreateTexture(texture_args);
 	}
 
-	static void CreateUnitCubeBuffers()
+	static void CreateDefaultMeshes()
 	{
+		// Create unit quad mesh
 		CreateMeshArgs mesh_args = {};
+		mesh_args.num_vertices = static_cast<uint32_t>(UNIT_QUAD_VERTICES.size());
+		mesh_args.vertex_stride = sizeof(UNIT_QUAD_VERTICES[0]);
+		uint32_t total_bytes_vertices = mesh_args.num_vertices * mesh_args.vertex_stride;
+		mesh_args.vertices_bytes = std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(UNIT_QUAD_VERTICES.data()), total_bytes_vertices);
+
+		mesh_args.num_indices = static_cast<uint32_t>(UNIT_QUAD_INDICES.size());
+		mesh_args.index_stride = sizeof(UNIT_QUAD_INDICES[0]);
+		uint32_t total_bytes_indices = mesh_args.num_indices * mesh_args.index_stride;
+		mesh_args.indices_bytes = std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(UNIT_QUAD_INDICES.data()), total_bytes_indices);
+
+		data->unit_quad_mesh_handle = CreateMesh(mesh_args);
+
+		// Create unit cube mesh
 		mesh_args.num_vertices = static_cast<uint32_t>(UNIT_CUBE_VERTICES.size());
 		mesh_args.vertex_stride = sizeof(UNIT_CUBE_VERTICES[0]);
-		uint32_t total_bytes_vertices = mesh_args.num_vertices * mesh_args.vertex_stride;
-		mesh_args.vertices_bytes = std::span<uint8_t>(reinterpret_cast<uint8_t*>(UNIT_CUBE_VERTICES.data()), total_bytes_vertices);
+		total_bytes_vertices = mesh_args.num_vertices * mesh_args.vertex_stride;
+		mesh_args.vertices_bytes = std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(UNIT_CUBE_VERTICES.data()), total_bytes_vertices);
 
 		mesh_args.num_indices = static_cast<uint32_t>(UNIT_CUBE_INDICES.size());
 		mesh_args.index_stride = sizeof(UNIT_CUBE_INDICES[0]);
-		uint32_t total_bytes_indices = mesh_args.num_indices * mesh_args.index_stride;
-		mesh_args.indices_bytes = std::span<uint8_t>(reinterpret_cast<uint8_t*>(UNIT_CUBE_INDICES.data()), total_bytes_indices);
+		total_bytes_indices = mesh_args.num_indices * mesh_args.index_stride;
+		mesh_args.indices_bytes = std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(UNIT_CUBE_INDICES.data()), total_bytes_indices);
 
 		mesh_args.name = "Unit Cube";
 
@@ -1337,7 +1365,7 @@ namespace Renderer
 			data->per_frame[frame_index].raytracing.tlas_descriptor = Vulkan::Descriptor::Allocate(VULKAN_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE, 1, frame_index);
 		}
 
-		CreateUnitCubeBuffers();
+		CreateDefaultMeshes();
 		CreateDefaultSamplers();
 		CreateDefaultTextures();
 		GenerateBRDF_LUT();
@@ -2128,6 +2156,21 @@ namespace Renderer
 		VK_ASSERT(data->num_area_lights < MAX_AREA_LIGHTS && "Exceeded the maximum amount of area lights");
 
 		// TODO: Vertices for area lights can be added from a ring buffer allocation to draw them in world as well
+		std::vector<Vertex> area_light_vertices(4);
+		std::vector<uint16_t> area_light_indices = { 0, 1, 2, 3, 1, 2 };
+		for (uint32_t i = 0; i < area_light_vertices.size(); ++i)
+		{
+			area_light_vertices[i].pos = verts[i];
+			//area_light_vertices[i].tex_coord = ;
+			//area_light_vertices[i].normal = ;
+			//area_light_vertices[i].tangent = ;
+		}
+
+		RingBuffer::Allocation area_light_vb = data->ring_buffer.Allocate(4 * sizeof(Vertex));
+		RingBuffer::Allocation area_light_ib = data->ring_buffer.Allocate(6 * sizeof(uint16_t));
+
+
+
 		GPUAreaLight gpu_area_light = {};
 		gpu_area_light.vert0 = verts[0];
 		gpu_area_light.color_red = color.r;
@@ -2143,8 +2186,6 @@ namespace Renderer
 		if (!area_light_texture)
 			area_light_texture = data->texture_slotmap.Find(data->default_white_texture_handle);
 		gpu_area_light.texture_index = area_light_texture->view_descriptor.descriptor_offset;
-
-
 
 		Frame* frame = GetFrameCurrent();
 		frame->ubos.light_ubo.WriteBuffer(4 * sizeof(uint32_t) + data->num_area_lights * sizeof(GPUAreaLight), sizeof(GPUAreaLight), &gpu_area_light);
