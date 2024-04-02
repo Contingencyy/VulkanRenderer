@@ -222,13 +222,18 @@ vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 			vec4 ltc1 = SampleTexture(ltc1_index, materials[push_consts.mat_index].sampler_index, uv);
 			vec4 ltc2 = SampleTexture(ltc2_index, materials[push_consts.mat_index].sampler_index, uv);
 
+			// TODO: This UV needs to be calculated somehow by intersecting the surface normal with the area light
+			vec3 area_light_color = SampleTexture(area_light.texture_index, materials[push_consts.mat_index].sampler_index, uv).rgb;
+			area_light_color = area_light_color * vec3(area_light.color_red, area_light.color_green, area_light.color_blue);
+			//vec4 area_light_texture = SampleTextureLod(area_light.texture_index, materials[push_consts.mat_index].sampler_index, uv, 0.0f);
+
 			mat3 Minv = mat3(
 				vec3(ltc1.x, 0.0f, ltc1.y),
 				vec3(0.0f,   1.0f, 0.0f),
 				vec3(ltc1.z, 0.0f, ltc1.w)
 			);
 
-			vec3 area_light_color = vec3(area_light.color_red, area_light.color_green, area_light.color_blue);
+			//vec3 area_light_color = vec3(area_light.color_red, area_light.color_green, area_light.color_blue);
 			vec3 area_light_verts[4] = { area_light.vert0, area_light.vert1, area_light.vert2, area_light.vert3 };
 
 			vec3 diffuse = AreaLightIrradiance(view, pixel, mat3(1), area_light_verts, area_light.two_sided);
@@ -236,7 +241,6 @@ vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 			specular *= pixel.f0 * ltc2.x + (1.0f - pixel.f0) * ltc2.y;
 
 			Lo += area_light_color * area_light.intensity * (specular + pixel.albedo * diffuse);
-			//Lo = area_light_color;
 		}
 	}
 

@@ -131,8 +131,8 @@ void Pointlight::RenderUI()
 	}
 }
 
-AreaLight::AreaLight(const glm::vec3 verts[4], const glm::vec3& color, float intensity, bool two_sided, const std::string& label)
-	: Entity(label), m_color(color), m_intensity(intensity), m_two_sided(two_sided)
+AreaLight::AreaLight(TextureHandle_t texture_handle, const glm::vec3 verts[4], const glm::vec3& color, float intensity, bool two_sided, const std::string& label)
+	: Entity(label), m_texture_handle(texture_handle), m_color(color), m_intensity(intensity), m_two_sided(two_sided)
 {
 	memcpy(m_vertices, verts, 4 * sizeof(glm::vec3));
 }
@@ -143,7 +143,7 @@ void AreaLight::Update(float dt)
 
 void AreaLight::Render()
 {
-	Renderer::SubmitAreaLight(m_vertices, m_color, m_intensity, m_two_sided);
+	Renderer::SubmitAreaLight(m_texture_handle, m_vertices, m_color, m_intensity, m_two_sided);
 }
 
 void AreaLight::RenderUI()

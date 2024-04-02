@@ -134,4 +134,5 @@ DECLARE_STRUCT(GPUAreaLight)
 	vec3 vert3;
 	float intensity;
 	bool two_sided;
+	uint texture_index;
 };

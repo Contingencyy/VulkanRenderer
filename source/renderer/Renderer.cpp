@@ -2127,7 +2127,7 @@ namespace Renderer
 		data->num_pointlights++;*/
 	}
 
-	void SubmitAreaLight(const glm::vec3 verts[4], const glm::vec3& color, float intensity, bool two_sided)
+	void SubmitAreaLight(TextureHandle_t texture_handle, const glm::vec3 verts[4], const glm::vec3& color, float intensity, bool two_sided)
 	{
 		VK_ASSERT(data->num_area_lights < MAX_AREA_LIGHTS && "Exceeded the maximum amount of area lights");
 
@@ -2142,6 +2142,11 @@ namespace Renderer
 		gpu_area_light.vert3 = verts[3];
 		gpu_area_light.intensity = intensity;
 		gpu_area_light.two_sided = two_sided;
+
+		Texture* area_light_texture = data->texture_slotmap.Find(texture_handle);
+		if (!area_light_texture)
+			area_light_texture = data->texture_slotmap.Find(data->default_white_texture_handle);
+		gpu_area_light.texture_index = area_light_texture->view_descriptor.descriptor_offset;
 
 		Frame* frame = GetFrameCurrent();
 		frame->ubos.light_ubo.WriteBuffer(4 * sizeof(uint32_t) + data->num_area_lights * sizeof(GPUAreaLight), sizeof(GPUAreaLight), &gpu_area_light);

@@ -60,6 +60,6 @@ namespace Renderer
 	void SubmitMesh(MeshHandle_t mesh_handle, const Assets::Material& material, const glm::mat4& transform);
 	
 	void SubmitPointlight(const glm::vec3& pos, const glm::vec3& color, float intensity);
-	void SubmitAreaLight(const glm::vec3 verts[4], const glm::vec3& color, float intensity, bool two_sided);
+	void SubmitAreaLight(TextureHandle_t texture_handle, const glm::vec3 verts[4], const glm::vec3& color, float intensity, bool two_sided);
 
 }
