@@ -140,7 +140,7 @@ namespace Application
 		Assets::LoadGLTF("assets/models/gltf/SponzaOld/Sponza.gltf", "sponza");
 		//Assets::LoadGLTF("assets/models/gltf/Sponza/NewSponza_Main_glTF_002.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/MetalRoughSpheres/MetalRoughSpheres.gltf", "model");
-		//Assets::LoadGLTF("assets/models/gltf/ABeautifulGame/ABeautifulGame.gltf", "chess");
+		Assets::LoadGLTF("assets/models/gltf/ABeautifulGame/ABeautifulGame.gltf", "chess");
 		//Assets::LoadGLTF("assets/models/gltf/Car_Destroyed/scene.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/Car_Old_Rusty/scene.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/Car_Porsche/scene.gltf", "model");
@@ -150,22 +150,23 @@ namespace Application
 		glm::mat4 transform = glm::scale(glm::identity<glm::mat4>(), glm::vec3(10.0f));
 		SpawnModelEntity("sponza", transform);
 		SpawnModelEntity("model", transform);
+		SpawnModelEntity("chess", transform);
 
 		glm::vec3 area_light_verts0[4] =
 		{
-			glm::vec3(0.0f, 20.0f,  10.0f),
-			glm::vec3(0.0f, 20.0f, -10.0f),
-			glm::vec3(0.0f, 0.0f,  -10.0f),
-			glm::vec3(0.0f, 0.0f,   10.0f),
+			glm::vec3(20.0f, 20.0f,  10.0f),
+			glm::vec3(20.0f, 20.0f, -10.0f),
+			glm::vec3(20.0f, 0.0f,  -10.0f),
+			glm::vec3(20.0f, 0.0f,   10.0f),
 		};
 		data.active_scene.AddEntity<AreaLight>(Assets::GetTexture("Kermit"), area_light_verts0, glm::vec3(1.0f, 0.95f, 0.8f), 5.0f, true, "AreaLight0");
 
 		glm::vec3 area_light_verts1[4] =
 		{
-			glm::vec3(50.0f, 20.0f,  10.0f),
-			glm::vec3(50.0f, 20.0f, -10.0f),
-			glm::vec3(50.0f, 0.0f,  -10.0f),
-			glm::vec3(50.0f, 0.0f,   10.0f),
+			glm::vec3(-20.0f, 20.0f,  10.0f),
+			glm::vec3(-20.0f, 20.0f, -10.0f),
+			glm::vec3(-20.0f, 0.0f,  -10.0f),
+			glm::vec3(-20.0f, 0.0f,   10.0f),
 		};
 		data.active_scene.AddEntity<AreaLight>(TextureHandle_t(), area_light_verts1, glm::vec3(1.0f, 0.95f, 0.8f), 5.0f, true, "AreaLight1");
 

@@ -75,9 +75,9 @@ private:
 		uint32_t index_stride = GetIndexStride(context);
 
 		if (index_stride == 4)
-			index = *reinterpret_cast<const int32_t*>(GetIndexPtr(context) + index_stride * offset);
+			index = *reinterpret_cast<const uint32_t*>(GetIndexPtr(context) + index_stride * offset);
 		else
-			index = *reinterpret_cast<const int16_t*>(GetIndexPtr(context) + index_stride * offset);
+			index = *reinterpret_cast<const uint16_t*>(GetIndexPtr(context) + index_stride * offset);
 
 		return index;
 	}
