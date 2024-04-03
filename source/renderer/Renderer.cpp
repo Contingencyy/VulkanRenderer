@@ -76,37 +76,64 @@ namespace Renderer
 
 	static constexpr std::array<Vertex, 4> UNIT_QUAD_VERTICES =
 	{
-		Vertex{ .pos = glm::vec3(-1.0f, -1.0f, 0.0f), .tex_coord = glm::vec2(0.0f, 0.0f), .normal = glm::vec3(0.0f, 0.0f, -1.0f), .tangent = glm::vec4(0.0f, -1.0f, 0.0f, -1.0f) },
-		Vertex{ .pos = glm::vec3(1.0f, -1.0f, 0.0f), .tex_coord = glm::vec2(1.0f, 0.0f), .normal = glm::vec3(0.0f, 0.0f, -1.0f), .tangent = glm::vec4(0.0f, -1.0f, 0.0f, -1.0f) },
-		Vertex{ .pos = glm::vec3(-1.0f, 1.0f, 0.0f), .tex_coord = glm::vec2(0.0f, 1.0f), .normal = glm::vec3(0.0f, 0.0f, -1.0f), .tangent = glm::vec4(0.0f, -1.0f, 0.0f, -1.0f) },
-		Vertex{ .pos = glm::vec3(1.0f, 1.0f, 0.0f), .tex_coord = glm::vec2(1.0f, 1.0f), .normal = glm::vec3(0.0f, 0.0f, -1.0f), .tangent = glm::vec4(0.0f, -1.0f, 0.0f, -1.0f) }
+		Vertex{.pos = glm::vec3(-1.0f, -1.0f, 0.0f), .tex_coord = glm::vec2(0.0f, 1.0f), .normal = glm::vec3(0.0f, 0.0f, 1.0f), .tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) },
+		Vertex{.pos = glm::vec3( 1.0f, -1.0f, 0.0f), .tex_coord = glm::vec2(1.0f, 1.0f), .normal = glm::vec3(0.0f, 0.0f, 1.0f), .tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) },
+		Vertex{.pos = glm::vec3(-1.0f,  1.0f, 0.0f), .tex_coord = glm::vec2(0.0f, 0.0f), .normal = glm::vec3(0.0f, 0.0f, 1.0f), .tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) },
+		Vertex{.pos = glm::vec3( 1.0f,  1.0f, 0.0f), .tex_coord = glm::vec2(1.0f, 0.0f), .normal = glm::vec3(0.0f, 0.0f, 1.0f), .tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) }
 	};
 
 	static constexpr std::array<uint16_t, 6> UNIT_QUAD_INDICES =
 	{
-		0, 1, 2, 3, 1, 2
+		0, 1, 2, 3, 2, 1
 	};
 
-	static constexpr std::array<glm::vec3, 8> UNIT_CUBE_VERTICES =
+	static constexpr std::array<Vertex, 24> UNIT_CUBE_VERTICES =
 	{
-		glm::vec3(1.0, -1.0, -1.0),
-		glm::vec3(1.0, -1.0, 1.0),
-		glm::vec3(-1.0, -1.0, 1.0),
-		glm::vec3(-1.0, -1.0, -1.0),
-		glm::vec3(1.0, 1.0, -1.0),
-		glm::vec3(1.0, 1.0, 1.0),
-		glm::vec3(-1.0, 1.0, 1.0),
-		glm::vec3(-1.0, 1.0, -1.0)
+		// FRONT
+		Vertex{.pos = glm::vec3(-1.0f, -1.0f, 1.0f), .tex_coord = glm::vec2(0.0f, 1.0f), .normal = glm::vec3(0.0f, 0.0f, 1.0f), .tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) },
+		Vertex{.pos = glm::vec3( 1.0f, -1.0f, 1.0f), .tex_coord = glm::vec2(1.0f, 1.0f), .normal = glm::vec3(0.0f, 0.0f, 1.0f), .tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) },
+		Vertex{.pos = glm::vec3(-1.0f,  1.0f, 1.0f), .tex_coord = glm::vec2(0.0f, 0.0f), .normal = glm::vec3(0.0f, 0.0f, 1.0f), .tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) },
+		Vertex{.pos = glm::vec3( 1.0f,  1.0f, 1.0f), .tex_coord = glm::vec2(1.0f, 0.0f), .normal = glm::vec3(0.0f, 0.0f, 1.0f), .tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) },
+
+		// BACK
+		Vertex{.pos = glm::vec3(-1.0f, -1.0f, -1.0f), .tex_coord = glm::vec2(0.0f, 1.0f), .normal = glm::vec3(0.0f, 0.0f, -1.0f), .tangent = glm::vec4(-1.0f, 0.0f, 0.0f, -1.0f) },
+		Vertex{.pos = glm::vec3( 1.0f, -1.0f, -1.0f), .tex_coord = glm::vec2(1.0f, 1.0f), .normal = glm::vec3(0.0f, 0.0f, -1.0f), .tangent = glm::vec4(-1.0f, 0.0f, 0.0f, -1.0f) },
+		Vertex{.pos = glm::vec3(-1.0f,  1.0f, -1.0f), .tex_coord = glm::vec2(0.0f, 0.0f), .normal = glm::vec3(0.0f, 0.0f, -1.0f), .tangent = glm::vec4(-1.0f, 0.0f, 0.0f, -1.0f) },
+		Vertex{.pos = glm::vec3( 1.0f,  1.0f, -1.0f), .tex_coord = glm::vec2(1.0f, 0.0f), .normal = glm::vec3(0.0f, 0.0f, -1.0f), .tangent = glm::vec4(-1.0f, 0.0f, 0.0f, -1.0f) },
+
+		// LEFT
+		Vertex{.pos = glm::vec3(-1.0f, -1.0f, -1.0f), .tex_coord = glm::vec2(0.0f, 1.0f), .normal = glm::vec3(-1.0f, 0.0f, 0.0f), .tangent = glm::vec4(0.0f, -1.0f, 0.0f, -1.0f) },
+		Vertex{.pos = glm::vec3(-1.0f, -1.0f,  1.0f), .tex_coord = glm::vec2(1.0f, 1.0f), .normal = glm::vec3(-1.0f, 0.0f, 0.0f), .tangent = glm::vec4(0.0f, -1.0f, 0.0f, -1.0f) },
+		Vertex{.pos = glm::vec3(-1.0f,  1.0f, -1.0f), .tex_coord = glm::vec2(0.0f, 0.0f), .normal = glm::vec3(-1.0f, 0.0f, 0.0f), .tangent = glm::vec4(0.0f, -1.0f, 0.0f, -1.0f) },
+		Vertex{.pos = glm::vec3(-1.0f,  1.0f,  1.0f), .tex_coord = glm::vec2(1.0f, 0.0f), .normal = glm::vec3(-1.0f, 0.0f, 0.0f), .tangent = glm::vec4(0.0f, -1.0f, 0.0f, -1.0f) },
+
+		// RIGHT
+		Vertex{.pos = glm::vec3(1.0f, -1.0f, -1.0f), .tex_coord = glm::vec2(0.0f, 1.0f), .normal = glm::vec3(1.0f, 0.0f, 0.0f), .tangent = glm::vec4(0.0f, 1.0f, 0.0f, 1.0f) },
+		Vertex{.pos = glm::vec3(1.0f, -1.0f,  1.0f), .tex_coord = glm::vec2(1.0f, 1.0f), .normal = glm::vec3(1.0f, 0.0f, 0.0f), .tangent = glm::vec4(0.0f, 1.0f, 0.0f, 1.0f) },
+		Vertex{.pos = glm::vec3(1.0f,  1.0f, -1.0f), .tex_coord = glm::vec2(0.0f, 0.0f), .normal = glm::vec3(1.0f, 0.0f, 0.0f), .tangent = glm::vec4(0.0f, 1.0f, 0.0f, 1.0f) },
+		Vertex{.pos = glm::vec3(1.0f,  1.0f,  1.0f), .tex_coord = glm::vec2(1.0f, 0.0f), .normal = glm::vec3(1.0f, 0.0f, 0.0f), .tangent = glm::vec4(0.0f, 1.0f, 0.0f, 1.0f) },
+
+		// TOP
+		Vertex{.pos = glm::vec3(-1.0f, 1.0f, -1.0f), .tex_coord = glm::vec2(0.0f, 1.0f), .normal = glm::vec3(0.0f, 1.0f, 0.0f), .tangent = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f) },
+		Vertex{.pos = glm::vec3(-1.0f, 1.0f,  1.0f), .tex_coord = glm::vec2(1.0f, 1.0f), .normal = glm::vec3(0.0f, 1.0f, 0.0f), .tangent = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f) },
+		Vertex{.pos = glm::vec3( 1.0f, 1.0f, -1.0f), .tex_coord = glm::vec2(0.0f, 0.0f), .normal = glm::vec3(0.0f, 1.0f, 0.0f), .tangent = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f) },
+		Vertex{.pos = glm::vec3( 1.0f, 1.0f,  1.0f), .tex_coord = glm::vec2(1.0f, 0.0f), .normal = glm::vec3(0.0f, 1.0f, 0.0f), .tangent = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f) },
+
+		// BOTTOM
+		Vertex{.pos = glm::vec3(-1.0f, -1.0f, -1.0f), .tex_coord = glm::vec2(0.0f, 1.0f), .normal = glm::vec3(0.0f, -1.0f, 0.0f), .tangent = glm::vec4(0.0f, 0.0f, -1.0f, 1.0f) },
+		Vertex{.pos = glm::vec3(-1.0f, -1.0f,  1.0f), .tex_coord = glm::vec2(1.0f, 1.0f), .normal = glm::vec3(0.0f, -1.0f, 0.0f), .tangent = glm::vec4(0.0f, 0.0f, -1.0f, 1.0f) },
+		Vertex{.pos = glm::vec3( 1.0f, -1.0f, -1.0f), .tex_coord = glm::vec2(0.0f, 0.0f), .normal = glm::vec3(0.0f, -1.0f, 0.0f), .tangent = glm::vec4(0.0f, 0.0f, -1.0f, 1.0f) },
+		Vertex{.pos = glm::vec3( 1.0f, -1.0f,  1.0f), .tex_coord = glm::vec2(1.0f, 0.0f), .normal = glm::vec3(0.0f, -1.0f, 0.0f), .tangent = glm::vec4(0.0f, 0.0f, -1.0f, 1.0f) },
 	};
 
 	static constexpr std::array<uint16_t, 36> UNIT_CUBE_INDICES =
 	{
-		0, 1, 3, 3, 1, 2,
-		1, 5, 2, 2, 5, 6,
-		5, 4, 6, 6, 4, 7,
-		4, 0, 7, 7, 0, 3,
-		3, 2, 7, 7, 2, 6,
-		4, 5, 0, 0, 5, 1
+		0, 1, 2, 3, 2, 1,
+		4, 6, 5, 7, 5, 6,
+		8, 9, 10, 11, 10, 9,
+		12, 14, 13, 15, 13, 14,
+		16, 17, 18, 19, 18, 17,
+		20, 22, 21, 23, 21, 22
 	};
 
 	static const std::array<glm::mat4, 6> CUBE_FACING_VIEW_MATRICES =
@@ -338,6 +365,8 @@ namespace Renderer
 		MeshHandle_t unit_quad_mesh_handle;
 		MeshHandle_t unit_cube_mesh_handle;
 
+		GPUMaterial default_gpu_material;
+
 		TextureHandle_t skybox_texture_handle;
 		RenderSettings settings;
 
@@ -546,6 +575,26 @@ namespace Renderer
 		data->unit_cube_mesh_handle = CreateMesh(mesh_args);
 	}
 
+	static void CreateDefaultMaterial()
+	{
+		data->default_gpu_material.albedo_factor = glm::vec4(1.0f);
+		data->default_gpu_material.albedo_texture_index = data->texture_slotmap.Find(data->default_white_texture_handle)->view_descriptor.descriptor_offset;
+		data->default_gpu_material.normal_texture_index = data->texture_slotmap.Find(data->default_normal_texture_handle)->view_descriptor.descriptor_offset;
+		data->default_gpu_material.metallic_factor = 1.0f;
+		data->default_gpu_material.roughness_factor = 1.0f;
+		data->default_gpu_material.metallic_roughness_texture_index = data->texture_slotmap.Find(data->default_white_texture_handle)->view_descriptor.descriptor_offset;
+
+		data->default_gpu_material.has_clearcoat = false;
+		data->default_gpu_material.clearcoat_alpha_factor = 1.0f;
+		data->default_gpu_material.clearcoat_alpha_texture_index = data->texture_slotmap.Find(data->default_white_texture_handle)->view_descriptor.descriptor_offset;
+		data->default_gpu_material.clearcoat_normal_texture_index = data->texture_slotmap.Find(data->default_normal_texture_handle)->view_descriptor.descriptor_offset;
+		data->default_gpu_material.clearcoat_roughness_factor = 1.0f;
+		data->default_gpu_material.clearcoat_roughness_texture_index = data->texture_slotmap.Find(data->default_white_texture_handle)->view_descriptor.descriptor_offset;
+
+		data->default_gpu_material.sampler_index = data->default_sampler.descriptor.descriptor_offset;
+		data->default_gpu_material.blackbody_radiator = false;
+	}
+
 	static void CreateRenderTargets()
 	{
 		// Create HDR render target
@@ -646,16 +695,17 @@ namespace Renderer
 		std::vector<VkVertexInputBindingDescription> geo_input_bindings = GetVertexBindingDescription();
 		std::vector<VkVertexInputAttributeDescription> geo_input_attributes = GetVertexAttributeDescription();
 
-		std::vector<VkVertexInputBindingDescription> cube_input_bindings(1);
-		cube_input_bindings[0].binding = 0;
-		cube_input_bindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-		cube_input_bindings[0].stride = sizeof(glm::vec3);
-
-		std::vector<VkVertexInputAttributeDescription> cube_input_attributes(1);
-		cube_input_attributes[0].binding = 0;
-		cube_input_attributes[0].location = 0;
-		cube_input_attributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-		cube_input_attributes[0].offset = 0;
+		std::vector<VkVertexInputBindingDescription> unit_cube_input_bindings =
+		{
+			{ .binding = 0, .stride = sizeof(Vertex), .inputRate = VK_VERTEX_INPUT_RATE_VERTEX }
+		};
+		std::vector<VkVertexInputAttributeDescription> unit_cube_input_attributes =
+		{
+			{ .location = 0, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = offsetof(Vertex, pos) },
+			{ .location = 1, .binding = 0, .format = VK_FORMAT_R32G32_SFLOAT, .offset = offsetof(Vertex, tex_coord) },
+			{ .location = 2, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = offsetof(Vertex, normal) },
+			{ .location = 3, .binding = 0, .format = VK_FORMAT_R32G32B32A32_SFLOAT, .offset = offsetof(Vertex, tangent) },
+		};
 
 		// Skybox pass
 		{
@@ -663,8 +713,8 @@ namespace Renderer
 
 			// Skybox rendering stage
 			Vulkan::GraphicsPipelineInfo pipeline_info = {};
-			pipeline_info.input_bindings = cube_input_bindings;
-			pipeline_info.input_attributes = cube_input_attributes;
+			pipeline_info.input_bindings = unit_cube_input_bindings;
+			pipeline_info.input_attributes = unit_cube_input_attributes;
 			pipeline_info.color_attachment_formats = { TEXTURE_FORMAT_RGBA16_SFLOAT };
 			pipeline_info.depth_stencil_attachment_format = {};
 			pipeline_info.depth_test = false;
@@ -795,8 +845,8 @@ namespace Renderer
 			// Generate HDR cubemap stage
 			{
 				Vulkan::GraphicsPipelineInfo pipeline_info = {};
-				pipeline_info.input_bindings = cube_input_bindings;
-				pipeline_info.input_attributes = cube_input_attributes;
+				pipeline_info.input_bindings = unit_cube_input_bindings;
+				pipeline_info.input_attributes = unit_cube_input_attributes;
 				pipeline_info.color_attachment_formats = { TEXTURE_FORMAT_RGBA16_SFLOAT };
 				pipeline_info.vs_path = "assets/shaders/Cube.vert";
 				pipeline_info.fs_path = "assets/shaders/EquirectangularToCube.frag";
@@ -823,8 +873,8 @@ namespace Renderer
 			// Generate irradiance cubemap stage
 			{
 				Vulkan::GraphicsPipelineInfo pipeline_info = {};
-				pipeline_info.input_bindings = cube_input_bindings;
-				pipeline_info.input_attributes = cube_input_attributes;
+				pipeline_info.input_bindings = unit_cube_input_bindings;
+				pipeline_info.input_attributes = unit_cube_input_attributes;
 				pipeline_info.color_attachment_formats = { TEXTURE_FORMAT_RGBA16_SFLOAT };
 				pipeline_info.vs_path = "assets/shaders/Cube.vert";
 				pipeline_info.fs_path = "assets/shaders/IrradianceCube.frag";
@@ -851,8 +901,8 @@ namespace Renderer
 			// Generate prefiltered cubemap stage
 			{
 				Vulkan::GraphicsPipelineInfo pipeline_info = {};
-				pipeline_info.input_bindings = cube_input_bindings;
-				pipeline_info.input_attributes = cube_input_attributes;
+				pipeline_info.input_bindings = unit_cube_input_bindings;
+				pipeline_info.input_attributes = unit_cube_input_attributes;
 				pipeline_info.color_attachment_formats = { TEXTURE_FORMAT_RGBA16_SFLOAT };
 				pipeline_info.vs_path = "assets/shaders/Cube.vert";
 				pipeline_info.fs_path = "assets/shaders/PrefilteredEnvCube.frag";
@@ -1368,6 +1418,7 @@ namespace Renderer
 		CreateDefaultMeshes();
 		CreateDefaultSamplers();
 		CreateDefaultTextures();
+		CreateDefaultMaterial();
 		GenerateBRDF_LUT();
 
 		// Set default render settings
@@ -2090,19 +2141,16 @@ namespace Renderer
 
 		// Write material data to the material UBO
 		Texture* albedo_texture = data->texture_slotmap.Find(material.albedo_texture_handle);
-		if (!albedo_texture)
-			albedo_texture = data->texture_slotmap.Find(data->default_white_texture_handle);
-		entry.gpu_material.albedo_texture_index = albedo_texture->view_descriptor.descriptor_offset;
+		if (albedo_texture)
+			entry.gpu_material.albedo_texture_index = albedo_texture->view_descriptor.descriptor_offset;
 
 		Texture* normal_texture = data->texture_slotmap.Find(material.normal_texture_handle);
-		if (!normal_texture)
-			normal_texture = data->texture_slotmap.Find(data->default_normal_texture_handle);
-		entry.gpu_material.normal_texture_index = normal_texture->view_descriptor.descriptor_offset;
+		if (normal_texture)
+			entry.gpu_material.normal_texture_index = normal_texture->view_descriptor.descriptor_offset;
 
 		Texture* metallic_roughness_texture = data->texture_slotmap.Find(material.metallic_roughness_texture_handle);
-		if (!metallic_roughness_texture)
-			metallic_roughness_texture = data->texture_slotmap.Find(data->default_white_texture_handle);
-		entry.gpu_material.metallic_roughness_texture_index = metallic_roughness_texture->view_descriptor.descriptor_offset;
+		if (metallic_roughness_texture)
+			entry.gpu_material.metallic_roughness_texture_index = metallic_roughness_texture->view_descriptor.descriptor_offset;
 
 		entry.gpu_material.albedo_factor = material.albedo_factor;
 		entry.gpu_material.metallic_factor = material.metallic_factor;
@@ -2111,19 +2159,16 @@ namespace Renderer
 		entry.gpu_material.has_clearcoat = material.has_clearcoat ? 1 : 0;
 
 		Texture* clearcoat_alpha_texture = data->texture_slotmap.Find(material.clearcoat_alpha_texture_handle);
-		if (!clearcoat_alpha_texture)
-			clearcoat_alpha_texture = data->texture_slotmap.Find(data->default_white_texture_handle);
-		entry.gpu_material.clearcoat_alpha_texture_index = clearcoat_alpha_texture->view_descriptor.descriptor_offset;
+		if (clearcoat_alpha_texture)
+			entry.gpu_material.clearcoat_alpha_texture_index = clearcoat_alpha_texture->view_descriptor.descriptor_offset;
 
 		Texture* clearcoat_normal_texture = data->texture_slotmap.Find(material.clearcoat_normal_texture_handle);
-		if (!clearcoat_normal_texture)
-			clearcoat_normal_texture = data->texture_slotmap.Find(data->default_normal_texture_handle);
-		entry.gpu_material.clearcoat_normal_texture_index = clearcoat_normal_texture->view_descriptor.descriptor_offset;
+		if (clearcoat_normal_texture)
+			entry.gpu_material.clearcoat_normal_texture_index = clearcoat_normal_texture->view_descriptor.descriptor_offset;
 
 		Texture* clearcoat_roughness_texture = data->texture_slotmap.Find(material.clearcoat_roughness_texture_handle);
-		if (!clearcoat_roughness_texture)
-			clearcoat_roughness_texture = data->texture_slotmap.Find(data->default_white_texture_handle);
-		entry.gpu_material.clearcoat_roughness_texture_index = clearcoat_roughness_texture->view_descriptor.descriptor_offset;
+		if (clearcoat_roughness_texture)
+			entry.gpu_material.clearcoat_roughness_texture_index = clearcoat_roughness_texture->view_descriptor.descriptor_offset;
 
 		entry.gpu_material.clearcoat_alpha_factor = material.clearcoat_alpha_factor;
 		entry.gpu_material.clearcoat_roughness_factor = material.clearcoat_roughness_factor;
@@ -2151,45 +2196,44 @@ namespace Renderer
 		data->num_pointlights++;*/
 	}
 
-	void SubmitAreaLight(TextureHandle_t texture_handle, const glm::vec3 verts[4], const glm::vec3& color, float intensity, bool two_sided)
+	void SubmitAreaLight(TextureHandle_t texture_handle, const glm::mat4& transform, const glm::vec3& color, float intensity, bool two_sided)
 	{
 		VK_ASSERT(data->num_area_lights < MAX_AREA_LIGHTS && "Exceeded the maximum amount of area lights");
+		Frame* frame = GetFrameCurrent();
 
-		// TODO: Vertices for area lights can be added from a ring buffer allocation to draw them in world as well
-		std::vector<Vertex> area_light_vertices(4);
-		std::vector<uint16_t> area_light_indices = { 0, 1, 2, 3, 1, 2 };
-		for (uint32_t i = 0; i < area_light_vertices.size(); ++i)
-		{
-			area_light_vertices[i].pos = verts[i];
-			//area_light_vertices[i].tex_coord = ;
-			//area_light_vertices[i].normal = ;
-			//area_light_vertices[i].tangent = ;
-		}
+		// Add area light to be drawn as a mesh
+		DrawList::Entry& entry = data->draw_list.GetNextEntry();
+		entry.mesh = data->mesh_slotmap.Find(data->unit_quad_mesh_handle);
 
-		RingBuffer::Allocation area_light_vb = data->ring_buffer.Allocate(4 * sizeof(Vertex));
-		RingBuffer::Allocation area_light_ib = data->ring_buffer.Allocate(6 * sizeof(uint16_t));
+		entry.transform = transform;
+		frame->instance_buffer.WriteBuffer(sizeof(glm::mat4) * entry.index, sizeof(glm::mat4), &entry.transform);
 
+		entry.gpu_material = data->default_gpu_material;
+		entry.gpu_material.albedo_factor = glm::vec4(color * intensity, 1.0f);
+		entry.gpu_material.blackbody_radiator = true;
+		Texture* albedo_texture = data->texture_slotmap.Find(texture_handle);
+		if (albedo_texture)
+			entry.gpu_material.albedo_texture_index = albedo_texture->view_descriptor.descriptor_offset;
+		
+		// Write material data to the material ubo for the currently active frame
+		frame->ubos.material_ubo.WriteBuffer(sizeof(GPUMaterial) * entry.index, sizeof(GPUMaterial), &entry.gpu_material);
 
-
+		// Add GPU data representation for the area light to the light UBO
 		GPUAreaLight gpu_area_light = {};
-		gpu_area_light.vert0 = verts[0];
+		gpu_area_light.vert0 = glm::vec3(transform * glm::vec4(UNIT_QUAD_VERTICES[0].pos, 1.0f));
 		gpu_area_light.color_red = color.r;
-		gpu_area_light.vert1 = verts[1];
+		gpu_area_light.vert1 = glm::vec3(transform * glm::vec4(UNIT_QUAD_VERTICES[1].pos, 1.0f));
 		gpu_area_light.color_green = color.g;
-		gpu_area_light.vert2 = verts[2];
+		gpu_area_light.vert2 = glm::vec3(transform * glm::vec4(UNIT_QUAD_VERTICES[2].pos, 1.0f));
 		gpu_area_light.color_blue = color.b;
-		gpu_area_light.vert3 = verts[3];
+		gpu_area_light.vert3 = glm::vec3(transform * glm::vec4(UNIT_QUAD_VERTICES[3].pos, 1.0f));
 		gpu_area_light.intensity = intensity;
 		gpu_area_light.two_sided = two_sided;
 
-		Texture* area_light_texture = data->texture_slotmap.Find(texture_handle);
-		if (!area_light_texture)
-			area_light_texture = data->texture_slotmap.Find(data->default_white_texture_handle);
-		gpu_area_light.texture_index = area_light_texture->view_descriptor.descriptor_offset;
+		if (albedo_texture)
+			gpu_area_light.texture_index = albedo_texture->view_descriptor.descriptor_offset;
 
-		Frame* frame = GetFrameCurrent();
 		frame->ubos.light_ubo.WriteBuffer(4 * sizeof(uint32_t) + data->num_area_lights * sizeof(GPUAreaLight), sizeof(GPUAreaLight), &gpu_area_light);
-
 		data->num_area_lights++;
 	}
 

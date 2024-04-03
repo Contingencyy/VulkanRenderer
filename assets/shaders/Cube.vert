@@ -14,6 +14,9 @@ layout(std140, push_constant) uniform constants
 } push_constants;
 
 layout(location = 0) in vec3 position;
+layout(location = 1) in vec2 tex_coord;
+layout(location = 2) in vec3 normal;
+layout(location = 3) in vec4 tangent;
 
 layout(location = 0) out vec3 local_position;
 

@@ -121,6 +121,8 @@ DECLARE_STRUCT(GPUMaterial)
 
 	float clearcoat_alpha_factor;
 	float clearcoat_roughness_factor;
+
+	uint blackbody_radiator;
 };
 
 DECLARE_STRUCT(GPUAreaLight)

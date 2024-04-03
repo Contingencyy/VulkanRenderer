@@ -398,7 +398,15 @@ void main()
 	pixel.f0 = mix(vec3(0.04), pixel.albedo, pixel.metallic);
 
 	// Write final color
-	vec3 color = ShadePixel(view, pixel);
+	vec3 color = vec3(0.0f);
+	if (material.blackbody_radiator == 1)
+	{
+		color = material.albedo_factor.xyz * pixel.albedo;
+	}
+	else
+	{
+		color = ShadePixel(view, pixel);
+	}
 
 	// Debug render modes
 	switch (settings.debug_render_mode)

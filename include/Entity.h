@@ -56,7 +56,7 @@ private:
 class AreaLight : public Entity
 {
 public:
-	AreaLight(TextureHandle_t texture_handle, const glm::vec3 verts[4], const glm::vec3& color, float intensity, bool two_sided, const std::string& label);
+	AreaLight(TextureHandle_t texture_handle, const glm::mat4& transform, const glm::vec3& color, float intensity, bool two_sided, const std::string& label);
 
 	virtual void Update(float dt) override;
 	virtual void Render() override;
@@ -64,7 +64,12 @@ public:
 
 private:
 	TextureHandle_t m_texture_handle = {};
-	glm::vec3 m_vertices[4];
+
+	glm::mat4 m_transform = glm::identity<glm::mat4>();
+	glm::vec3 m_translation = glm::vec3(0.0f);
+	glm::vec3 m_rotation = glm::vec3(0.0f);
+	glm::vec3 m_scale = glm::vec3(1.0f);
+
 	glm::vec3 m_color = glm::vec3(0.0);
 	float m_intensity = 1.0f;
 	bool m_two_sided = false;

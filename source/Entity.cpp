@@ -131,10 +131,16 @@ void Pointlight::RenderUI()
 	}
 }
 
-AreaLight::AreaLight(TextureHandle_t texture_handle, const glm::vec3 verts[4], const glm::vec3& color, float intensity, bool two_sided, const std::string& label)
-	: Entity(label), m_texture_handle(texture_handle), m_color(color), m_intensity(intensity), m_two_sided(two_sided)
+AreaLight::AreaLight(TextureHandle_t texture_handle, const glm::mat4& transform, const glm::vec3& color, float intensity, bool two_sided, const std::string& label)
+	: Entity(label), m_texture_handle(texture_handle), m_transform(transform), m_color(color), m_intensity(intensity), m_two_sided(two_sided)
 {
-	memcpy(m_vertices, verts, 4 * sizeof(glm::vec3));
+	glm::vec3 skew(0.0f);
+	glm::vec4 perspective(0.0f);
+	glm::quat orientation = {};
+	glm::decompose(m_transform, m_scale, orientation, m_translation, skew, perspective);
+
+	m_rotation = glm::eulerAngles(orientation);
+	m_rotation = glm::degrees(m_rotation);
 }
 
 void AreaLight::Update(float dt)
@@ -143,7 +149,7 @@ void AreaLight::Update(float dt)
 
 void AreaLight::Render()
 {
-	Renderer::SubmitAreaLight(m_texture_handle, m_vertices, m_color, m_intensity, m_two_sided);
+	Renderer::SubmitAreaLight(m_texture_handle, m_transform, m_color, m_intensity, m_two_sided);
 }
 
 void AreaLight::RenderUI()
@@ -153,14 +159,39 @@ void AreaLight::RenderUI()
 		ImGui::PushID(m_label.c_str());
 		ImGui::Indent(10.0f);
 
-		ImGui::DragFloat3("Vertex 0", &m_vertices[0].x, 0.01f, -FLT_MAX, FLT_MAX, "%.2f");
-		ImGui::DragFloat3("Vertex 1", &m_vertices[1].x, 0.01f, -FLT_MAX, FLT_MAX, "%.2f");
-		ImGui::DragFloat3("Vertex 2", &m_vertices[2].x, 0.01f, -FLT_MAX, FLT_MAX, "%.2f");
-		ImGui::DragFloat3("Vertex 3", &m_vertices[3].x, 0.01f, -FLT_MAX, FLT_MAX, "%.2f");
-
 		ImGui::ColorEdit3("Color", &m_color[0], ImGuiColorEditFlags_DisplayRGB);
 		ImGui::DragFloat("Intensity", &m_intensity, 0.01f, 0.0f, 10000.0f, "%.2f");
 		ImGui::Checkbox("Two-sided", &m_two_sided);
+
+		if (ImGui::CollapsingHeader("Transform"))
+		{
+			ImGui::Indent(10.0f);
+
+			bool transform_changed = false;
+			if (ImGui::DragFloat3("Translation", &m_translation[0], 0.01f, -FLT_MAX, FLT_MAX, "%.2f"))
+			{
+				transform_changed = true;
+			}
+			if (ImGui::DragFloat3("Rotation", &m_rotation[0], 0.01f, -360.0f, 360.0f, "%.2f"))
+			{
+				transform_changed = true;
+			}
+			if (ImGui::DragFloat3("Scale", &m_scale[0], 0.01f, 0.001f, 10000.0f, "%.2f"))
+			{
+				transform_changed = true;
+			}
+
+			if (transform_changed)
+			{
+				m_transform = glm::translate(glm::identity<glm::mat4>(), m_translation);
+				m_transform = glm::rotate(m_transform, glm::radians(m_rotation.x), glm::vec3(1.0f, 0.0f, 0.0f));
+				m_transform = glm::rotate(m_transform, glm::radians(m_rotation.y), glm::vec3(0.0f, 1.0f, 0.0f));
+				m_transform = glm::rotate(m_transform, glm::radians(m_rotation.z), glm::vec3(0.0f, 0.0f, 1.0f));
+				m_transform = glm::scale(m_transform, m_scale);
+			}
+
+			ImGui::Unindent(10.0f);
+		}
 
 		ImGui::Unindent(10.0f);
 		ImGui::PopID();
