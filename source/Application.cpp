@@ -135,11 +135,11 @@ namespace Application
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatToyCar/ToyCar.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatTest/ClearCoatTest.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatRing/ClearCoatRing.gltf", "model");
-		Assets::LoadGLTF("assets/models/gltf/ClearCoatSphere/ClearCoatSphere.gltf", "model");
+		//Assets::LoadGLTF("assets/models/gltf/ClearCoatSphere/ClearCoatSphere.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/ClearCoatCarPaint/ClearCoatCarPaint.gltf", "model");
-		Assets::LoadGLTF("assets/models/gltf/SponzaOld/Sponza.gltf", "sponza");
+		//Assets::LoadGLTF("assets/models/gltf/SponzaOld/Sponza.gltf", "sponza");
 		//Assets::LoadGLTF("assets/models/gltf/Sponza/NewSponza_Main_glTF_002.gltf", "model");
-		//Assets::LoadGLTF("assets/models/gltf/MetalRoughSpheres/MetalRoughSpheres.gltf", "model");
+		Assets::LoadGLTF("assets/models/gltf/MetalRoughSpheres/MetalRoughSpheres.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/ABeautifulGame/ABeautifulGame.gltf", "chess");
 		//Assets::LoadGLTF("assets/models/gltf/Car_Destroyed/scene.gltf", "model");
 		//Assets::LoadGLTF("assets/models/gltf/Car_Old_Rusty/scene.gltf", "model");
@@ -148,7 +148,7 @@ namespace Application
 		//Assets::LoadGLTF("assets/models/gltf/Skull_Salazar/scene.gltf", "model");
 
 		glm::mat4 transform = glm::scale(glm::identity<glm::mat4>(), glm::vec3(10.0f));
-		SpawnModelEntity("sponza", transform);
+		//SpawnModelEntity("sponza", transform);
 		SpawnModelEntity("model", transform);
 
 		glm::mat4 area_light_transform = glm::translate(glm::identity<glm::mat4>(), glm::vec3(25.0f, 10.0f, -3.0f));

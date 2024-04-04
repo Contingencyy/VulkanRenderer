@@ -22,7 +22,6 @@ layout(location = 3) in vec3 frag_tangent;
 layout(location = 4) in vec3 frag_bitangent;
 
 layout(location = 0) out vec4 out_color;
-layout(location = 1) out vec4 debug_color;
 
 const vec3 falloff = vec3(1.0f, 0.007f, 0.0002f);
 
@@ -151,6 +150,8 @@ vec3 AreaLightIrradiance(ViewInfo view, PixelInfo pixel, mat3 Minv, vec3 area_li
 vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 {
 	vec3 Lo = vec3(0.0);
+	
+	float NoV = clamp(dot(pixel.normal, view.dir), 0.0f, 1.0f);
 
 	// Direct lighting
 	if (settings.use_direct_light == 1)
@@ -212,7 +213,6 @@ vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 		// -------------------------- Direct illumination from area lights ----------------------------------
 		// --------------------------------------------------------------------------------------------------
 
-		float NoV = clamp(dot(pixel.normal, view.dir), 0.0f, 1.0f);
 		vec2 uv = vec2(pixel.roughness, sqrt(1.0 - NoV));
 		uv = uv * LUT_SCALE + LUT_BIAS;
 
@@ -251,7 +251,7 @@ vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 	{
 		vec3 R = reflect(-view.dir, pixel.normal);
 
-		vec2 env_brdf = SampleTexture(push_consts.brdf_lut_index, push_consts.brdf_lut_sampler_index, vec2(max(dot(pixel.normal, view.dir), 0.0), pixel.roughness)).rg;
+		vec2 env_brdf = SampleTexture(push_consts.brdf_lut_index, push_consts.brdf_lut_sampler_index, vec2(NoV, pixel.roughness)).rg;
 		vec3 reflection = SampleTextureCubeLod(push_consts.prefiltered_cubemap_index, push_consts.prefiltered_sampler_index, R, pixel.roughness * push_consts.num_prefiltered_mips).rgb;
 		vec3 irradiance = SampleTextureCube(push_consts.irradiance_cubemap_index, push_consts.irradiance_sampler_index, pixel.normal).rgb;
 

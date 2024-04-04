@@ -26,9 +26,9 @@ namespace Vulkan
 				vk_view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 
 			vk_view_info.subresourceRange.baseMipLevel = texture_view_info.base_mip;
-			vk_view_info.subresourceRange.levelCount = texture_view_info.num_mips;
+			vk_view_info.subresourceRange.levelCount = texture_view_info.num_mips == UINT32_MAX ? image.num_mips : texture_view_info.num_mips;
 			vk_view_info.subresourceRange.baseArrayLayer = texture_view_info.base_layer;
-			vk_view_info.subresourceRange.layerCount = texture_view_info.num_layers;
+			vk_view_info.subresourceRange.layerCount = texture_view_info.num_layers == UINT32_MAX ? image.num_layers : texture_view_info.num_layers;
 			vk_view_info.flags = 0;
 
 			VkImageView vk_image_view = VK_NULL_HANDLE;

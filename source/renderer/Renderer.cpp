@@ -721,7 +721,7 @@ namespace Renderer
 			skybox_stage_color0.info.expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 			skybox_stage_color0.info.load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
 			skybox_stage_color0.info.store_op = VK_ATTACHMENT_STORE_OP_STORE;
-			skybox_stage_color0.info.clear_value.color = { 0.0f, 0.0f, 0.0f, 0.0f };
+			skybox_stage_color0.info.clear_value.color = { 0.0f, 0.0f, 0.0f, 1.0f };
 
 			data->render_passes.skybox = std::make_unique<RenderPass>(stages);
 		}
@@ -817,7 +817,7 @@ namespace Renderer
 			tonemap_stage_readwrite0.info.expected_layout = VK_IMAGE_LAYOUT_GENERAL;
 			tonemap_stage_readwrite0.info.load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
 			tonemap_stage_readwrite0.info.store_op = VK_ATTACHMENT_STORE_OP_STORE;
-			tonemap_stage_readwrite0.info.clear_value.color = { 0.0f, 0.0f, 0.0f, 0.0f };
+			tonemap_stage_readwrite0.info.clear_value.color = { 0.0f, 0.0f, 0.0f, 1.0f };
 
 			data->render_passes.post_process = std::make_unique<RenderPass>(stages);
 		}
@@ -922,7 +922,6 @@ namespace Renderer
 			pipeline_info.color_attachment_formats = { TEXTURE_FORMAT_RG16_SFLOAT };
 			pipeline_info.vs_path = "assets/shaders/BRDF_LUT.vert";
 			pipeline_info.fs_path = "assets/shaders/BRDF_LUT.frag";
-			pipeline_info.cull_mode = VK_CULL_MODE_NONE;
 
 			pipeline_info.push_ranges.resize(1);
 			pipeline_info.push_ranges[0].size = sizeof(uint32_t);
@@ -937,7 +936,7 @@ namespace Renderer
 			brdf_lut_color0.info.expected_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 			brdf_lut_color0.info.load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
 			brdf_lut_color0.info.store_op = VK_ATTACHMENT_STORE_OP_STORE;
-			brdf_lut_color0.info.clear_value = { 0.0f, 0.0f, 0.0f, 0.0f };
+			brdf_lut_color0.info.clear_value = { 0.0f, 0.0f, 0.0f, 1.0f };
 
 			data->render_passes.gen_brdf_lut = std::make_unique<RenderPass>(stages);
 		}
@@ -1298,7 +1297,7 @@ namespace Renderer
 			.height = IBL_BRDF_LUT_RESOLUTION,
 			.num_mips = 1,
 			.num_layers = 1,
-			.name = "BRDF LUT",
+			.name = "BRDF LUT"
 		};
 
 		VulkanImage brdf_lut = Vulkan::Image::Create(texture_info);
@@ -1317,7 +1316,8 @@ namespace Renderer
 		viewport.x = 0.0f, viewport.y = 0.0f;
 		viewport.minDepth = 0.0f, viewport.maxDepth = 1.0f;
 
-		VkRect2D scissor_rect = { 0, 0, IBL_BRDF_LUT_RESOLUTION, IBL_BRDF_LUT_RESOLUTION };
+		VkRect2D scissor_rect = {};
+		scissor_rect.offset.x = 0.0f, scissor_rect.offset.y = 0.0f;
 
 		struct PushConsts
 		{
@@ -1677,7 +1677,8 @@ namespace Renderer
 					const DrawList::Entry& entry = data->draw_list.entries[i];
 					VK_ASSERT(entry.mesh && "Tried to render a mesh with an invalid mesh handle");
 
-					Vulkan::Command::PushConstants(frame->command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 8 * sizeof(uint32_t), sizeof(uint32_t), &i);
+					push_consts.mat_index = i;
+					Vulkan::Command::PushConstants(frame->command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 8 * sizeof(uint32_t), sizeof(uint32_t), &push_consts.mat_index);
 
 					VulkanBuffer vertex_buffers[2] = { entry.mesh->vertex_buffer, frame->instance_buffer.buffer };
 					Vulkan::Command::DrawGeometryIndexed(frame->command_buffer, 2, vertex_buffers,
