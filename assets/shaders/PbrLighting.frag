@@ -258,7 +258,7 @@ vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 		vec3 diffuse_color = pixel.albedo * Fd_Lambert();
 		vec3 diffuse = irradiance * diffuse_color;
 
-		vec3 F = F_SchlickRoughness(max(dot(pixel.normal, view.dir), 0.0), pixel.f0, pixel.roughness);
+		vec3 F = F_SchlickRoughness(NoV, pixel.f0, pixel.roughness);
 		// Fss: Single scatter BRDF - Ess: Single scattering directional albedo
 		vec3 FssEss = F * env_brdf.x + env_brdf.y;
 

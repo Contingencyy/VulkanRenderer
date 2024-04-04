@@ -2121,6 +2121,7 @@ namespace Renderer
 		// Write mesh transform to the instance buffer for the currently active frame
 		Frame* frame = GetFrameCurrent();
 		frame->instance_buffer.WriteBuffer(sizeof(glm::mat4) * entry.index, sizeof(glm::mat4), &entry.transform);
+		entry.gpu_material = data->default_gpu_material;
 
 		// Write material data to the material UBO
 		Texture* albedo_texture = data->texture_slotmap.Find(material.albedo_texture_handle);
