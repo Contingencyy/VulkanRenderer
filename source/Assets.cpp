@@ -62,22 +62,22 @@ private:
 		return user_data.index_stride;
 	}
 
-	static const uint8_t* GetIndexPtr(const SMikkTSpaceContext* context)
+	template<typename T>
+	static const T* GetIndexPtr(const SMikkTSpaceContext* context)
 	{
 		UserData& user_data = *reinterpret_cast<UserData*>(context->m_pUserData);
-		return user_data.indices_ptr;
+		return reinterpret_cast<const T*>(user_data.indices_ptr);
 	}
 
 	static int32_t GetIndex(const SMikkTSpaceContext* context, uint32_t offset)
 	{
 		UserData& user_data = *reinterpret_cast<UserData*>(context->m_pUserData);
 		int32_t index = 0;
-		uint32_t index_stride = GetIndexStride(context);
 
-		if (index_stride == 4)
-			index = *reinterpret_cast<const uint32_t*>(GetIndexPtr(context) + index_stride * offset);
+		if (GetIndexStride(context) == 4)
+			index = static_cast<int32_t>(*(GetIndexPtr<uint32_t>(context) + offset));
 		else
-			index = *reinterpret_cast<const uint16_t*>(GetIndexPtr(context) + index_stride * offset);
+			index = static_cast<int32_t>(*(GetIndexPtr<uint16_t>(context) + offset));
 
 		return index;
 	}

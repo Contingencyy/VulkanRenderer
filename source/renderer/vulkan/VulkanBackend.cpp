@@ -281,7 +281,9 @@ namespace Vulkan
 				vk_inst.queues.present.vk_queue_index = i;
 			}*/
 			// Check queue for graphics and compute capabilities
-			if ((queue_family.queueFlags & VK_QUEUE_GRAPHICS_BIT) && (queue_family.queueFlags & VK_QUEUE_COMPUTE_BIT))
+			if ((queue_family.queueFlags & VK_QUEUE_GRAPHICS_BIT) &&
+				(queue_family.queueFlags & VK_QUEUE_COMPUTE_BIT) &&
+				(queue_family.timestampValidBits > 0))
 			{
 				vk_inst.queues.graphics_compute.queue_family_index = i;
 			}

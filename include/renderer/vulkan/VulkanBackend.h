@@ -45,7 +45,7 @@ namespace Vulkan
 		bool depth_write = false;
 		VkCompareOp depth_func = VK_COMPARE_OP_LESS;
 
-		VkCullModeFlags cull_mode = VK_CULL_MODE_BACK_BIT;
+		VkCullModeFlags cull_mode = VK_CULL_MODE_NONE;
 	};
 
 	VulkanPipeline CreateGraphicsPipeline(const GraphicsPipelineInfo& info);

@@ -60,9 +60,9 @@ void main()
 
 	if (settings.debug_render_mode == DEBUG_RENDER_MODE_NONE)
 	{
-		final_color = ApplyExposure(final_color.rgb, settings.exposure);
-		final_color = TonemapReinhardLumaWhite(final_color.rgb, 100.0);
-		final_color = LinearToSRGB(final_color, settings.gamma);
+		final_color = ApplyExposure(final_color.rgb, settings.postfx_exposure);
+		final_color = TonemapReinhardLumaWhite(final_color.rgb, settings.postfx_max_white);
+		final_color = LinearToSRGB(final_color, settings.postfx_gamma);
 	}
 
 	// Image store always takes in a vec4, but if the destination texture is e.g. format RG16,

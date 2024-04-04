@@ -1433,8 +1433,9 @@ namespace Renderer
 		data->settings.use_ibl_clearcoat = true;
 		data->settings.use_ibl_multiscatter = true;
 
-		data->settings.exposure = 1.5f;
-		data->settings.gamma = 2.2f;
+		data->settings.postfx_exposure = 1.5f;
+		data->settings.postfx_gamma = 2.2f;
+		data->settings.postfx_max_white = 100.0f;
 
 		data->settings.debug_render_mode = DEBUG_RENDER_MODE_NONE;
 		data->settings.white_furnace_test = false;
@@ -1761,20 +1762,6 @@ namespace Renderer
 			}
 
 			// ------------------------------------------------------------------------------------------------------
-			// Camera settings
-
-			ImGui::SetNextItemOpen(false, ImGuiCond_Once);
-			if (ImGui::CollapsingHeader("Camera"))
-			{
-				ImGui::Indent(10.0f);
-
-				ImGui::DragFloat("Camera near plane", &data->camera_settings.near_plane, 0.01f, 0.01f, 10000.0f);
-				ImGui::DragFloat("Camera far plane", &data->camera_settings.far_plane, 0.01f, 0.01f, 10000.0f);
-
-				ImGui::Unindent(10.0f);
-			}
-
-			// ------------------------------------------------------------------------------------------------------
 			// Debug settings
 
 			ImGui::SetNextItemOpen(false, ImGuiCond_Once);
@@ -1907,8 +1894,23 @@ namespace Renderer
 			{
 				ImGui::Indent(10.0f);
 
-				ImGui::SliderFloat("Exposure", &data->settings.exposure, 0.001f, 20.0f, "%.2f");
-				ImGui::SliderFloat("Gamma", &data->settings.gamma, 0.001f, 20.0f, "%.2f");
+				ImGui::SliderFloat("Exposure", &data->settings.postfx_exposure, 0.001f, 20.0f, "%.2f");
+				ImGui::SliderFloat("Gamma", &data->settings.postfx_gamma, 0.001f, 20.0f, "%.2f");
+				ImGui::SliderFloat("Max white", &data->settings.postfx_max_white, 0.1f, 1000.0f, "%.2f");
+
+				ImGui::Unindent(10.0f);
+			}
+
+			// ------------------------------------------------------------------------------------------------------
+			// Camera settings
+
+			ImGui::SetNextItemOpen(false, ImGuiCond_Once);
+			if (ImGui::CollapsingHeader("Camera"))
+			{
+				ImGui::Indent(10.0f);
+
+				ImGui::DragFloat("Camera near plane", &data->camera_settings.near_plane, 0.1f, 0.1f, 10000.0f);
+				ImGui::DragFloat("Camera far plane", &data->camera_settings.far_plane, 0.1f, 0.1f, 10000.0f);
 
 				ImGui::Unindent(10.0f);
 			}
@@ -2224,9 +2226,9 @@ namespace Renderer
 		gpu_area_light.color_red = color.r;
 		gpu_area_light.vert1 = glm::vec3(transform * glm::vec4(UNIT_QUAD_VERTICES[1].pos, 1.0f));
 		gpu_area_light.color_green = color.g;
-		gpu_area_light.vert2 = glm::vec3(transform * glm::vec4(UNIT_QUAD_VERTICES[2].pos, 1.0f));
+		gpu_area_light.vert2 = glm::vec3(transform * glm::vec4(UNIT_QUAD_VERTICES[3].pos, 1.0f));
 		gpu_area_light.color_blue = color.b;
-		gpu_area_light.vert3 = glm::vec3(transform * glm::vec4(UNIT_QUAD_VERTICES[3].pos, 1.0f));
+		gpu_area_light.vert3 = glm::vec3(transform * glm::vec4(UNIT_QUAD_VERTICES[2].pos, 1.0f));
 		gpu_area_light.intensity = intensity;
 		gpu_area_light.two_sided = two_sided;
 

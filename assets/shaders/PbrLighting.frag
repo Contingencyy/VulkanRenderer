@@ -94,9 +94,8 @@ vec3 IntegrateEdgeVec(vec3 v1, vec3 v2)
 vec3 AreaLightIrradiance(ViewInfo view, PixelInfo pixel, mat3 Minv, vec3 area_light_verts[4], bool two_sided)
 {
 	// Orthonormal basis around surface normal
-	vec3 T1, T2;
-    T1 = normalize(view.dir - pixel.normal * dot(view.dir, pixel.normal));
-    T2 = cross(pixel.normal, T1);
+	vec3 T1 = normalize(view.dir - pixel.normal * dot(view.dir, pixel.normal));
+    vec3 T2 = cross(pixel.normal, T1);
 
 	// Rotate area light in (T1, T2, N) basis
     Minv = Minv * transpose(mat3(T1, T2, pixel.normal));
@@ -209,28 +208,29 @@ vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 //			}
 //		}
 
+		// --------------------------------------------------------------------------------------------------
+		// -------------------------- Direct illumination from area lights ----------------------------------
+		// --------------------------------------------------------------------------------------------------
+
+		float NoV = clamp(dot(pixel.normal, view.dir), 0.0f, 1.0f);
+		vec2 uv = vec2(pixel.roughness, sqrt(1.0 - NoV));
+		uv = uv * LUT_SCALE + LUT_BIAS;
+
+		// Fetch matrix
+		vec4 ltc1 = SampleTexture(ltc1_index, materials[push_consts.mat_index].sampler_index, uv);
+		vec4 ltc2 = SampleTexture(ltc2_index, materials[push_consts.mat_index].sampler_index, uv);
+
+		mat3 Minv = mat3(
+			vec3(ltc1.x, 0.0f, ltc1.y),
+			vec3(0.0f,   1.0f, 0.0f),
+			vec3(ltc1.z, 0.0f, ltc1.w)
+		);
+
 		for (uint i = 0; i < num_area_lights; ++i)
 		{
 			GPUAreaLight area_light = area_lights[i];
-
-			float NoV = clamp(dot(pixel.normal, view.dir), 0.0f, 1.0f);
-
-			// Fetch matrix
-			vec2 uv = vec2(pixel.roughness, sqrt(1.0 - NoV));
-			uv = uv * LUT_SCALE + LUT_BIAS;
-
-			vec4 ltc1 = SampleTexture(ltc1_index, materials[push_consts.mat_index].sampler_index, uv);
-			vec4 ltc2 = SampleTexture(ltc2_index, materials[push_consts.mat_index].sampler_index, uv);
-
-			vec3 area_light_color = SampleTexture(area_light.texture_index, materials[push_consts.mat_index].sampler_index, uv).rgb;
-			area_light_color = area_light_color * vec3(area_light.color_red, area_light.color_green, area_light.color_blue);
+			vec3 area_light_color = vec3(area_light.color_red, area_light.color_green, area_light.color_blue);
 			//vec4 area_light_texture = SampleTextureLod(area_light.texture_index, materials[push_consts.mat_index].sampler_index, uv, 0.0f);
-
-			mat3 Minv = mat3(
-				vec3(ltc1.x, 0.0f, ltc1.y),
-				vec3(0.0f,   1.0f, 0.0f),
-				vec3(ltc1.z, 0.0f, ltc1.w)
-			);
 
 			//vec3 area_light_color = vec3(area_light.color_red, area_light.color_green, area_light.color_blue);
 			vec3 area_light_verts[4] = { area_light.vert0, area_light.vert1, area_light.vert2, area_light.vert3 };
@@ -240,10 +240,14 @@ vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 			specular *= pixel.f0 * ltc2.x + (1.0f - pixel.f0) * ltc2.y;
 
 			Lo += area_light_color * area_light.intensity * (specular + pixel.albedo * diffuse);
+			//Lo += diffuse;
 		}
 	}
+	
+	// --------------------------------------------------------------------------------------------------
+	// -------------------------- Indirect illumination from environment (IBL) --------------------------
+	// --------------------------------------------------------------------------------------------------
 
-	// Indirect lighting from HDR environment
 	if (settings.use_ibl == 1)
 	{
 		vec3 R = reflect(-view.dir, pixel.normal);
@@ -416,7 +420,22 @@ void main()
 			color = pixel.albedo;
 			break;
 		}
-		case DEBUG_RENDER_MODE_NORMAL:
+		case DEBUG_RENDER_MODE_VERTEX_NORMAL:
+		{
+			color = abs(frag_normal);
+			break;
+		}
+		case DEBUG_RENDER_MODE_VERTEX_TANGENT:
+		{
+			color = abs(frag_tangent);
+			break;
+		}
+		case DEBUG_RENDER_MODE_VERTEX_BITANGENT:
+		{
+			color = abs(frag_bitangent);
+			break;
+		}
+		case DEBUG_RENDER_MODE_WORLD_NORMAL:
 		{
 			color = abs(pixel.normal);
 			break;

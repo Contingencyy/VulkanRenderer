@@ -42,23 +42,26 @@ const uint MAX_AREA_LIGHTS = 100;
 
 // Debug render modes
 const uint DEBUG_RENDER_MODE_NONE = 0;
-const uint DEBUG_RENDER_MODE_ALBEDO = 1;
-const uint DEBUG_RENDER_MODE_NORMAL = 2;
-const uint DEBUG_RENDER_MODE_METALLIC_ROUGHNESS = 3;
-const uint DEBUG_RENDER_MODE_CLEARCOAT_ALPHA = 4;
-const uint DEBUG_RENDER_MODE_CLEARCOAT_NORMAL = 5;
-const uint DEBUG_RENDER_MODE_CLEARCOAT_ROUGHNESS = 6;
-const uint DEBUG_RENDER_MODE_IBL_INDIRECT_DIFFUSE = 7;
-const uint DEBUG_RENDER_MODE_IBL_INDIRECT_SPECULAR = 8;
-const uint DEBUG_RENDER_MODE_IBL_BRDF_LUT = 9;
-const uint DEBUG_RENDER_MODE_NUM_MODES = 10;
+const uint DEBUG_RENDER_MODE_ALBEDO = DEBUG_RENDER_MODE_NONE + 1;
+const uint DEBUG_RENDER_MODE_VERTEX_NORMAL = DEBUG_RENDER_MODE_ALBEDO + 1;
+const uint DEBUG_RENDER_MODE_VERTEX_TANGENT = DEBUG_RENDER_MODE_VERTEX_NORMAL + 1;
+const uint DEBUG_RENDER_MODE_VERTEX_BITANGENT = DEBUG_RENDER_MODE_VERTEX_TANGENT + 1;
+const uint DEBUG_RENDER_MODE_WORLD_NORMAL = DEBUG_RENDER_MODE_VERTEX_BITANGENT + 1;
+const uint DEBUG_RENDER_MODE_METALLIC_ROUGHNESS = DEBUG_RENDER_MODE_WORLD_NORMAL + 1;
+const uint DEBUG_RENDER_MODE_CLEARCOAT_ALPHA = DEBUG_RENDER_MODE_METALLIC_ROUGHNESS + 1;
+const uint DEBUG_RENDER_MODE_CLEARCOAT_NORMAL = DEBUG_RENDER_MODE_CLEARCOAT_ALPHA + 1;
+const uint DEBUG_RENDER_MODE_CLEARCOAT_ROUGHNESS = DEBUG_RENDER_MODE_CLEARCOAT_NORMAL + 1;
+const uint DEBUG_RENDER_MODE_IBL_INDIRECT_DIFFUSE = DEBUG_RENDER_MODE_CLEARCOAT_ROUGHNESS + 1;
+const uint DEBUG_RENDER_MODE_IBL_INDIRECT_SPECULAR = DEBUG_RENDER_MODE_IBL_INDIRECT_DIFFUSE + 1;
+const uint DEBUG_RENDER_MODE_IBL_BRDF_LUT = DEBUG_RENDER_MODE_IBL_INDIRECT_SPECULAR + 1;
+const uint DEBUG_RENDER_MODE_NUM_MODES = DEBUG_RENDER_MODE_IBL_BRDF_LUT + 1;
 
 #ifdef __cplusplus
 #include <vector>
 const std::vector<const char*> DEBUG_RENDER_MODE_LABELS =
 {
 	"None",
-	"Albedo", "Normal", "Metallic roughness",
+	"Albedo", "Vertex normal", "Vertex tangent", "Vertex bitangent", "World normal", "Metallic roughness",
 	"Clearcoat alpha", "Clearcoat normal", "Clearcoat roughness",
 	"IBL indirect diffuse", "IBL indirect specular", "IBL BRDF LUT"
 };
@@ -89,8 +92,9 @@ DECLARE_STRUCT(RenderSettings)
 	uint use_ibl_clearcoat;
 	uint use_ibl_multiscatter;
 
-	float exposure;
-	float gamma;
+	float postfx_exposure;
+	float postfx_gamma;
+	float postfx_max_white;
 
 	uint debug_render_mode;
 	uint white_furnace_test;
