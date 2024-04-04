@@ -356,11 +356,7 @@ namespace Renderer
 		TextureHandle_t white_furnace_skybox_handle;
 
 		VulkanSampler default_sampler;
-		VulkanSampler hdr_equirect_sampler;
-		VulkanSampler hdr_cube_sampler;
-		VulkanSampler irradiance_cube_sampler;
-		VulkanSampler prefiltered_cube_sampler;
-		VulkanSampler brdf_lut_sampler;
+		VulkanSampler ibl_sampler;
 
 		MeshHandle_t unit_quad_mesh_handle;
 		MeshHandle_t unit_cube_mesh_handle;
@@ -485,20 +481,8 @@ namespace Renderer
 		sampler_info.address_w = SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 		sampler_info.border_color = SAMPLER_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
 		//sampler_info.enable_anisotropy = VK_FALSE;
-		sampler_info.name = "HDR Equirectangular Sampler";
-		data->hdr_equirect_sampler = Vulkan::CreateSampler(sampler_info);
-
-		sampler_info.name = "Irradiance Cubemap Sampler";
-		data->irradiance_cube_sampler = Vulkan::CreateSampler(sampler_info);
-
-		sampler_info.name = "BRDF LUT Sampler";
-		data->brdf_lut_sampler = Vulkan::CreateSampler(sampler_info);
-
-		sampler_info.name = "HDR Cubemap Sampler";
-		data->hdr_cube_sampler = Vulkan::CreateSampler(sampler_info);
-
-		sampler_info.name = "Prefiltered Cubemap Sampler";
-		data->prefiltered_cube_sampler = Vulkan::CreateSampler(sampler_info);
+		sampler_info.name = "IBL Sampler";
+		data->ibl_sampler = Vulkan::CreateSampler(sampler_info);
 	}
 
 	static void CreateDefaultTextures()
@@ -1022,7 +1006,7 @@ namespace Renderer
 				VulkanDescriptorAllocation hdr_cubemap_descriptor = Vulkan::Descriptor::Allocate(VULKAN_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
 				Vulkan::Descriptor::Write(hdr_cubemap_descriptor, hdr_cubemap_view, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
 
-				hdr_cubemap_handle = data->texture_slotmap.Emplace(hdr_cubemap_image, hdr_cubemap_view, hdr_cubemap_descriptor, data->hdr_cube_sampler);
+				hdr_cubemap_handle = data->texture_slotmap.Emplace(hdr_cubemap_image, hdr_cubemap_view, hdr_cubemap_descriptor, data->ibl_sampler);
 				hdr_cubemap = data->texture_slotmap.Find(hdr_cubemap_handle);
 
 				// Render all 6 faces of the cube map using 6 different camera view matrices
@@ -1114,7 +1098,7 @@ namespace Renderer
 				VulkanDescriptorAllocation irradiance_cubemap_descriptor = Vulkan::Descriptor::Allocate(VULKAN_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
 				Vulkan::Descriptor::Write(irradiance_cubemap_descriptor, irradiance_cubemap_view, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
 
-				irradiance_cubemap_handle = data->texture_slotmap.Emplace(irradiance_cubemap_image, irradiance_cubemap_view, irradiance_cubemap_descriptor, data->irradiance_cube_sampler);
+				irradiance_cubemap_handle = data->texture_slotmap.Emplace(irradiance_cubemap_image, irradiance_cubemap_view, irradiance_cubemap_descriptor, data->ibl_sampler);
 				irradiance_cubemap = data->texture_slotmap.Find(irradiance_cubemap_handle);
 
 				// Render all 6 faces of the cube map using 6 different camera view matrices
@@ -1213,7 +1197,7 @@ namespace Renderer
 				VulkanDescriptorAllocation prefiltered_descriptor = Vulkan::Descriptor::Allocate(VULKAN_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
 				Vulkan::Descriptor::Write(prefiltered_descriptor, prefiltered_cubemap_view, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
 
-				prefiltered_cubemap_handle = data->texture_slotmap.Emplace(prefiltered_cubemap_image, prefiltered_cubemap_view, prefiltered_descriptor, data->prefiltered_cube_sampler);
+				prefiltered_cubemap_handle = data->texture_slotmap.Emplace(prefiltered_cubemap_image, prefiltered_cubemap_view, prefiltered_descriptor, data->ibl_sampler);
 				prefiltered_cubemap = data->texture_slotmap.Find(prefiltered_cubemap_handle);
 
 				VkViewport viewport = {};
@@ -1327,7 +1311,7 @@ namespace Renderer
 		VulkanDescriptorAllocation brdf_lut_descriptor = Vulkan::Descriptor::Allocate(VULKAN_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
 		Vulkan::Descriptor::Write(brdf_lut_descriptor, brdf_lut_view, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
 
-		data->ibl.brdf_lut_handle = data->texture_slotmap.Emplace(brdf_lut, brdf_lut_view, brdf_lut_descriptor, data->irradiance_cube_sampler);
+		data->ibl.brdf_lut_handle = data->texture_slotmap.Emplace(brdf_lut, brdf_lut_view, brdf_lut_descriptor, data->ibl_sampler);
 		
 		VkViewport viewport = {};
 		viewport.x = 0.0f, viewport.y = 0.0f;
@@ -1449,11 +1433,7 @@ namespace Renderer
 		Vulkan::ExitImGui();
 
 		Vulkan::DestroySampler(data->default_sampler);
-		Vulkan::DestroySampler(data->hdr_equirect_sampler);
-		Vulkan::DestroySampler(data->hdr_cube_sampler);
-		Vulkan::DestroySampler(data->irradiance_cube_sampler);
-		Vulkan::DestroySampler(data->prefiltered_cube_sampler);
-		Vulkan::DestroySampler(data->brdf_lut_sampler);
+		Vulkan::DestroySampler(data->ibl_sampler);
 		
 		for (uint32_t frame_index = 0; frame_index < Vulkan::MAX_FRAMES_IN_FLIGHT; ++frame_index)
 		{

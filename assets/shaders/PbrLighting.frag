@@ -240,7 +240,6 @@ vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 			specular *= pixel.f0 * ltc2.x + (1.0f - pixel.f0) * ltc2.y;
 
 			Lo += area_light_color * area_light.intensity * (specular + pixel.albedo * diffuse);
-			//Lo += diffuse;
 		}
 	}
 	
@@ -311,7 +310,8 @@ vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 
 			// FmsEms + kD: Fixes energy conservation for dielectrics/non perfect mirrors
 			kD = diffuse_color * (1.0 - FssEss - FmsEms);
-			Lo += (FmsEms + kD) * irradiance + FssEss * reflection;
+			kD += FmsEms;
+			Lo += kD * irradiance + FssEss * reflection;
 		}
 		else
 		{
@@ -319,17 +319,20 @@ vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 			Lo += kD * diffuse + FssEss * reflection;
 		}
 
-		if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_INDIRECT_DIFFUSE)
+		switch (settings.debug_render_mode)
 		{
-			Lo = kD * diffuse;
-		}
-		else if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_INDIRECT_SPECULAR)
-		{
-			Lo = FssEss * reflection;
-		}
-		else if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_BRDF_LUT)
-		{
-			Lo = vec3(env_brdf, 0.0);
+			case DEBUG_RENDER_MODE_IBL_INDIRECT_DIFFUSE:
+			{
+				Lo = kD * diffuse;
+			} break;
+			case DEBUG_RENDER_MODE_IBL_INDIRECT_SPECULAR:
+			{
+				Lo = FssEss * reflection;
+			} break;
+			case DEBUG_RENDER_MODE_IBL_BRDF_LUT:
+			{
+				Lo = vec3(env_brdf, 0.0);
+			} break;
 		}
 	}
 	else

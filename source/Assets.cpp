@@ -28,72 +28,33 @@ public:
 
 	void Calculate(Vertex* vertices, uint32_t num_indices, uint32_t index_stride, const uint8_t* indices)
 	{
-		UserData* user_data = reinterpret_cast<UserData*>(m_mikkt_context.m_pUserData);
-		if (user_data)
-			delete user_data;
+		m_user_data.vertices_ptr = vertices;
+		m_user_data.num_indices = num_indices;
+		m_user_data.index_stride = index_stride;
+		m_user_data.indices_ptr = indices;
 
-		user_data = new UserData;
-		m_mikkt_context.m_pUserData = user_data;
-
-		user_data->vertices_ptr = vertices;
-		user_data->num_indices = num_indices;
-		user_data->index_stride = index_stride;
-		user_data->indices_ptr = indices;
-
+		m_mikkt_context.m_pUserData = &m_user_data;
 		genTangSpaceDefault(&m_mikkt_context);
-	}
-
-private:
-	static Vertex* GetVertexPtr(const SMikkTSpaceContext* context)
-	{
-		UserData& user_data = *reinterpret_cast<UserData*>(context->m_pUserData);
-		return user_data.vertices_ptr;
-	}
-
-	static uint32_t GetNumIndices(const SMikkTSpaceContext* context)
-	{
-		UserData& user_data = *reinterpret_cast<UserData*>(context->m_pUserData);
-		return user_data.num_indices;
-	}
-
-	static uint32_t GetIndexStride(const SMikkTSpaceContext* context)
-	{
-		UserData& user_data = *reinterpret_cast<UserData*>(context->m_pUserData);
-		return user_data.index_stride;
-	}
-
-	template<typename T>
-	static const T* GetIndexPtr(const SMikkTSpaceContext* context)
-	{
-		UserData& user_data = *reinterpret_cast<UserData*>(context->m_pUserData);
-		return reinterpret_cast<const T*>(user_data.indices_ptr);
-	}
-
-	static int32_t GetIndex(const SMikkTSpaceContext* context, uint32_t offset)
-	{
-		UserData& user_data = *reinterpret_cast<UserData*>(context->m_pUserData);
-		int32_t index = 0;
-
-		if (GetIndexStride(context) == 4)
-			index = static_cast<int32_t>(*(GetIndexPtr<uint32_t>(context) + offset));
-		else
-			index = static_cast<int32_t>(*(GetIndexPtr<uint16_t>(context) + offset));
-
-		return index;
 	}
 
 private:
 	static int GetNumFaces(const SMikkTSpaceContext* context)
 	{
-		return GetNumIndices(context) / 3;
+		UserData* user_data = reinterpret_cast<UserData*>(context->m_pUserData);
+		return user_data->num_indices / 3;
 	}
 
 	static int GetVertexIndex(const SMikkTSpaceContext* context, int iFace, int iVert)
 	{
+		UserData* user_data = reinterpret_cast<UserData*>(context->m_pUserData);
+
 		uint32_t face_size = GetNumVerticesOfFace(context, iFace);
 		uint32_t indices_index = (iFace * face_size) + iVert;
-		
-		return GetIndex(context, indices_index);
+
+		if (user_data->index_stride == 4)
+			return *(reinterpret_cast<const uint32_t*>(user_data->indices_ptr) + indices_index);
+
+		return *(reinterpret_cast<const uint16_t*>(user_data->indices_ptr) + indices_index);
 	}
 
 	static int GetNumVerticesOfFace(const SMikkTSpaceContext* context, int iFace)
@@ -103,8 +64,10 @@ private:
 
 	static void GetPosition(const SMikkTSpaceContext* context, float outpos[], int iFace, int iVert)
 	{
+		UserData* user_data = reinterpret_cast<UserData*>(context->m_pUserData);
+
 		uint32_t index = GetVertexIndex(context, iFace, iVert);
-		const Vertex& vertex = GetVertexPtr(context)[index];
+		const Vertex& vertex = user_data->vertices_ptr[index];
 
 		outpos[0] = vertex.pos.x;
 		outpos[1] = vertex.pos.y;
@@ -113,8 +76,10 @@ private:
 
 	static void GetNormal(const SMikkTSpaceContext* context, float outnormal[], int iFace, int iVert)
 	{
+		UserData* user_data = reinterpret_cast<UserData*>(context->m_pUserData);
+
 		uint32_t index = GetVertexIndex(context, iFace, iVert);
-		const Vertex& vertex = GetVertexPtr(context)[index];
+		const Vertex& vertex = user_data->vertices_ptr[index];
 
 		outnormal[0] = vertex.normal.x;
 		outnormal[1] = vertex.normal.y;
@@ -123,8 +88,10 @@ private:
 
 	static void GetTexCoord(const SMikkTSpaceContext* context, float outuv[], int iFace, int iVert)
 	{
+		UserData* user_data = reinterpret_cast<UserData*>(context->m_pUserData);
+
 		uint32_t index = GetVertexIndex(context, iFace, iVert);
-		const Vertex& vertex = GetVertexPtr(context)[index];
+		const Vertex& vertex = user_data->vertices_ptr[index];
 
 		outuv[0] = vertex.tex_coord.x;
 		outuv[1] = vertex.tex_coord.y;
@@ -132,8 +99,10 @@ private:
 
 	static void SetTSpaceBasic(const SMikkTSpaceContext* context, const float tangentu[], float fSign, int iFace, int iVert)
 	{
+		UserData* user_data = reinterpret_cast<UserData*>(context->m_pUserData);
+
 		uint32_t index = GetVertexIndex(context, iFace, iVert);
-		Vertex& vertex = GetVertexPtr(context)[index];
+		Vertex& vertex = user_data->vertices_ptr[index];
 
 		vertex.tangent.x = tangentu[0];
 		vertex.tangent.y = tangentu[1];
@@ -153,6 +122,8 @@ private:
 		uint32_t index_stride = 0;
 		const uint8_t* indices_ptr = nullptr;
 	};
+
+	UserData m_user_data = {};
 
 };
 
