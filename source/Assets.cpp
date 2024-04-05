@@ -137,20 +137,20 @@ namespace Assets
 
 	enum AssetLoadState
 	{
-		ASSET_LOAD_STATE_UNLOADED,
+		ASSET_LOAD_STATE_DISK,
 		ASSET_LOAD_STATE_IMPORTED,
 		ASSET_LOAD_STATE_LOADED
 	};
 
-	struct ImportedTexture
+	struct TextureAsset
 	{
-		AssetLoadState load_state = ASSET_LOAD_STATE_UNLOADED;
+		AssetLoadState load_state = ASSET_LOAD_STATE_DISK;
 		TextureHandle_t texture_handle;
 	};
 
-	struct ImportedModel
+	struct ModelAsset
 	{
-		AssetLoadState load_state = ASSET_LOAD_STATE_UNLOADED;
+		AssetLoadState load_state = ASSET_LOAD_STATE_DISK;
 		Model model;
 	};
 
@@ -160,11 +160,11 @@ namespace Assets
 		std::filesystem::path models_base_dir;
 		std::filesystem::path textures_base_dir;
 
-		std::unordered_map<std::filesystem::path, ImportedTexture> imported_textures;
-		std::unordered_map<std::filesystem::path, ImportedModel> imported_models;
+		std::unordered_map<std::filesystem::path, TextureAsset> texture_assets;
+		std::unordered_map<std::filesystem::path, ModelAsset> model_assets;
 
 		TangentCalculator tangent_calc;
-	} data;
+	} static *data;
 
 	static void ImportTexture(const std::filesystem::path& filepath)
 	{
@@ -176,14 +176,14 @@ namespace Assets
 			filepath.extension() == ".jpeg" ||
 			filepath.extension() == ".hdr")
 		{
-			if (data.imported_textures.find(filepath) != data.imported_textures.end())
+			if (data->texture_assets.find(filepath) != data->texture_assets.end())
 				return;
 
-			ImportedTexture imported_texture = {};
+			TextureAsset imported_texture = {};
 			imported_texture.load_state = ASSET_LOAD_STATE_IMPORTED;
 			imported_texture.texture_handle = {};
 
-			data.imported_textures.emplace(filepath, imported_texture);
+			data->texture_assets.emplace(filepath, imported_texture);
 		}
 	}
 
@@ -212,14 +212,14 @@ namespace Assets
 
 		if (filepath.extension() == ".gltf")
 		{
-			if (data.imported_models.find(filepath) != data.imported_models.end())
+			if (data->model_assets.find(filepath) != data->model_assets.end())
 				return;
 
-			ImportedModel imported_model = {};
+			ModelAsset imported_model = {};
 			imported_model.load_state = ASSET_LOAD_STATE_IMPORTED;
 			imported_model.model = {};
 
-			data.imported_models.emplace(filepath, imported_model);
+			data->model_assets.emplace(filepath, imported_model);
 		}
 	}
 
@@ -474,7 +474,7 @@ namespace Assets
 				// No tangents found, so we need to calculate them ourselves
 				// Bitangents will be made in the shaders to reduce memory bandwidth
 				if (calc_tangents)
-					data.tangent_calc.Calculate(vertices.data(), mesh_args.num_indices, mesh_args.index_stride, mesh_args.indices_bytes.data());
+					data->tangent_calc.Calculate(vertices.data(), mesh_args.num_indices, mesh_args.index_stride, mesh_args.indices_bytes.data());
 
 				// Set the mesh arguments for the vertices
 				mesh_args.num_vertices = static_cast<uint32_t>(vertices.size());
@@ -612,12 +612,12 @@ namespace Assets
 
 				if (item.is_regular_file())
 				{
-					if (data.imported_textures.find(item.path()) != data.imported_textures.end())
+					if (data->texture_assets.find(item.path()) != data->texture_assets.end())
 					{
 						ImGui::Text(item.path().filename().string().c_str());
 					}
 					
-					if (data.imported_models.find(item.path()) != data.imported_models.end())
+					if (data->model_assets.find(item.path()) != data->model_assets.end())
 					{
 						ImGui::Text(item.path().filename().string().c_str());
 					}
@@ -630,16 +630,19 @@ namespace Assets
 
 	void Init(const std::filesystem::path& assets_base_path)
 	{
-		data.assets_base_dir = assets_base_path;
-		data.models_base_dir = assets_base_path.string() + "models";
-		data.textures_base_dir = assets_base_path.string() + "textures";
+		data = new Data();
 
-		ImportTexturesFromDirectory(data.textures_base_dir);
-		ImportModelsFromDirectory(data.models_base_dir);
+		data->assets_base_dir = assets_base_path;
+		data->models_base_dir = assets_base_path.string() + "models";
+		data->textures_base_dir = assets_base_path.string() + "textures";
+
+		ImportTexturesFromDirectory(data->textures_base_dir);
+		ImportModelsFromDirectory(data->models_base_dir);
 	}
 
 	void Exit()
 	{
+		delete data;
 	}
 
 	void RenderUI()
@@ -647,15 +650,15 @@ namespace Assets
 		if (ImGui::Begin("Asset Manager"))
 		{
 			ImGui::Text("Imported Assets");
-			RenderImportedAssetsTree(std::filesystem::directory_entry(data.assets_base_dir));
+			RenderImportedAssetsTree(std::filesystem::directory_entry(data->assets_base_dir));
 		}
 		ImGui::End();
 	}
 
 	void LoadTexture(const std::filesystem::path& filepath, TextureFormat format, bool gen_mips, bool is_environment_map)
 	{
-		auto iter = data.imported_textures.find(filepath);
-		if (iter == data.imported_textures.end())
+		auto iter = data->texture_assets.find(filepath);
+		if (iter == data->texture_assets.end())
 		{
 			LOG_WARN("Assets::LoadTexture", "Tried to load a texture which has not been imported");
 			return;
@@ -675,7 +678,7 @@ namespace Assets
 
 		TextureHandle_t texture_handle = Renderer::CreateTexture(args);
 
-		ImportedTexture& imported_texture = iter->second;
+		TextureAsset& imported_texture = iter->second;
 		imported_texture.load_state = ASSET_LOAD_STATE_LOADED;
 		imported_texture.texture_handle = texture_handle;
 
@@ -684,8 +687,8 @@ namespace Assets
 
 	TextureHandle_t GetTexture(const std::filesystem::path& filepath)
 	{
-		auto iter = data.imported_textures.find(filepath);
-		if (iter != data.imported_textures.end())
+		auto iter = data->texture_assets.find(filepath);
+		if (iter != data->texture_assets.end())
 		{
 			if (iter->second.load_state != ASSET_LOAD_STATE_LOADED)
 				LOG_ERR("Assets::GetModel", "Model was imported but not loaded");
@@ -698,27 +701,27 @@ namespace Assets
 
 	void LoadGLTF(const std::filesystem::path& filepath)
 	{
-		auto iter = data.imported_models.find(filepath);
-		if (iter == data.imported_models.end())
+		auto iter = data->model_assets.find(filepath);
+		if (iter == data->model_assets.end())
 		{
 			LOG_WARN("Assets::LoadGLTF", "Tried to load a GLTF model which has not been imported");
 			return;
 		}
 
-		ImportedModel& imported_model = iter->second;
+		ModelAsset& imported_model = iter->second;
 		imported_model.load_state = ASSET_LOAD_STATE_LOADED;
 		imported_model.model = ReadGLTF(filepath);
 	}
 
 	Model* GetModel(const std::filesystem::path& filepath)
 	{
-		auto iter = data.imported_models.find(filepath);
-		if (iter != data.imported_models.end())
+		auto iter = data->model_assets.find(filepath);
+		if (iter != data->model_assets.end())
 		{
 			if (iter->second.load_state != ASSET_LOAD_STATE_LOADED)
 				LOG_ERR("Assets::GetModel", "Model was imported but not loaded");
 			else
-				return &data.imported_models.at(filepath).model;
+				return &data->model_assets.at(filepath).model;
 		}
 
 		return nullptr;
