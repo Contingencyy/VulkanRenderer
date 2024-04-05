@@ -58,12 +58,9 @@ void main()
 	vec4 hdr_color = imageLoad(g_inputs[push.hdr_src_index], texel_pos);
 	vec3 final_color = hdr_color.xyz;
 
-	if (settings.debug_render_mode == DEBUG_RENDER_MODE_NONE)
-	{
-		final_color = ApplyExposure(final_color.rgb, settings.postfx_exposure);
-		final_color = TonemapReinhardLumaWhite(final_color.rgb, settings.postfx_max_white);
-		final_color = LinearToSRGB(final_color, settings.postfx_gamma);
-	}
+	final_color = ApplyExposure(final_color.rgb, settings.postfx_exposure);
+	final_color = TonemapReinhardLumaWhite(final_color.rgb, settings.postfx_max_white);
+	final_color = LinearToSRGB(final_color, settings.postfx_gamma);
 
 	// Image store always takes in a vec4, but if the destination texture is e.g. format RG16,
 	// then only the RG components will be written and the others ignored

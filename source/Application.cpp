@@ -151,12 +151,12 @@ namespace Application
 		SpawnModelEntity("sponza", transform);
 		SpawnModelEntity("model", transform);
 
-		glm::mat4 area_light_transform = glm::translate(glm::identity<glm::mat4>(), glm::vec3(25.0f, 10.0f, -3.0f));
+		glm::mat4 area_light_transform = glm::translate(glm::identity<glm::mat4>(), glm::vec3(70.0f, 10.0f, -3.0f));
 		area_light_transform = glm::rotate(area_light_transform, glm::radians(-90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 		area_light_transform = glm::scale(area_light_transform, glm::vec3(12.0f, 8.0f, 1.0f));
 		data.active_scene.AddEntity<AreaLight>(Assets::GetTexture("Kermit"), area_light_transform, glm::vec3(1.0f, 0.95f, 0.8f), 5.0f, true, "AreaLight0");
 
-		area_light_transform = glm::translate(glm::identity<glm::mat4>(), glm::vec3(-25.0f, 10.0f, -3.0f));
+		area_light_transform = glm::translate(glm::identity<glm::mat4>(), glm::vec3(-80.0f, 10.0f, -3.0f));
 		area_light_transform = glm::rotate(area_light_transform, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 		area_light_transform = glm::scale(area_light_transform, glm::vec3(12.0f, 8.0f, 1.0f));
 		data.active_scene.AddEntity<AreaLight>(TextureHandle_t(), area_light_transform, glm::vec3(1.0f, 0.95f, 0.8f), 5.0f, true, "AreaLight1");

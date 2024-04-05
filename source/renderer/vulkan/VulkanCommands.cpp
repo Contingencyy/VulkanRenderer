@@ -110,8 +110,8 @@ namespace Vulkan
 		void CopyBuffers(const VulkanCommandBuffer& command_buffer, const VulkanBuffer& src_buffer, uint64_t src_offset, const VulkanBuffer& dst_buffer, uint64_t dst_offset, uint64_t num_bytes)
 		{
 			VkBufferCopy copy_region = {};
-			copy_region.srcOffset = src_offset;
-			copy_region.dstOffset = dst_offset;
+			copy_region.srcOffset = src_buffer.offset_in_bytes + src_offset;
+			copy_region.dstOffset = dst_buffer.offset_in_bytes + dst_offset;
 			copy_region.size = num_bytes;
 
 			vkCmdCopyBuffer(command_buffer.vk_command_buffer, src_buffer.vk_buffer, dst_buffer.vk_buffer, 1, &copy_region);
