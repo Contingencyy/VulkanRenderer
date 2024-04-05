@@ -137,20 +137,20 @@ namespace Assets
 
 	enum AssetLoadState
 	{
-		ASSET_LOAD_STATE_NONE,
+		ASSET_LOAD_STATE_UNLOADED,
 		ASSET_LOAD_STATE_IMPORTED,
 		ASSET_LOAD_STATE_LOADED
 	};
 
 	struct ImportedTexture
 	{
-		AssetLoadState load_state = ASSET_LOAD_STATE_NONE;
+		AssetLoadState load_state = ASSET_LOAD_STATE_UNLOADED;
 		TextureHandle_t texture_handle;
 	};
 
 	struct ImportedModel
 	{
-		AssetLoadState load_state = ASSET_LOAD_STATE_NONE;
+		AssetLoadState load_state = ASSET_LOAD_STATE_UNLOADED;
 		Model model;
 	};
 
@@ -311,9 +311,9 @@ namespace Assets
 	}
 
 	template<typename T>
-	static size_t CGLTFGetIndex(const T* arr, const T* elem)
+	static uint32_t CGLTFGetIndex(const T* arr, const T* elem)
 	{
-		return (size_t)(elem - arr);
+		return static_cast<uint32_t>(elem - arr);
 	}
 
 	static glm::mat4 CGLTFNodeGetTransform(const cgltf_node& node)
@@ -378,8 +378,8 @@ namespace Assets
 		cgltf_load_buffers(&options, gltf_data, filepath.string().c_str());
 
 		// Determine how many meshes we have in total
-		size_t num_meshes = 0;
-		for (size_t i = 0; i < gltf_data->meshes_count; ++i)
+		uint32_t num_meshes = 0;
+		for (uint32_t i = 0; i < gltf_data->meshes_count; ++i)
 		{
 			cgltf_mesh* mesh = &gltf_data->meshes[i];
 			num_meshes += mesh->primitives_count;
@@ -389,13 +389,13 @@ namespace Assets
 		model.name = filepath.string();
 
 		std::vector<MeshHandle_t> mesh_handles(num_meshes);
-		size_t mesh_handle_index_current = 0;
+		uint32_t mesh_handle_index_current = 0;
 
-		for (size_t i = 0; i < gltf_data->meshes_count; ++i)
+		for (uint32_t i = 0; i < gltf_data->meshes_count; ++i)
 		{
 			cgltf_mesh& gltf_mesh = gltf_data->meshes[i];
 
-			for (size_t j = 0; j < gltf_mesh.primitives_count; ++j)
+			for (uint32_t j = 0; j < gltf_mesh.primitives_count; ++j)
 			{
 				cgltf_primitive& gltf_prim = gltf_mesh.primitives[j];
 
@@ -403,8 +403,8 @@ namespace Assets
 				Renderer::CreateMeshArgs mesh_args = {};
 
 				// Load all indices as bytes
-				mesh_args.num_indices = gltf_prim.indices->count;
-				mesh_args.index_stride = gltf_prim.indices->stride;
+				mesh_args.num_indices = static_cast<uint32_t>(gltf_prim.indices->count);
+				mesh_args.index_stride = static_cast<uint32_t>(gltf_prim.indices->stride);
 
 				uint32_t total_bytes_indices = mesh_args.num_indices * mesh_args.index_stride;
 				mesh_args.indices_bytes = std::span<uint8_t>(CGLTFGetDataPointer<uint8_t>(gltf_prim.indices), total_bytes_indices);
@@ -413,7 +413,7 @@ namespace Assets
 				std::vector<Vertex> vertices(gltf_prim.attributes[0].data->count);
 				bool calc_tangents = true;
 
-				for (size_t k = 0; k < gltf_prim.attributes_count; ++k)
+				for (uint32_t k = 0; k < gltf_prim.attributes_count; ++k)
 				{
 					cgltf_attribute& attribute = gltf_prim.attributes[k];
 
@@ -423,7 +423,7 @@ namespace Assets
 					{
 						glm::vec3* pos_ptr = CGLTFGetDataPointer<glm::vec3>(attribute.data);
 
-						for (size_t l = 0; l < attribute.data->count; ++l)
+						for (uint32_t l = 0; l < attribute.data->count; ++l)
 						{
 							vertices[l].pos[0] = pos_ptr[l].x;
 							vertices[l].pos[1] = pos_ptr[l].y;
@@ -435,7 +435,7 @@ namespace Assets
 					{
 						glm::vec2* texcoord_ptr = CGLTFGetDataPointer<glm::vec2>(attribute.data);
 
-						for (size_t l = 0; l < attribute.data->count; ++l)
+						for (uint32_t l = 0; l < attribute.data->count; ++l)
 						{
 							vertices[l].tex_coord[0] = texcoord_ptr[l].x;
 							vertices[l].tex_coord[1] = texcoord_ptr[l].y;
@@ -446,7 +446,7 @@ namespace Assets
 					{
 						glm::vec3* normal_ptr = CGLTFGetDataPointer<glm::vec3>(attribute.data);
 
-						for (size_t l = 0; l < attribute.data->count; ++l)
+						for (uint32_t l = 0; l < attribute.data->count; ++l)
 						{
 							vertices[l].normal[0] = normal_ptr[l].x;
 							vertices[l].normal[1] = normal_ptr[l].y;
@@ -458,7 +458,7 @@ namespace Assets
 					{
 						glm::vec4* tangent_ptr = CGLTFGetDataPointer<glm::vec4>(attribute.data);
 
-						for (size_t l = 0; l < attribute.data->count; ++l)
+						for (uint32_t l = 0; l < attribute.data->count; ++l)
 						{
 							vertices[l].tangent[0] = tangent_ptr[l].x;
 							vertices[l].tangent[1] = tangent_ptr[l].y;
@@ -477,7 +477,7 @@ namespace Assets
 					data.tangent_calc.Calculate(vertices.data(), mesh_args.num_indices, mesh_args.index_stride, mesh_args.indices_bytes.data());
 
 				// Set the mesh arguments for the vertices
-				mesh_args.num_vertices = vertices.size();
+				mesh_args.num_vertices = static_cast<uint32_t>(vertices.size());
 				mesh_args.vertex_stride = sizeof(vertices[0]);
 
 				uint32_t total_bytes_vertices = mesh_args.num_vertices * mesh_args.vertex_stride;
@@ -490,7 +490,7 @@ namespace Assets
 		// Create all materials
 		std::vector<Material> materials(gltf_data->materials_count);
 
-		for (size_t i = 0; i < gltf_data->materials_count; ++i)
+		for (uint32_t i = 0; i < gltf_data->materials_count; ++i)
 		{
 			cgltf_material& gltf_material = gltf_data->materials[i];
 			
@@ -501,14 +501,14 @@ namespace Assets
 			materials[i].albedo_factor = *(glm::vec4*)&gltf_material.pbr_metallic_roughness.base_color_factor;
 			if (gltf_material.pbr_metallic_roughness.base_color_texture.texture)
 			{
-				size_t texture_handle_index = CGLTFGetIndex<cgltf_image>(gltf_data->images,
+				uint32_t texture_handle_index = CGLTFGetIndex<cgltf_image>(gltf_data->images,
 					gltf_material.pbr_metallic_roughness.base_color_texture.texture->image);
 				materials[i].albedo_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TEXTURE_FORMAT_RGBA8_SRGB);
 			}
 
 			if (gltf_material.normal_texture.texture)
 			{
-				size_t texture_handle_index = CGLTFGetIndex<cgltf_image>(gltf_data->images,
+				uint32_t texture_handle_index = CGLTFGetIndex<cgltf_image>(gltf_data->images,
 					gltf_material.normal_texture.texture->image);
 				materials[i].normal_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TEXTURE_FORMAT_RGBA8_UNORM);
 			}
@@ -517,7 +517,7 @@ namespace Assets
 			materials[i].roughness_factor = gltf_material.pbr_metallic_roughness.roughness_factor;
 			if (gltf_material.pbr_metallic_roughness.metallic_roughness_texture.texture)
 			{
-				size_t texture_handle_index = CGLTFGetIndex<cgltf_image>(gltf_data->images,
+				uint32_t texture_handle_index = CGLTFGetIndex<cgltf_image>(gltf_data->images,
 					gltf_material.pbr_metallic_roughness.metallic_roughness_texture.texture->image);
 				materials[i].metallic_roughness_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TEXTURE_FORMAT_RGBA8_UNORM);
 			}
@@ -530,19 +530,19 @@ namespace Assets
 
 				if (gltf_material.clearcoat.clearcoat_texture.texture)
 				{
-					size_t texture_handle_index = CGLTFGetIndex<cgltf_image>(gltf_data->images, gltf_material.clearcoat.clearcoat_texture.texture->image);
+					uint32_t texture_handle_index = CGLTFGetIndex<cgltf_image>(gltf_data->images, gltf_material.clearcoat.clearcoat_texture.texture->image);
 					materials[i].clearcoat_alpha_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TEXTURE_FORMAT_RGBA8_UNORM);
 				}
 
 				if (gltf_material.clearcoat.clearcoat_normal_texture.texture)
 				{
-					size_t texture_handle_index = CGLTFGetIndex<cgltf_image>(gltf_data->images, gltf_material.clearcoat.clearcoat_normal_texture.texture->image);
+					uint32_t texture_handle_index = CGLTFGetIndex<cgltf_image>(gltf_data->images, gltf_material.clearcoat.clearcoat_normal_texture.texture->image);
 					materials[i].clearcoat_normal_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TEXTURE_FORMAT_RGBA8_UNORM);
 				}
 
 				if (gltf_material.clearcoat.clearcoat_roughness_texture.texture)
 				{
-					size_t texture_handle_index = CGLTFGetIndex<cgltf_image>(gltf_data->images, gltf_material.clearcoat.clearcoat_roughness_texture.texture->image);
+					uint32_t texture_handle_index = CGLTFGetIndex<cgltf_image>(gltf_data->images, gltf_material.clearcoat.clearcoat_roughness_texture.texture->image);
 					materials[i].clearcoat_roughness_texture_handle = LoadGLTFTexture(gltf_data->images[texture_handle_index], filepath, TEXTURE_FORMAT_RGBA8_UNORM);
 				}
 			}
@@ -551,16 +551,16 @@ namespace Assets
 		// Create all nodes
 		model.nodes.resize(gltf_data->nodes_count);
 
-		for (size_t i = 0; i < gltf_data->nodes_count; ++i)
+		for (uint32_t i = 0; i < gltf_data->nodes_count; ++i)
 		{
 			cgltf_node& gltf_node = gltf_data->nodes[i];
 			Model::Node& model_node = model.nodes[i];
 			model_node.transform = CGLTFNodeGetTransform(gltf_node);
 
 			model_node.children.resize(gltf_node.children_count);
-			for (size_t j = 0; j < gltf_node.children_count; ++j)
+			for (uint32_t j = 0; j < gltf_node.children_count; ++j)
 			{
-				model_node.children[j] = CGLTFGetIndex(gltf_data->nodes, gltf_node.children[j]);
+				model_node.children[j] = static_cast<uint32_t>(CGLTFGetIndex(gltf_data->nodes, gltf_node.children[j]));
 			}
 
 			if (gltf_node.mesh)
@@ -569,7 +569,7 @@ namespace Assets
 				model_node.mesh_handles.resize(gltf_node.mesh->primitives_count);
 				model_node.materials.resize(gltf_node.mesh->primitives_count);
 
-				for (size_t j = 0; j < gltf_node.mesh->primitives_count; ++j)
+				for (uint32_t j = 0; j < gltf_node.mesh->primitives_count; ++j)
 				{
 					cgltf_primitive& gltf_primitive = gltf_node.mesh->primitives[j];
 
@@ -578,11 +578,11 @@ namespace Assets
 					else
 						model_node.mesh_names[j] = filepath.string() + std::to_string(j);
 
-					size_t mesh_handle_index = CGLTFGetIndex<cgltf_mesh>(gltf_data->meshes, gltf_node.mesh) +
+					uint32_t mesh_handle_index = CGLTFGetIndex<cgltf_mesh>(gltf_data->meshes, gltf_node.mesh) +
 						CGLTFGetIndex<cgltf_primitive>(gltf_node.mesh->primitives, &gltf_primitive);
 					model_node.mesh_handles[j] = mesh_handles[mesh_handle_index];
 
-					size_t material_handle_index = CGLTFGetIndex<cgltf_material>(gltf_data->materials, gltf_primitive.material);
+					uint32_t material_handle_index = CGLTFGetIndex<cgltf_material>(gltf_data->materials, gltf_primitive.material);
 					model_node.materials[j] = materials[material_handle_index];
 				}
 			}
@@ -687,7 +687,10 @@ namespace Assets
 		auto iter = data.imported_textures.find(filepath);
 		if (iter != data.imported_textures.end())
 		{
-			return iter->second.texture_handle;
+			if (iter->second.load_state != ASSET_LOAD_STATE_LOADED)
+				LOG_ERR("Assets::GetModel", "Model was imported but not loaded");
+			else
+				return iter->second.texture_handle;
 		}
 
 		return TextureHandle_t();
@@ -712,7 +715,10 @@ namespace Assets
 		auto iter = data.imported_models.find(filepath);
 		if (iter != data.imported_models.end())
 		{
-			return &data.imported_models.at(filepath).model;
+			if (iter->second.load_state != ASSET_LOAD_STATE_LOADED)
+				LOG_ERR("Assets::GetModel", "Model was imported but not loaded");
+			else
+				return &data.imported_models.at(filepath).model;
 		}
 
 		return nullptr;
