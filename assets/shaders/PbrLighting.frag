@@ -153,6 +153,12 @@ vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 	
 	float NoV = clamp(dot(pixel.normal, view.dir), 0.0f, 1.0f);
 
+	vec3 direct_diffuse = vec3(0.0f);
+	vec3 direct_specular = vec3(0.0f);
+
+	vec3 indirect_diffuse = vec3(0.0f);
+	vec3 indirect_specular = vec3(0.0f);
+
 	// Direct lighting
 	if (settings.use_direct_light == 1)
 	{
@@ -236,10 +242,14 @@ vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 			vec3 area_light_verts[4] = { area_light.vert0, area_light.vert1, area_light.vert2, area_light.vert3 };
 
 			vec3 diffuse = AreaLightIrradiance(view, pixel, mat3(1), area_light_verts, area_light.two_sided);
+			diffuse *= pixel.albedo * area_light_color * area_light.intensity;
+
 			vec3 specular = AreaLightIrradiance(view, pixel, Minv, area_light_verts, area_light.two_sided);
 			specular *= pixel.f0 * ltc2.x + (1.0f - pixel.f0) * ltc2.y;
+			specular *= area_light_color * area_light.intensity;
 
-			Lo += area_light_color * area_light.intensity * (specular + pixel.albedo * diffuse);
+			direct_diffuse += diffuse;
+			direct_specular += specular;
 		}
 	}
 	
@@ -311,38 +321,46 @@ vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 			// FmsEms + kD: Fixes energy conservation for dielectrics/non perfect mirrors
 			kD = diffuse_color * (1.0 - FssEss - FmsEms);
 			kD += FmsEms;
-			Lo += kD * irradiance + FssEss * reflection;
+
+			indirect_diffuse = kD * irradiance;
+			indirect_specular = FssEss * reflection;
 		}
 		else
 		{
 			kD = (1.0 - F) * (1.0 - pixel.metallic);
-			Lo += kD * diffuse + FssEss * reflection;
+			indirect_diffuse = kD * diffuse;
+			indirect_specular = FssEss * reflection;
 		}
 
-		switch (settings.debug_render_mode)
+		if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_BRDF_LUT)
 		{
-			case DEBUG_RENDER_MODE_IBL_INDIRECT_DIFFUSE:
-			{
-				Lo = kD * diffuse;
-			} break;
-			case DEBUG_RENDER_MODE_IBL_INDIRECT_SPECULAR:
-			{
-				Lo = FssEss * reflection;
-			} break;
-			case DEBUG_RENDER_MODE_IBL_BRDF_LUT:
-			{
-				Lo = vec3(env_brdf, 0.0);
-			} break;
+			Lo = vec3(env_brdf, 0.0);
 		}
 	}
-	else
+
+	switch (settings.debug_render_mode)
 	{
-		if (settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_INDIRECT_DIFFUSE ||
-			settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_INDIRECT_SPECULAR ||
-			settings.debug_render_mode == DEBUG_RENDER_MODE_IBL_BRDF_LUT)
+		case DEBUG_RENDER_MODE_NONE:
 		{
-			Lo = vec3(0.0);
-		}
+			Lo = direct_specular + direct_diffuse;
+			Lo += indirect_specular + indirect_diffuse;
+		} break;
+		case DEBUG_RENDER_MODE_DIRECT_DIFFUSE:
+		{
+			Lo = direct_diffuse;
+		} break;
+		case DEBUG_RENDER_MODE_DIRECT_SPECULAR:
+		{
+			Lo = direct_specular;
+		} break;
+		case DEBUG_RENDER_MODE_IBL_INDIRECT_DIFFUSE:
+		{
+			Lo = indirect_diffuse;
+		} break;
+		case DEBUG_RENDER_MODE_IBL_INDIRECT_SPECULAR:
+		{
+			Lo = indirect_specular;
+		} break;
 	}
 
 	return Lo;
