@@ -11,6 +11,10 @@
 
 #include "mikkt/mikktspace.h"
 
+#include "imgui/imgui.h"
+
+#include <filesystem>
+
 class TangentCalculator
 {
 public:
@@ -131,12 +135,111 @@ private:
 namespace Assets
 {
 
+	enum AssetLoadState
+	{
+		ASSET_LOAD_STATE_NONE,
+		ASSET_LOAD_STATE_IMPORTED,
+		ASSET_LOAD_STATE_LOADED
+	};
+
+	struct ImportedTexture
+	{
+		AssetLoadState load_state = ASSET_LOAD_STATE_NONE;
+		TextureHandle_t texture_handle;
+	};
+
+	struct ImportedModel
+	{
+		AssetLoadState load_state = ASSET_LOAD_STATE_NONE;
+		Model model;
+	};
+
 	struct Data
 	{
-		std::unordered_map<std::string, TextureHandle_t> textures;
-		std::unordered_map<std::string, Model> models;
+		std::filesystem::path assets_base_dir;
+		std::filesystem::path models_base_dir;
+		std::filesystem::path textures_base_dir;
+
+		std::unordered_map<std::filesystem::path, ImportedTexture> imported_textures;
+		std::unordered_map<std::filesystem::path, ImportedModel> imported_models;
+
 		TangentCalculator tangent_calc;
 	} data;
+
+	static void ImportTexture(const std::filesystem::path& filepath)
+	{
+		if (!filepath.has_extension())
+			return;
+
+		if (filepath.extension() == ".png" ||
+			filepath.extension() == ".jpg" ||
+			filepath.extension() == ".jpeg" ||
+			filepath.extension() == ".hdr")
+		{
+			if (data.imported_textures.find(filepath) != data.imported_textures.end())
+				return;
+
+			ImportedTexture imported_texture = {};
+			imported_texture.load_state = ASSET_LOAD_STATE_IMPORTED;
+			imported_texture.texture_handle = {};
+
+			data.imported_textures.emplace(filepath, imported_texture);
+		}
+	}
+
+	static void ImportTexturesFromDirectory(const std::filesystem::path& filepath)
+	{
+		for (auto& item : std::filesystem::directory_iterator(filepath))
+		{
+			if (item.is_directory())
+			{
+				ImportTexturesFromDirectory(item.path());
+				continue;
+			}
+
+			if (item.is_regular_file() &&
+				item.path().has_extension())
+			{
+				ImportTexture(item.path());
+			}
+		}
+	}
+
+	static void ImportModel(const std::filesystem::path& filepath)
+	{
+		if (!filepath.has_extension())
+			return;
+
+		if (filepath.extension() == ".gltf")
+		{
+			if (data.imported_models.find(filepath) != data.imported_models.end())
+				return;
+
+			ImportedModel imported_model = {};
+			imported_model.load_state = ASSET_LOAD_STATE_IMPORTED;
+			imported_model.model = {};
+
+			data.imported_models.emplace(filepath, imported_model);
+		}
+	}
+
+	static void ImportModelsFromDirectory(const std::filesystem::path& filepath)
+	{
+		for (const auto& item : std::filesystem::directory_iterator(filepath))
+		{
+			if (item.is_directory())
+			{
+				ImportModelsFromDirectory(item.path());
+				continue;
+			}
+
+			if (item.is_regular_file() &&
+				item.path().has_extension())
+			{
+				ImportModel(item.path());
+			}
+		}
+	}
 
 	struct ReadImageResult
 	{
@@ -148,21 +251,21 @@ namespace Assets
 		uint8_t* pixels;
 	};
 
-	static ReadImageResult ReadImage(const std::string& filepath, bool hdr)
+	static ReadImageResult ReadImage(const std::filesystem::path& filepath, bool hdr)
 	{
 		ReadImageResult result = {};
 		stbi_set_flip_vertically_on_load(hdr);
 
 		if (hdr)
 		{
-			result.pixels = (uint8_t*)stbi_loadf(filepath.c_str(), &result.width, &result.height, &result.num_components, STBI_rgb_alpha);
+			result.pixels = (uint8_t*)stbi_loadf(filepath.string().c_str(), &result.width, &result.height, &result.num_components, STBI_rgb_alpha);
 			// We force stbi to load rgba values, so we always have 4 components
 			result.num_components = 4;
 			result.component_size = 4;
 		}
 		else
 		{
-			result.pixels = (uint8_t*)stbi_load(filepath.c_str(), &result.width, &result.height, &result.num_components, STBI_rgb_alpha);
+			result.pixels = (uint8_t*)stbi_load(filepath.string().c_str(), &result.width, &result.height, &result.num_components, STBI_rgb_alpha);
 			// We force stbi to load rgba values, so we always have 4 components
 			result.num_components = 4;
 			result.component_size = 1;
@@ -179,20 +282,21 @@ namespace Assets
 		cgltf_decode_uri(*result + strlen(*result) - uri.size());
 	}
 
-	static TextureHandle_t LoadGLTFTexture(cgltf_image& gltf_image, const std::string& filepath, TextureFormat format)
+	static TextureHandle_t LoadGLTFTexture(cgltf_image& gltf_image, const std::filesystem::path& filepath, TextureFormat format)
 	{
 		if (VK_RESOURCE_HANDLE_VALID(GetTexture(gltf_image.uri)))
 		{
 			return GetTexture(gltf_image.uri);
 		}
 
-		char* combined_filepath = nullptr;
+		char* combined_char = nullptr;
+		CreateFilepathFromUri(filepath.string(), gltf_image.uri, &combined_char);
+		std::filesystem::path combined_filepath = combined_char;
+		delete combined_char;
 
-		CreateFilepathFromUri(filepath, gltf_image.uri, &combined_filepath);
-		LoadTexture(combined_filepath, gltf_image.uri, format, true, false);
-		delete combined_filepath;
-
-		return GetTexture(gltf_image.uri);
+		ImportTexture(combined_filepath);
+		LoadTexture(combined_filepath, format, true, false);
+		return GetTexture(combined_filepath);
 	}
 
 	template<typename T>
@@ -253,7 +357,7 @@ namespace Assets
 		return transform;
 	}
 
-	static Model ReadGLTF(const std::string& filepath)
+	static Model ReadGLTF(const std::filesystem::path& filepath)
 	{
 		cgltf_options options = {};
 		/*options.memory.alloc_func = [](void* user, cgltf_size size)
@@ -264,14 +368,14 @@ namespace Assets
 		};*/
 
 		cgltf_data* gltf_data = nullptr;
-		cgltf_result parsed = cgltf_parse_file(&options, filepath.c_str(), &gltf_data);
+		cgltf_result parsed = cgltf_parse_file(&options, filepath.string().c_str(), &gltf_data);
 
 		if (parsed != cgltf_result_success)
 		{
-			VK_EXCEPT("Assets", "Failed to load GLTF file: {}", filepath);
+			VK_EXCEPT("Assets", "Failed to load GLTF file: {}", filepath.string());
 		}
 
-		cgltf_load_buffers(&options, gltf_data, filepath.c_str());
+		cgltf_load_buffers(&options, gltf_data, filepath.string().c_str());
 
 		// Determine how many meshes we have in total
 		size_t num_meshes = 0;
@@ -282,7 +386,8 @@ namespace Assets
 		}
 
 		Model model = {};
-		model.name = filepath;
+		model.name = filepath.string();
+
 		std::vector<MeshHandle_t> mesh_handles(num_meshes);
 		size_t mesh_handle_index_current = 0;
 
@@ -471,7 +576,7 @@ namespace Assets
 					if (gltf_node.name)
 						model_node.mesh_names[j] = gltf_node.name + std::to_string(j);
 					else
-						model_node.mesh_names[j] = filepath + std::to_string(j);
+						model_node.mesh_names[j] = filepath.string() + std::to_string(j);
 
 					size_t mesh_handle_index = CGLTFGetIndex<cgltf_mesh>(gltf_data->meshes, gltf_node.mesh) +
 						CGLTFGetIndex<cgltf_primitive>(gltf_node.mesh->primitives, &gltf_primitive);
@@ -492,18 +597,70 @@ namespace Assets
 		return model;
 	}
 
-	void Init()
+	static void RenderImportedAssetsTree(const std::filesystem::directory_entry& directory)
 	{
-		// TODO: Load default assets, if necessary
+		if (ImGui::TreeNode(directory.path().string().c_str()))
+		{
+			for (const auto& item : std::filesystem::directory_iterator(directory))
+			{
+				// If the current item in the directory is also a directory, recurse into its own tree
+				if (item.is_directory())
+				{
+					RenderImportedAssetsTree(item);
+					continue;
+				}
+
+				if (item.is_regular_file())
+				{
+					if (data.imported_textures.find(item.path()) != data.imported_textures.end())
+					{
+						ImGui::Text(item.path().filename().string().c_str());
+					}
+					
+					if (data.imported_models.find(item.path()) != data.imported_models.end())
+					{
+						ImGui::Text(item.path().filename().string().c_str());
+					}
+				}
+			}
+
+			ImGui::TreePop();
+		}
+	}
+
+	void Init(const std::filesystem::path& assets_base_path)
+	{
+		data.assets_base_dir = assets_base_path;
+		data.models_base_dir = assets_base_path.string() + "models";
+		data.textures_base_dir = assets_base_path.string() + "textures";
+
+		ImportTexturesFromDirectory(data.textures_base_dir);
+		ImportModelsFromDirectory(data.models_base_dir);
 	}
 
 	void Exit()
 	{
-		// TODO: Release all assets, both on the CPU and GPU
 	}
 
-	void LoadTexture(const std::string& filepath, const std::string& name, TextureFormat format, bool gen_mips, bool is_environment_map)
+	void RenderUI()
 	{
+		if (ImGui::Begin("Asset Manager"))
+		{
+			ImGui::Text("Imported Assets");
+			RenderImportedAssetsTree(std::filesystem::directory_entry(data.assets_base_dir));
+		}
+		ImGui::End();
+	}
+
+	void LoadTexture(const std::filesystem::path& filepath, TextureFormat format, bool gen_mips, bool is_environment_map)
+	{
+		auto iter = data.imported_textures.find(filepath);
+		if (iter == data.imported_textures.end())
+		{
+			LOG_WARN("Assets::LoadTexture", "Tried to load a texture which has not been imported");
+			return;
+		}
+
 		ReadImageResult image = ReadImage(filepath, IsHDRFormat(format));
 
 		Renderer::CreateTextureArgs args = {};
@@ -517,34 +674,45 @@ namespace Assets
 		args.is_environment_map = is_environment_map;
 
 		TextureHandle_t texture_handle = Renderer::CreateTexture(args);
-		data.textures.emplace(name, texture_handle);
+
+		ImportedTexture& imported_texture = iter->second;
+		imported_texture.load_state = ASSET_LOAD_STATE_LOADED;
+		imported_texture.texture_handle = texture_handle;
 
 		stbi_image_free(image.pixels);
 	}
 
-	TextureHandle_t GetTexture(const std::string& name)
+	TextureHandle_t GetTexture(const std::filesystem::path& filepath)
 	{
-		auto iter = data.textures.find(name);
-		if (iter != data.textures.end())
+		auto iter = data.imported_textures.find(filepath);
+		if (iter != data.imported_textures.end())
 		{
-			return iter->second;
+			return iter->second.texture_handle;
 		}
 
 		return TextureHandle_t();
 	}
 
-	void LoadGLTF(const std::string& filepath, const std::string& name)
+	void LoadGLTF(const std::filesystem::path& filepath)
 	{
-		Model model = ReadGLTF(filepath);
-		data.models.emplace(name, model);
+		auto iter = data.imported_models.find(filepath);
+		if (iter == data.imported_models.end())
+		{
+			LOG_WARN("Assets::LoadGLTF", "Tried to load a GLTF model which has not been imported");
+			return;
+		}
+
+		ImportedModel& imported_model = iter->second;
+		imported_model.load_state = ASSET_LOAD_STATE_LOADED;
+		imported_model.model = ReadGLTF(filepath);
 	}
 
-	Model* GetModel(const std::string& name)
+	Model* GetModel(const std::filesystem::path& filepath)
 	{
-		auto iter = data.models.find(name);
-		if (iter != data.models.end())
+		auto iter = data.imported_models.find(filepath);
+		if (iter != data.imported_models.end())
 		{
-			return &data.models.at(name);
+			return &data.imported_models.at(filepath).model;
 		}
 
 		return nullptr;

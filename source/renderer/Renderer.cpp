@@ -1469,8 +1469,10 @@ namespace Renderer
 		frame->instance_buffer.descriptor = Vulkan::Descriptor::Allocate(VULKAN_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 		Vulkan::Descriptor::Write(frame->instance_buffer.descriptor, frame->instance_buffer.alloc.buffer);
 
-		// If white furnace test is enabled, we want to use the white furnace environment map to render instead of the one passed in
-		if (data->settings.white_furnace_test)
+		// If white furnace test is enabled or the skybox texture is invalid,
+		// we want to use the white furnace environment map to render instead of the one passed in
+		if (data->settings.white_furnace_test ||
+			!data->texture_slotmap.Find(frame_info.skybox_texture_handle))
 			data->skybox_texture_handle = data->white_furnace_skybox_handle;
 		else
 			data->skybox_texture_handle = frame_info.skybox_texture_handle;
@@ -1708,102 +1710,38 @@ namespace Renderer
 
 	void RenderUI()
 	{
-		ImGui::Begin("Renderer");
-
-		ImGui::Text("Total vertex count: %u", data->stats.total_vertex_count);
-		ImGui::Text("Total triangle count: %u", data->stats.total_triangle_count);
-
-		ImGui::SetNextItemOpen(true, ImGuiCond_Once);
-		if (ImGui::CollapsingHeader("Settings"))
+		if (ImGui::Begin("Renderer"))
 		{
-			ImGui::Indent(10.0f);
+			ImGui::Text("Total vertex count: %u", data->stats.total_vertex_count);
+			ImGui::Text("Total triangle count: %u", data->stats.total_triangle_count);
 
-			bool vsync = Vulkan::SwapChain::IsVSyncEnabled();
-			if (ImGui::Checkbox("VSync", &vsync))
-			{
-				Vulkan::SwapChain::SetVSync(vsync);
-			}
-
-			// ------------------------------------------------------------------------------------------------------
-			// Debug settings
-
-			ImGui::SetNextItemOpen(false, ImGuiCond_Once);
-			if (ImGui::CollapsingHeader("Debug"))
+			ImGui::SetNextItemOpen(true, ImGuiCond_Once);
+			if (ImGui::CollapsingHeader("Settings"))
 			{
 				ImGui::Indent(10.0f);
 
-				if (ImGui::BeginCombo("Debug render mode", DEBUG_RENDER_MODE_LABELS[data->settings.debug_render_mode]))
+				bool vsync = Vulkan::SwapChain::IsVSyncEnabled();
+				if (ImGui::Checkbox("VSync", &vsync))
 				{
-					for (uint32_t i = 0; i < DEBUG_RENDER_MODE_NUM_MODES; ++i)
-					{
-						bool is_selected = i == data->settings.debug_render_mode;
-						if (ImGui::Selectable(DEBUG_RENDER_MODE_LABELS[i], is_selected))
-						{
-							data->settings.debug_render_mode = i;
-						}
-
-						if (is_selected)
-						{
-							ImGui::SetItemDefaultFocus();
-						}
-					}
-
-					ImGui::EndCombo();
+					Vulkan::SwapChain::SetVSync(vsync);
 				}
 
-				ImGui::Checkbox("White furnace test", (bool*)&data->settings.white_furnace_test);
-				if (ImGui::IsItemHovered())
-				{
-					ImGui::SetTooltip("If enabled, switches the HDR environment for a purely white uniformly lit environment");
-				}
-
-				ImGui::Unindent(10.0f);
-			}
-
-			// ------------------------------------------------------------------------------------------------------
-			// PBR settings
-
-			ImGui::SetNextItemOpen(false, ImGuiCond_Once);
-			if (ImGui::CollapsingHeader("PBR"))
-			{
-				ImGui::Indent(10.0f);
-
-				ImGui::Checkbox("Use direct light", (bool*)&data->settings.use_direct_light);
-				if (ImGui::IsItemHovered())
-				{
-					ImGui::SetTooltip("If enabled, evaluates direct lighting from light sources");
-				}
-				
-				ImGui::Checkbox("Use multiscatter", (bool*)&data->settings.use_multiscatter);
-				if (ImGui::IsItemHovered())
-				{
-					ImGui::SetTooltip("If enabled, specular direct lighting will be energy conserving, taking multiscatter specular bounces between microfacets into account");
-				}
+				// ------------------------------------------------------------------------------------------------------
+				// Debug settings
 
 				ImGui::SetNextItemOpen(false, ImGuiCond_Once);
-				if (ImGui::CollapsingHeader("General"))
+				if (ImGui::CollapsingHeader("Debug"))
 				{
 					ImGui::Indent(10.0f);
 
-					ImGui::Checkbox("Use squared roughness", (bool*)&data->settings.use_pbr_squared_roughness);
-					if (ImGui::IsItemHovered())
+					if (ImGui::BeginCombo("Debug render mode", DEBUG_RENDER_MODE_LABELS[data->settings.debug_render_mode]))
 					{
-						ImGui::SetTooltip("If enabled, squares the roughness before doing any lighting calculations, which makes it perceptually more linear");
-					}
-					ImGui::Checkbox("Use clearcoat", (bool*)&data->settings.use_pbr_clearcoat);
-					if (ImGui::IsItemHovered())
-					{
-						ImGui::SetTooltip("Global toggle for clearcoat materials");
-					}
-
-					if (ImGui::BeginCombo("Diffuse BRDF Model", DIFFUSE_BRDF_MODEL_LABELS[data->settings.pbr_diffuse_brdf_model]))
-					{
-						for (uint32_t i = 0; i < DIFFUSE_BRDF_MODEL_NUM_MODELS; ++i)
+						for (uint32_t i = 0; i < DEBUG_RENDER_MODE_NUM_MODES; ++i)
 						{
-							bool is_selected = i == data->settings.pbr_diffuse_brdf_model;
-							if (ImGui::Selectable(DIFFUSE_BRDF_MODEL_LABELS[i], is_selected))
+							bool is_selected = i == data->settings.debug_render_mode;
+							if (ImGui::Selectable(DEBUG_RENDER_MODE_LABELS[i], is_selected))
 							{
-								data->settings.pbr_diffuse_brdf_model = i;
+								data->settings.debug_render_mode = i;
 							}
 
 							if (is_selected)
@@ -1814,73 +1752,137 @@ namespace Renderer
 
 						ImGui::EndCombo();
 					}
+
+					ImGui::Checkbox("White furnace test", (bool*)&data->settings.white_furnace_test);
 					if (ImGui::IsItemHovered())
 					{
-						ImGui::SetTooltip("Select which diffuse BRDF term to use for direct diffuse lighting");
+						ImGui::SetTooltip("If enabled, switches the HDR environment for a purely white uniformly lit environment");
 					}
 
 					ImGui::Unindent(10.0f);
 				}
 
+				// ------------------------------------------------------------------------------------------------------
+				// PBR settings
+
 				ImGui::SetNextItemOpen(false, ImGuiCond_Once);
-				if (ImGui::CollapsingHeader("IBL"))
+				if (ImGui::CollapsingHeader("PBR"))
 				{
 					ImGui::Indent(10.0f);
 
-					ImGui::Checkbox("Use IBL", (bool*)&data->settings.use_ibl);
+					ImGui::Checkbox("Use direct light", (bool*)&data->settings.use_direct_light);
 					if (ImGui::IsItemHovered())
 					{
-						ImGui::SetTooltip("Toggle image-based lighting");
+						ImGui::SetTooltip("If enabled, evaluates direct lighting from light sources");
 					}
-					ImGui::Checkbox("Use IBL clearcoat", (bool*)&data->settings.use_ibl_clearcoat);
+
+					ImGui::Checkbox("Use multiscatter", (bool*)&data->settings.use_multiscatter);
 					if (ImGui::IsItemHovered())
 					{
-						ImGui::SetTooltip("If enabled, clearcoat materials will have their own specular lobe when evaluating specular indirect lighting");
+						ImGui::SetTooltip("If enabled, specular direct lighting will be energy conserving, taking multiscatter specular bounces between microfacets into account");
 					}
-					ImGui::Checkbox("Use IBL multiscatter", (bool*)&data->settings.use_ibl_multiscatter);
-					if (ImGui::IsItemHovered())
+
+					ImGui::SetNextItemOpen(false, ImGuiCond_Once);
+					if (ImGui::CollapsingHeader("General"))
 					{
-						ImGui::SetTooltip("If enabled, specular indirect lighting will be energy conserving, taking multiscatter specular bounces between microfacets into account");
+						ImGui::Indent(10.0f);
+
+						ImGui::Checkbox("Use squared roughness", (bool*)&data->settings.use_pbr_squared_roughness);
+						if (ImGui::IsItemHovered())
+						{
+							ImGui::SetTooltip("If enabled, squares the roughness before doing any lighting calculations, which makes it perceptually more linear");
+						}
+						ImGui::Checkbox("Use clearcoat", (bool*)&data->settings.use_pbr_clearcoat);
+						if (ImGui::IsItemHovered())
+						{
+							ImGui::SetTooltip("Global toggle for clearcoat materials");
+						}
+
+						if (ImGui::BeginCombo("Diffuse BRDF Model", DIFFUSE_BRDF_MODEL_LABELS[data->settings.pbr_diffuse_brdf_model]))
+						{
+							for (uint32_t i = 0; i < DIFFUSE_BRDF_MODEL_NUM_MODELS; ++i)
+							{
+								bool is_selected = i == data->settings.pbr_diffuse_brdf_model;
+								if (ImGui::Selectable(DIFFUSE_BRDF_MODEL_LABELS[i], is_selected))
+								{
+									data->settings.pbr_diffuse_brdf_model = i;
+								}
+
+								if (is_selected)
+								{
+									ImGui::SetItemDefaultFocus();
+								}
+							}
+
+							ImGui::EndCombo();
+						}
+						if (ImGui::IsItemHovered())
+						{
+							ImGui::SetTooltip("Select which diffuse BRDF term to use for direct diffuse lighting");
+						}
+
+						ImGui::Unindent(10.0f);
 					}
-					
+
+					ImGui::SetNextItemOpen(false, ImGuiCond_Once);
+					if (ImGui::CollapsingHeader("IBL"))
+					{
+						ImGui::Indent(10.0f);
+
+						ImGui::Checkbox("Use IBL", (bool*)&data->settings.use_ibl);
+						if (ImGui::IsItemHovered())
+						{
+							ImGui::SetTooltip("Toggle image-based lighting");
+						}
+						ImGui::Checkbox("Use IBL clearcoat", (bool*)&data->settings.use_ibl_clearcoat);
+						if (ImGui::IsItemHovered())
+						{
+							ImGui::SetTooltip("If enabled, clearcoat materials will have their own specular lobe when evaluating specular indirect lighting");
+						}
+						ImGui::Checkbox("Use IBL multiscatter", (bool*)&data->settings.use_ibl_multiscatter);
+						if (ImGui::IsItemHovered())
+						{
+							ImGui::SetTooltip("If enabled, specular indirect lighting will be energy conserving, taking multiscatter specular bounces between microfacets into account");
+						}
+
+						ImGui::Unindent(10.0f);
+					}
+
+					ImGui::Unindent(10.0f);
+				}
+
+				// ------------------------------------------------------------------------------------------------------
+				// Post-processing settings
+
+				ImGui::SetNextItemOpen(false, ImGuiCond_Once);
+				if (ImGui::CollapsingHeader("Post-processing"))
+				{
+					ImGui::Indent(10.0f);
+
+					ImGui::SliderFloat("Exposure", &data->settings.postfx_exposure, 0.001f, 20.0f, "%.2f");
+					ImGui::SliderFloat("Gamma", &data->settings.postfx_gamma, 0.001f, 20.0f, "%.2f");
+					ImGui::SliderFloat("Max white", &data->settings.postfx_max_white, 0.1f, 1000.0f, "%.2f");
+
+					ImGui::Unindent(10.0f);
+				}
+
+				// ------------------------------------------------------------------------------------------------------
+				// Camera settings
+
+				ImGui::SetNextItemOpen(false, ImGuiCond_Once);
+				if (ImGui::CollapsingHeader("Camera"))
+				{
+					ImGui::Indent(10.0f);
+
+					ImGui::DragFloat("Camera near plane", &data->camera_settings.near_plane, 0.1f, 0.1f, 10000.0f);
+					ImGui::DragFloat("Camera far plane", &data->camera_settings.far_plane, 0.1f, 0.1f, 10000.0f);
+
 					ImGui::Unindent(10.0f);
 				}
 
 				ImGui::Unindent(10.0f);
 			}
-
-			// ------------------------------------------------------------------------------------------------------
-			// Post-processing settings
-
-			ImGui::SetNextItemOpen(false, ImGuiCond_Once);
-			if (ImGui::CollapsingHeader("Post-processing"))
-			{
-				ImGui::Indent(10.0f);
-
-				ImGui::SliderFloat("Exposure", &data->settings.postfx_exposure, 0.001f, 20.0f, "%.2f");
-				ImGui::SliderFloat("Gamma", &data->settings.postfx_gamma, 0.001f, 20.0f, "%.2f");
-				ImGui::SliderFloat("Max white", &data->settings.postfx_max_white, 0.1f, 1000.0f, "%.2f");
-
-				ImGui::Unindent(10.0f);
-			}
-
-			// ------------------------------------------------------------------------------------------------------
-			// Camera settings
-
-			ImGui::SetNextItemOpen(false, ImGuiCond_Once);
-			if (ImGui::CollapsingHeader("Camera"))
-			{
-				ImGui::Indent(10.0f);
-
-				ImGui::DragFloat("Camera near plane", &data->camera_settings.near_plane, 0.1f, 0.1f, 10000.0f);
-				ImGui::DragFloat("Camera far plane", &data->camera_settings.far_plane, 0.1f, 0.1f, 10000.0f);
-
-				ImGui::Unindent(10.0f);
-			}
-
-			ImGui::Unindent(10.0f);
 		}
-
 		ImGui::End();
 	}
 

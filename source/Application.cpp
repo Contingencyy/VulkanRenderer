@@ -11,6 +11,8 @@
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_glfw.h"
 
+#include <filesystem>
+
 namespace Application
 {
 
@@ -99,12 +101,13 @@ namespace Application
 		}
 	}
 
-	static void SpawnModelEntity(const char* model_name, const glm::mat4& transform)
+	static void SpawnModelEntity(const std::filesystem::path& filepath, const glm::mat4& transform)
 	{
-		Assets::Model* model = Assets::GetModel(model_name);
+		Assets::Model* model = Assets::GetModel(filepath);
 		if (!model)
 		{
-			VK_EXCEPT("Assets", "Failed to fetch model with name {}", model_name);
+			LOG_ERR("Assets", "Failed to fetch model with name {}", filepath.string());
+			return;
 		}
 
 		for (uint32_t i = 0; i < model->root_nodes.size(); ++i)
@@ -123,38 +126,22 @@ namespace Application
 		Input::Init(data.window);
 		Renderer::Init(data.window, data.window_width, data.window_height);
 
-		Assets::Init();
-		Assets::LoadTexture("assets/textures/kermit.png", "Kermit", TEXTURE_FORMAT_RGBA8_UNORM, true, false);
+		Assets::Init("assets\\");
+		Assets::LoadTexture("assets\\textures\\kermit.png", TEXTURE_FORMAT_RGBA8_UNORM, true, false);
 
-		Assets::LoadTexture("assets/textures/hdr/Env_Plaza.hdr", "Env", TEXTURE_FORMAT_RGBA32_SFLOAT, true, true);
-		//Assets::LoadTexture("assets/textures/hdr/Env_Rocky_Hills.hdr", "Env", TEXTURE_FORMAT_RGBA32_SFLOAT, true, true);
-		//Assets::LoadTexture("assets/textures/hdr/Env_Victorian_Hall.hdr", "Env", TEXTURE_FORMAT_RGBA32_SFLOAT, true, true);
-		//Assets::LoadTexture("assets/textures/hdr/Env_Golden_Bay.hdr", "Env", TEXTURE_FORMAT_RGBA32_SFLOAT, true, true);
-		//Assets::LoadTexture("assets/textures/hdr/Env_Belfast_Sunset.hdr", "Env", TEXTURE_FORMAT_RGBA32_SFLOAT, true, true);
+		Assets::LoadTexture("assets\\textures\\hdr\\Env_Plaza.hdr", TEXTURE_FORMAT_RGBA32_SFLOAT, true, true);
 
-		//Assets::LoadGLTF("assets/models/gltf/ClearCoatToyCar/ToyCar.gltf", "model");
-		//Assets::LoadGLTF("assets/models/gltf/ClearCoatTest/ClearCoatTest.gltf", "model");
-		//Assets::LoadGLTF("assets/models/gltf/ClearCoatRing/ClearCoatRing.gltf", "model");
-		Assets::LoadGLTF("assets/models/gltf/ClearCoatSphere/ClearCoatSphere.gltf", "model");
-		//Assets::LoadGLTF("assets/models/gltf/ClearCoatCarPaint/ClearCoatCarPaint.gltf", "model");
-		Assets::LoadGLTF("assets/models/gltf/SponzaOld/Sponza.gltf", "sponza");
-		//Assets::LoadGLTF("assets/models/gltf/Sponza/NewSponza_Main_glTF_002.gltf", "model");
-		//Assets::LoadGLTF("assets/models/gltf/MetalRoughSpheres/MetalRoughSpheres.gltf", "model");
-		//Assets::LoadGLTF("assets/models/gltf/ABeautifulGame/ABeautifulGame.gltf", "chess");
-		//Assets::LoadGLTF("assets/models/gltf/Car_Destroyed/scene.gltf", "model");
-		//Assets::LoadGLTF("assets/models/gltf/Car_Old_Rusty/scene.gltf", "model");
-		//Assets::LoadGLTF("assets/models/gltf/Car_Porsche/scene.gltf", "model");
-		//Assets::LoadGLTF("assets/models/gltf/Mask_Venice/scene.gltf", "model");
-		//Assets::LoadGLTF("assets/models/gltf/Skull_Salazar/scene.gltf", "model");
+		Assets::LoadGLTF("assets\\models\\gltf\\SponzaOld\\Sponza.gltf");
+		Assets::LoadGLTF("assets\\models\\gltf\\ClearCoatSphere\\ClearcoatSphere.gltf");
 
 		glm::mat4 transform = glm::scale(glm::identity<glm::mat4>(), glm::vec3(10.0f));
-		SpawnModelEntity("sponza", transform);
-		SpawnModelEntity("model", transform);
+		SpawnModelEntity("assets\\models\\gltf\\SponzaOld\\Sponza.gltf", transform);
+		SpawnModelEntity("assets\\models\\gltf\\ClearCoatSphere\\ClearcoatSphere.gltf", transform);
 
 		glm::mat4 area_light_transform = glm::translate(glm::identity<glm::mat4>(), glm::vec3(70.0f, 10.0f, -3.0f));
 		area_light_transform = glm::rotate(area_light_transform, glm::radians(-90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 		area_light_transform = glm::scale(area_light_transform, glm::vec3(12.0f, 8.0f, 1.0f));
-		data.active_scene.AddEntity<AreaLight>(Assets::GetTexture("Kermit"), area_light_transform, glm::vec3(1.0f, 0.95f, 0.8f), 5.0f, true, "AreaLight0");
+		data.active_scene.AddEntity<AreaLight>(Assets::GetTexture("assets\\textures\\kermit.png"), area_light_transform, glm::vec3(1.0f, 0.95f, 0.8f), 5.0f, true, "AreaLight0");
 
 		area_light_transform = glm::translate(glm::identity<glm::mat4>(), glm::vec3(-80.0f, 10.0f, -3.0f));
 		area_light_transform = glm::rotate(area_light_transform, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
@@ -191,14 +178,15 @@ namespace Application
 		if (data.render_ui)
 		{
 			data.active_scene.RenderUI();
+			Assets::RenderUI();
 			Renderer::RenderUI();
 
-			ImGui::Begin("General");
-
-			float delta_time_ms = data.delta_time.count() * 1000.0f;
-			ImGui::Text("FPS: %u", (uint32_t)(1000.0f / delta_time_ms));
-			ImGui::Text("Frametime: %.3fms", delta_time_ms);
-
+			if (ImGui::Begin("General"))
+			{
+				float delta_time_ms = data.delta_time.count() * 1000.0f;
+				ImGui::Text("FPS: %u", (uint32_t)(1000.0f / delta_time_ms));
+				ImGui::Text("Frametime: %.3fms", delta_time_ms);
+			}
 			ImGui::End();
 		}
 	}
@@ -208,7 +196,7 @@ namespace Application
 		Renderer::BeginFrameInfo frame_info = {};
 		frame_info.camera_view = data.active_scene.GetActiveCamera().GetView();
 		frame_info.camera_vfov = data.active_scene.GetActiveCamera().GetVerticalFOV();
-		frame_info.skybox_texture_handle = Assets::GetTexture("Env");
+		frame_info.skybox_texture_handle = Assets::GetTexture("assets\\textures\\hdr\\Env_Plaza.hdr");
 		Renderer::BeginFrame(frame_info);
 
 		data.active_scene.Render();

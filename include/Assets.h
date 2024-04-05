@@ -4,12 +4,6 @@
 namespace Assets
 {
 
-	void Init();
-	void Exit();
-
-	void LoadTexture(const std::string& filepath, const std::string& name, TextureFormat format, bool gen_mips, bool is_environment_map);
-	TextureHandle_t GetTexture(const std::string& name);
-
 	struct Material
 	{
 		TextureHandle_t albedo_texture_handle;
@@ -47,7 +41,15 @@ namespace Assets
 		std::string name;
 	};
 
-	void LoadGLTF(const std::string& filepath, const std::string& name);
-	Model* GetModel(const std::string& name);
+	void Init(const std::filesystem::path& assets_base_path);
+	void Exit();
+
+	void RenderUI();
+
+	void LoadTexture(const std::filesystem::path& filepath, TextureFormat format, bool gen_mips, bool is_environment_map);
+	TextureHandle_t GetTexture(const std::filesystem::path& filepath);
+
+	void LoadGLTF(const std::filesystem::path& filepath);
+	Model* GetModel(const std::filesystem::path& filepath);
 
 }

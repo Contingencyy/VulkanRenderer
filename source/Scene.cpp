@@ -29,13 +29,13 @@ void Scene::Render()
 
 void Scene::RenderUI()
 {
-	ImGui::Begin("Scene");
-
-	for (auto& entity : m_entities)
+	if (ImGui::Begin("Scene"))
 	{
-		entity->RenderUI();
+		for (auto& entity : m_entities)
+		{
+			entity->RenderUI();
+		}
 	}
-
 	ImGui::End();
 }
 
