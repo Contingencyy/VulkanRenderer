@@ -16,10 +16,9 @@ namespace Vulkan
 		void SetViewport(const VulkanCommandBuffer& command_buffer, uint32_t first_viewport, uint32_t num_viewports, const VkViewport* const vk_viewports);
 		void SetScissor(const VulkanCommandBuffer& command_buffer, uint32_t first_scissor, uint32_t num_scissors, const VkRect2D* const vk_scissor_rects);
 
-		void DrawGeometry(const VulkanCommandBuffer& command_buffer, uint32_t num_vertex_buffers, const VulkanBuffer* vertex_buffers,
-			uint32_t num_vertices, uint32_t num_instances = 1, uint32_t first_vertex = 0, uint32_t first_instance = 0);
-		void DrawGeometryIndexed(const VulkanCommandBuffer& command_buffer, uint32_t num_vertex_buffers, const VulkanBuffer* const vertex_buffers, const VulkanBuffer* const index_buffer,
-			VkIndexType index_type, uint32_t num_indices, uint32_t num_instances = 1, uint32_t first_instance = 0, uint32_t first_index = 0, uint32_t vertex_offset = 0);
+		void DrawGeometry(const VulkanCommandBuffer& command_buffer, uint32_t num_vertices, uint32_t num_instances = 1, uint32_t first_vertex = 0, uint32_t first_instance = 0);
+		void DrawGeometryIndexed(const VulkanCommandBuffer& command_buffer, const VulkanBuffer* const index_buffer,	VkIndexType index_type, uint32_t num_indices,
+			uint32_t num_instances = 1, uint32_t first_instance = 0, uint32_t first_index = 0, uint32_t vertex_offset = 0);
 
 		void ClearImage(const VulkanCommandBuffer& command_buffer, const VulkanImage& image, const VkClearColorValue& clear_value);
 		void ClearImage(const VulkanCommandBuffer& command_buffer, const VulkanImage& image, const VkClearDepthStencilValue& clear_value);

@@ -14,8 +14,8 @@ RingBuffer::RingBuffer(uint64_t byte_size)
 	// Create vulkan buffer
 	BufferCreateInfo buffer_info = {};
 	buffer_info.size_in_bytes = byte_size;
-	// Ring buffer is used for transferring data (STAGING), uniform buffers (UNIFORM), and instance buffers (VERTEX)
-	buffer_info.usage_flags = BUFFER_USAGE_STAGING | BUFFER_USAGE_UNIFORM | BUFFER_USAGE_VERTEX;
+	// Ring buffer is used for transferring data (STAGING), uniform buffers (UNIFORM), and instance buffers (READ_ONLY)
+	buffer_info.usage_flags = BUFFER_USAGE_STAGING | BUFFER_USAGE_UNIFORM | BUFFER_USAGE_READ_ONLY;
 	buffer_info.memory_flags = GPU_MEMORY_HOST_VISIBLE | GPU_MEMORY_HOST_COHERENT;
 	buffer_info.name = "Ring Buffer";
 

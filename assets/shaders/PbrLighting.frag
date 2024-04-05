@@ -1,25 +1,25 @@
 #version 460
-
 #include "BRDF.glsl"
 
 layout(std140, push_constant) uniform constants
 {
-	layout(offset = 0) uint irradiance_cubemap_index;
-	layout(offset = 4) uint irradiance_sampler_index;
-	layout(offset = 8) uint prefiltered_cubemap_index;
-	layout(offset = 12) uint prefiltered_sampler_index;
-	layout(offset = 16) uint num_prefiltered_mips;
-	layout(offset = 20) uint brdf_lut_index;
-	layout(offset = 24) uint brdf_lut_sampler_index;
-	layout(offset = 28) uint tlas_index;
-	layout(offset = 32) uint mat_index;
-} push_consts;
+	layout(offset = 8) uint irradiance_cubemap_index;
+	layout(offset = 12) uint irradiance_sampler_index;
+	layout(offset = 16) uint prefiltered_cubemap_index;
+	layout(offset = 20) uint prefiltered_sampler_index;
+	layout(offset = 24) uint num_prefiltered_mips;
+	layout(offset = 28) uint brdf_lut_index;
+	layout(offset = 32) uint brdf_lut_sampler_index;
+	layout(offset = 36) uint tlas_index;
+} push;
 
 layout(location = 0) in vec4 frag_pos;
 layout(location = 1) in vec2 frag_tex_coord;
 layout(location = 2) in vec3 frag_normal;
 layout(location = 3) in vec3 frag_tangent;
 layout(location = 4) in vec3 frag_bitangent;
+// NOTE: flat identifier makes sure that there is no interpolation of the value between the vertex and fragment shader
+layout(location = 5) in flat uint material_index;
 
 layout(location = 0) out vec4 out_color;
 
@@ -58,7 +58,7 @@ bool TraceShadowRay(vec3 ray_origin, vec3 ray_dir, float tmax)
 	bool occluded = false;
 
 	rayQueryEXT ray_query;
-	rayQueryInitializeEXT(ray_query, tlas_scene[push_consts.tlas_index], gl_RayFlagsTerminateOnFirstHitEXT, 0xFF, ray_origin, tmin, ray_dir, tmax);
+	rayQueryInitializeEXT(ray_query, g_tlas_scene[push.tlas_index], gl_RayFlagsTerminateOnFirstHitEXT, 0xFF, ray_origin, tmin, ray_dir, tmax);
 	rayQueryProceedEXT(ray_query);
 
 	// Starts the traversal, once the traversal is complete, rayQueryProceedEXT will return false
@@ -134,7 +134,7 @@ vec3 AreaLightIrradiance(ViewInfo view, PixelInfo pixel, mat3 Minv, vec3 area_li
 	uv_form_factor = uv_form_factor * LUT_SCALE + LUT_BIAS;
 
 	// Fetch form factor for the horizon clipping
-	float scale = SampleTexture(ltc2_index, materials[push_consts.mat_index].sampler_index, uv_form_factor).w;
+	float scale = SampleTexture(ltc2_index, materials[material_index].sampler_index, uv_form_factor).w;
 
 	float sum = len * scale;
 	if (!back_face && !two_sided)
@@ -223,8 +223,8 @@ vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 		uv = uv * LUT_SCALE + LUT_BIAS;
 
 		// Fetch matrix
-		vec4 ltc1 = SampleTexture(ltc1_index, materials[push_consts.mat_index].sampler_index, uv);
-		vec4 ltc2 = SampleTexture(ltc2_index, materials[push_consts.mat_index].sampler_index, uv);
+		vec4 ltc1 = SampleTexture(ltc1_index, materials[material_index].sampler_index, uv);
+		vec4 ltc2 = SampleTexture(ltc2_index, materials[material_index].sampler_index, uv);
 
 		mat3 Minv = mat3(
 			vec3(ltc1.x, 0.0f, ltc1.y),
@@ -236,7 +236,7 @@ vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 		{
 			GPUAreaLight area_light = area_lights[i];
 			vec3 area_light_color = vec3(area_light.color_red, area_light.color_green, area_light.color_blue);
-			//vec4 area_light_texture = SampleTextureLod(area_light.texture_index, materials[push_consts.mat_index].sampler_index, uv, 0.0f);
+			//vec4 area_light_texture = SampleTextureLod(area_light.texture_index, materials[material_index].sampler_index, uv, 0.0f);
 
 			//vec3 area_light_color = vec3(area_light.color_red, area_light.color_green, area_light.color_blue);
 			vec3 area_light_verts[4] = { area_light.vert0, area_light.vert1, area_light.vert2, area_light.vert3 };
@@ -261,9 +261,9 @@ vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 	{
 		vec3 R = reflect(-view.dir, pixel.normal);
 
-		vec2 env_brdf = SampleTexture(push_consts.brdf_lut_index, push_consts.brdf_lut_sampler_index, vec2(NoV, pixel.roughness)).rg;
-		vec3 reflection = SampleTextureCubeLod(push_consts.prefiltered_cubemap_index, push_consts.prefiltered_sampler_index, R, pixel.roughness * push_consts.num_prefiltered_mips).rgb;
-		vec3 irradiance = SampleTextureCube(push_consts.irradiance_cubemap_index, push_consts.irradiance_sampler_index, pixel.normal).rgb;
+		vec2 env_brdf = SampleTexture(push.brdf_lut_index, push.brdf_lut_sampler_index, vec2(NoV, pixel.roughness)).rg;
+		vec3 reflection = SampleTextureCubeLod(push.prefiltered_cubemap_index, push.prefiltered_sampler_index, R, pixel.roughness * push.num_prefiltered_mips).rgb;
+		vec3 irradiance = SampleTextureCube(push.irradiance_cubemap_index, push.irradiance_sampler_index, pixel.normal).rgb;
 
 		vec3 diffuse_color = pixel.albedo * Fd_Lambert();
 		vec3 diffuse = irradiance * diffuse_color;
@@ -279,8 +279,8 @@ vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 			vec3 attenuation = 1.0 - pixel.alpha_coat * Fcc;
 
 			vec3 Rc = reflect(-view.dir, pixel.normal_coat);
-			vec3 reflection_coat = SampleTextureCubeLod(push_consts.prefiltered_cubemap_index, push_consts.prefiltered_sampler_index, Rc, pixel.roughness_coat * push_consts.num_prefiltered_mips).rgb;
-			vec2 env_brdf_coat = SampleTexture(push_consts.brdf_lut_index, push_consts.brdf_lut_sampler_index, vec2(max(dot(pixel.normal_coat, view.dir), 0.0), pixel.roughness_coat)).rg;
+			vec3 reflection_coat = SampleTextureCubeLod(push.prefiltered_cubemap_index, push.prefiltered_sampler_index, Rc, pixel.roughness_coat * push.num_prefiltered_mips).rgb;
+			vec2 env_brdf_coat = SampleTexture(push.brdf_lut_index, push.brdf_lut_sampler_index, vec2(max(dot(pixel.normal_coat, view.dir), 0.0), pixel.roughness_coat)).rg;
 			
 			// Take into account energy lost in the clearcoat layer by adjusting the base layer
 			diffuse *= attenuation;
@@ -373,7 +373,7 @@ void main()
 	view.pos = camera.view_pos.xyz;
 	view.dir = normalize(view.pos - frag_pos.xyz);
 
-	GPUMaterial material = materials[push_consts.mat_index];
+	GPUMaterial material = materials[material_index];
 
 	PixelInfo pixel;
 	pixel.has_coat = false;
@@ -419,7 +419,7 @@ void main()
 	}
 
 	// Evaluate f0 and energy compensation for direct lighting
-	vec2 env_brdf = SampleTexture(push_consts.brdf_lut_index, push_consts.brdf_lut_sampler_index, vec2(max(dot(pixel.normal, view.dir), 0.0), pixel.roughness)).rg;
+	vec2 env_brdf = SampleTexture(push.brdf_lut_index, push.brdf_lut_sampler_index, vec2(max(dot(pixel.normal, view.dir), 0.0), pixel.roughness)).rg;
 	pixel.f0 = mix(vec3(0.04), pixel.albedo, pixel.metallic);
 
 	// Write final color

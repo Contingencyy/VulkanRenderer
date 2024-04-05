@@ -17,7 +17,7 @@ namespace Vulkan
 			============================ PRIVATE FUNCTIONS =================================
 		*/
 
-		static constexpr uint32_t DESCRIPTOR_BUFFER_DEFAULT_DESCRIPTOR_COUNT = 1024;
+		static constexpr uint32_t DESCRIPTOR_BUFFER_DEFAULT_DESCRIPTOR_COUNT = 16384;
 
 		struct FreeDescriptorBlock
 		{

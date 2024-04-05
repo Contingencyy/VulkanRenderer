@@ -15,8 +15,8 @@ namespace Vulkan
 		{
 			BufferCreateInfo buffer_info = {};
 			buffer_info.size_in_bytes = size_in_bytes;
-			buffer_info.usage_flags = BUFFER_USAGE_COPY_DST | BUFFER_USAGE_VERTEX |
-				VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+			buffer_info.usage_flags = BUFFER_USAGE_COPY_DST | BUFFER_USAGE_READ_ONLY |
+				BUFFER_USAGE_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_INPUT;
 			buffer_info.memory_flags = GPU_MEMORY_DEVICE_LOCAL;
 			buffer_info.name = name;
 
@@ -28,7 +28,7 @@ namespace Vulkan
 			BufferCreateInfo buffer_info = {};
 			buffer_info.size_in_bytes = size_in_bytes;
 			buffer_info.usage_flags = BUFFER_USAGE_COPY_DST | BUFFER_USAGE_INDEX |
-				VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+				BUFFER_USAGE_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_INPUT;
 			buffer_info.memory_flags = GPU_MEMORY_DEVICE_LOCAL;
 			buffer_info.name = name;
 

@@ -8,10 +8,10 @@
 
 #include "BRDF.glsl"
 
-layout(std140, push_constant) uniform constants
+layout(std140, push_constant) uniform PushConsts
 {
 	layout(offset = 0) uint num_samples;
-} push_consts;
+} push;
 
 layout(location = 0) in vec2 tex_coord;
 
@@ -42,9 +42,9 @@ vec2 IntegrateBRDF(float NoV, float roughness)
 	vec3 V = vec3(sqrt(1.0 - NoV * NoV), 0.0, NoV);
 
 	vec2 LUT = vec2(0.0);
-	for(uint i = 0u; i < push_consts.num_samples; ++i)
+	for(uint i = 0u; i < push.num_samples; ++i)
 	{
-		vec2 Xi = Hammersley2D(i, push_consts.num_samples);
+		vec2 Xi = Hammersley2D(i, push.num_samples);
 		vec3 H = ImportanceSampleGGX(Xi, roughness, N);
 		vec3 L = 2.0 * dot(V, H) * H - V;
 
@@ -64,7 +64,7 @@ vec2 IntegrateBRDF(float NoV, float roughness)
 		}
 	}
 
-	return LUT / float(push_consts.num_samples);
+	return LUT / float(push.num_samples);
 }
 
 void main()

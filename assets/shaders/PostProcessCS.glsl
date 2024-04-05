@@ -5,11 +5,11 @@
 layout(set = DESCRIPTOR_SET_STORAGE_IMAGE, binding = 0, rgba16) uniform restrict readonly image2D g_inputs[];
 layout(set = DESCRIPTOR_SET_STORAGE_IMAGE, binding = 0, rgba8) uniform restrict writeonly image2D g_outputs[];
 
-layout(std140, push_constant) uniform constants
+layout(std140, push_constant) uniform PushConsts
 {
 	layout(offset = 0) uint hdr_src_index;
 	layout(offset = 4) uint sdr_dst_index;
-} push_consts;
+} push;
 
 layout(local_size_x = 8, local_size_y = 8) in;
 
@@ -55,7 +55,7 @@ vec3 LinearToSRGB(vec3 linear, float gamma)
 void main()
 {
 	const ivec2 texel_pos = ivec2(gl_GlobalInvocationID.xy);
-	vec4 hdr_color = imageLoad(g_inputs[push_consts.hdr_src_index], texel_pos);
+	vec4 hdr_color = imageLoad(g_inputs[push.hdr_src_index], texel_pos);
 	vec3 final_color = hdr_color.xyz;
 
 	if (settings.debug_render_mode == DEBUG_RENDER_MODE_NONE)
@@ -67,5 +67,5 @@ void main()
 
 	// Image store always takes in a vec4, but if the destination texture is e.g. format RG16,
 	// then only the RG components will be written and the others ignored
-	imageStore(g_outputs[push_consts.sdr_dst_index], texel_pos, vec4(final_color, hdr_color.a));
+	imageStore(g_outputs[push.sdr_dst_index], texel_pos, vec4(final_color, hdr_color.a));
 }

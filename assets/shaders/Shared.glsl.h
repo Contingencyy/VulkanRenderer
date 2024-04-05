@@ -1,10 +1,12 @@
 #ifdef __cplusplus
 #pragma once
 
-#define DECLARE_STRUCT(x) struct alignas(16) x
+#define DECLARE_STRUCT(x) struct x
+#define DECLARE_STRUCT_UBO(x) struct alignas(16) x
 
 #include "Precomp.h"
 typedef uint32_t uint;
+typedef glm::vec2 vec2;
 typedef glm::vec3 vec3;
 typedef glm::vec4 vec4;
 typedef glm::mat4 mat4;
@@ -12,6 +14,7 @@ typedef glm::mat4 mat4;
 #else
 
 #define DECLARE_STRUCT(x) struct x
+#define DECLARE_STRUCT_UBO(x) struct x
 
 #endif
 
@@ -82,7 +85,21 @@ const std::vector<const char*> DIFFUSE_BRDF_MODEL_LABELS =
 };
 #endif
 
-DECLARE_STRUCT(RenderSettings)
+DECLARE_STRUCT(Vertex)
+{
+	float pos[3];
+	float tex_coord[2];
+	float normal[3];
+	float tangent[4];
+};
+
+DECLARE_STRUCT(InstanceData)
+{
+	float transform[4][4];
+	uint material_index;
+};
+
+DECLARE_STRUCT_UBO(RenderSettings)
 {
 	uint use_direct_light;
 	uint use_multiscatter;
@@ -103,14 +120,14 @@ DECLARE_STRUCT(RenderSettings)
 	uint white_furnace_test;
 };
 
-DECLARE_STRUCT(GPUCamera)
+DECLARE_STRUCT_UBO(GPUCamera)
 {
 	mat4 view;
 	mat4 proj;
 	vec4 view_pos;
 };
 
-DECLARE_STRUCT(GPUMaterial)
+DECLARE_STRUCT_UBO(GPUMaterial)
 {
 	uint albedo_texture_index;
 	uint normal_texture_index;
@@ -132,7 +149,7 @@ DECLARE_STRUCT(GPUMaterial)
 	uint blackbody_radiator;
 };
 
-DECLARE_STRUCT(GPUAreaLight)
+DECLARE_STRUCT_UBO(GPUAreaLight)
 {
 	vec3 vert0;
 	float color_red;

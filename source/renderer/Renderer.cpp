@@ -76,10 +76,10 @@ namespace Renderer
 
 	static constexpr std::array<Vertex, 4> UNIT_QUAD_VERTICES =
 	{
-		Vertex{.pos = glm::vec3(-1.0f, -1.0f, 0.0f), .tex_coord = glm::vec2(0.0f, 1.0f), .normal = glm::vec3(0.0f, 0.0f, 1.0f), .tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) },
-		Vertex{.pos = glm::vec3( 1.0f, -1.0f, 0.0f), .tex_coord = glm::vec2(1.0f, 1.0f), .normal = glm::vec3(0.0f, 0.0f, 1.0f), .tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) },
-		Vertex{.pos = glm::vec3(-1.0f,  1.0f, 0.0f), .tex_coord = glm::vec2(0.0f, 0.0f), .normal = glm::vec3(0.0f, 0.0f, 1.0f), .tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) },
-		Vertex{.pos = glm::vec3( 1.0f,  1.0f, 0.0f), .tex_coord = glm::vec2(1.0f, 0.0f), .normal = glm::vec3(0.0f, 0.0f, 1.0f), .tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) }
+		Vertex{.pos = {-1.0f, -1.0f, 0.0f}, .tex_coord = {0.0f, 1.0f}, .normal = {0.0f, 0.0f, 1.0f}, .tangent = {1.0f, 0.0f, 0.0f, 1.0f} },
+		Vertex{.pos = { 1.0f, -1.0f, 0.0f}, .tex_coord = {1.0f, 1.0f}, .normal = {0.0f, 0.0f, 1.0f}, .tangent = {1.0f, 0.0f, 0.0f, 1.0f} },
+		Vertex{.pos = {-1.0f,  1.0f, 0.0f}, .tex_coord = {0.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f}, .tangent = {1.0f, 0.0f, 0.0f, 1.0f} },
+		Vertex{.pos = { 1.0f,  1.0f, 0.0f}, .tex_coord = {1.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f}, .tangent = {1.0f, 0.0f, 0.0f, 1.0f} }
 	};
 
 	static constexpr std::array<uint16_t, 6> UNIT_QUAD_INDICES =
@@ -90,40 +90,40 @@ namespace Renderer
 	static constexpr std::array<Vertex, 24> UNIT_CUBE_VERTICES =
 	{
 		// FRONT
-		Vertex{.pos = glm::vec3(-1.0f, -1.0f, 1.0f), .tex_coord = glm::vec2(0.0f, 1.0f), .normal = glm::vec3(0.0f, 0.0f, 1.0f), .tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) },
-		Vertex{.pos = glm::vec3( 1.0f, -1.0f, 1.0f), .tex_coord = glm::vec2(1.0f, 1.0f), .normal = glm::vec3(0.0f, 0.0f, 1.0f), .tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) },
-		Vertex{.pos = glm::vec3(-1.0f,  1.0f, 1.0f), .tex_coord = glm::vec2(0.0f, 0.0f), .normal = glm::vec3(0.0f, 0.0f, 1.0f), .tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) },
-		Vertex{.pos = glm::vec3( 1.0f,  1.0f, 1.0f), .tex_coord = glm::vec2(1.0f, 0.0f), .normal = glm::vec3(0.0f, 0.0f, 1.0f), .tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) },
+		Vertex{.pos = {-1.0f, -1.0f, 1.0f}, .tex_coord = {0.0f, 1.0f}, .normal = {0.0f, 0.0f, 1.0f}, .tangent = {1.0f, 0.0f, 0.0f, 1.0f} },
+		Vertex{.pos = { 1.0f, -1.0f, 1.0f}, .tex_coord = {1.0f, 1.0f}, .normal = {0.0f, 0.0f, 1.0f}, .tangent = {1.0f, 0.0f, 0.0f, 1.0f} },
+		Vertex{.pos = {-1.0f,  1.0f, 1.0f}, .tex_coord = {0.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f}, .tangent = {1.0f, 0.0f, 0.0f, 1.0f} },
+		Vertex{.pos = { 1.0f,  1.0f, 1.0f}, .tex_coord = {1.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f}, .tangent = {1.0f, 0.0f, 0.0f, 1.0f} },
 
 		// BACK
-		Vertex{.pos = glm::vec3(-1.0f, -1.0f, -1.0f), .tex_coord = glm::vec2(0.0f, 1.0f), .normal = glm::vec3(0.0f, 0.0f, -1.0f), .tangent = glm::vec4(-1.0f, 0.0f, 0.0f, -1.0f) },
-		Vertex{.pos = glm::vec3( 1.0f, -1.0f, -1.0f), .tex_coord = glm::vec2(1.0f, 1.0f), .normal = glm::vec3(0.0f, 0.0f, -1.0f), .tangent = glm::vec4(-1.0f, 0.0f, 0.0f, -1.0f) },
-		Vertex{.pos = glm::vec3(-1.0f,  1.0f, -1.0f), .tex_coord = glm::vec2(0.0f, 0.0f), .normal = glm::vec3(0.0f, 0.0f, -1.0f), .tangent = glm::vec4(-1.0f, 0.0f, 0.0f, -1.0f) },
-		Vertex{.pos = glm::vec3( 1.0f,  1.0f, -1.0f), .tex_coord = glm::vec2(1.0f, 0.0f), .normal = glm::vec3(0.0f, 0.0f, -1.0f), .tangent = glm::vec4(-1.0f, 0.0f, 0.0f, -1.0f) },
+		Vertex{.pos = {-1.0f, -1.0f, -1.0f}, .tex_coord = {0.0f, 1.0f}, .normal = {0.0f, 0.0f, -1.0f}, .tangent = {-1.0f, 0.0f, 0.0f, -1.0f} },
+		Vertex{.pos = { 1.0f, -1.0f, -1.0f}, .tex_coord = {1.0f, 1.0f}, .normal = {0.0f, 0.0f, -1.0f}, .tangent = {-1.0f, 0.0f, 0.0f, -1.0f} },
+		Vertex{.pos = {-1.0f,  1.0f, -1.0f}, .tex_coord = {0.0f, 0.0f}, .normal = {0.0f, 0.0f, -1.0f}, .tangent = {-1.0f, 0.0f, 0.0f, -1.0f} },
+		Vertex{.pos = { 1.0f,  1.0f, -1.0f}, .tex_coord = {1.0f, 0.0f}, .normal = {0.0f, 0.0f, -1.0f}, .tangent = {-1.0f, 0.0f, 0.0f, -1.0f} },
 
 		// LEFT
-		Vertex{.pos = glm::vec3(-1.0f, -1.0f, -1.0f), .tex_coord = glm::vec2(0.0f, 1.0f), .normal = glm::vec3(-1.0f, 0.0f, 0.0f), .tangent = glm::vec4(0.0f, -1.0f, 0.0f, -1.0f) },
-		Vertex{.pos = glm::vec3(-1.0f, -1.0f,  1.0f), .tex_coord = glm::vec2(1.0f, 1.0f), .normal = glm::vec3(-1.0f, 0.0f, 0.0f), .tangent = glm::vec4(0.0f, -1.0f, 0.0f, -1.0f) },
-		Vertex{.pos = glm::vec3(-1.0f,  1.0f, -1.0f), .tex_coord = glm::vec2(0.0f, 0.0f), .normal = glm::vec3(-1.0f, 0.0f, 0.0f), .tangent = glm::vec4(0.0f, -1.0f, 0.0f, -1.0f) },
-		Vertex{.pos = glm::vec3(-1.0f,  1.0f,  1.0f), .tex_coord = glm::vec2(1.0f, 0.0f), .normal = glm::vec3(-1.0f, 0.0f, 0.0f), .tangent = glm::vec4(0.0f, -1.0f, 0.0f, -1.0f) },
+		Vertex{.pos = {-1.0f, -1.0f, -1.0f}, .tex_coord = {0.0f, 1.0f}, .normal = {-1.0f, 0.0f, 0.0f}, .tangent = {0.0f, -1.0f, 0.0f, -1.0f} },
+		Vertex{.pos = {-1.0f, -1.0f,  1.0f}, .tex_coord = {1.0f, 1.0f}, .normal = {-1.0f, 0.0f, 0.0f}, .tangent = {0.0f, -1.0f, 0.0f, -1.0f} },
+		Vertex{.pos = {-1.0f,  1.0f, -1.0f}, .tex_coord = {0.0f, 0.0f}, .normal = {-1.0f, 0.0f, 0.0f}, .tangent = {0.0f, -1.0f, 0.0f, -1.0f} },
+		Vertex{.pos = {-1.0f,  1.0f,  1.0f}, .tex_coord = {1.0f, 0.0f}, .normal = {-1.0f, 0.0f, 0.0f}, .tangent = {0.0f, -1.0f, 0.0f, -1.0f} },
 
 		// RIGHT
-		Vertex{.pos = glm::vec3(1.0f, -1.0f, -1.0f), .tex_coord = glm::vec2(0.0f, 1.0f), .normal = glm::vec3(1.0f, 0.0f, 0.0f), .tangent = glm::vec4(0.0f, 1.0f, 0.0f, 1.0f) },
-		Vertex{.pos = glm::vec3(1.0f, -1.0f,  1.0f), .tex_coord = glm::vec2(1.0f, 1.0f), .normal = glm::vec3(1.0f, 0.0f, 0.0f), .tangent = glm::vec4(0.0f, 1.0f, 0.0f, 1.0f) },
-		Vertex{.pos = glm::vec3(1.0f,  1.0f, -1.0f), .tex_coord = glm::vec2(0.0f, 0.0f), .normal = glm::vec3(1.0f, 0.0f, 0.0f), .tangent = glm::vec4(0.0f, 1.0f, 0.0f, 1.0f) },
-		Vertex{.pos = glm::vec3(1.0f,  1.0f,  1.0f), .tex_coord = glm::vec2(1.0f, 0.0f), .normal = glm::vec3(1.0f, 0.0f, 0.0f), .tangent = glm::vec4(0.0f, 1.0f, 0.0f, 1.0f) },
+		Vertex{.pos = {1.0f, -1.0f, -1.0f}, .tex_coord = {0.0f, 1.0f}, .normal = {1.0f, 0.0f, 0.0f}, .tangent = {0.0f, 1.0f, 0.0f, 1.0f} },
+		Vertex{.pos = {1.0f, -1.0f,  1.0f}, .tex_coord = {1.0f, 1.0f}, .normal = {1.0f, 0.0f, 0.0f}, .tangent = {0.0f, 1.0f, 0.0f, 1.0f} },
+		Vertex{.pos = {1.0f,  1.0f, -1.0f}, .tex_coord = {0.0f, 0.0f}, .normal = {1.0f, 0.0f, 0.0f}, .tangent = {0.0f, 1.0f, 0.0f, 1.0f} },
+		Vertex{.pos = {1.0f,  1.0f,  1.0f}, .tex_coord = {1.0f, 0.0f}, .normal = {1.0f, 0.0f, 0.0f}, .tangent = {0.0f, 1.0f, 0.0f, 1.0f} },
 
 		// TOP
-		Vertex{.pos = glm::vec3(-1.0f, 1.0f, -1.0f), .tex_coord = glm::vec2(0.0f, 1.0f), .normal = glm::vec3(0.0f, 1.0f, 0.0f), .tangent = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f) },
-		Vertex{.pos = glm::vec3(-1.0f, 1.0f,  1.0f), .tex_coord = glm::vec2(1.0f, 1.0f), .normal = glm::vec3(0.0f, 1.0f, 0.0f), .tangent = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f) },
-		Vertex{.pos = glm::vec3( 1.0f, 1.0f, -1.0f), .tex_coord = glm::vec2(0.0f, 0.0f), .normal = glm::vec3(0.0f, 1.0f, 0.0f), .tangent = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f) },
-		Vertex{.pos = glm::vec3( 1.0f, 1.0f,  1.0f), .tex_coord = glm::vec2(1.0f, 0.0f), .normal = glm::vec3(0.0f, 1.0f, 0.0f), .tangent = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f) },
+		Vertex{.pos = {-1.0f, 1.0f, -1.0f}, .tex_coord = {0.0f, 1.0f}, .normal = {0.0f, 1.0f, 0.0f}, .tangent = {0.0f, 0.0f, 1.0f, 1.0f} },
+		Vertex{.pos = {-1.0f, 1.0f,  1.0f}, .tex_coord = {1.0f, 1.0f}, .normal = {0.0f, 1.0f, 0.0f}, .tangent = {0.0f, 0.0f, 1.0f, 1.0f} },
+		Vertex{.pos = { 1.0f, 1.0f, -1.0f}, .tex_coord = {0.0f, 0.0f}, .normal = {0.0f, 1.0f, 0.0f}, .tangent = {0.0f, 0.0f, 1.0f, 1.0f} },
+		Vertex{.pos = { 1.0f, 1.0f,  1.0f}, .tex_coord = {1.0f, 0.0f}, .normal = {0.0f, 1.0f, 0.0f}, .tangent = {0.0f, 0.0f, 1.0f, 1.0f} },
 
 		// BOTTOM
-		Vertex{.pos = glm::vec3(-1.0f, -1.0f, -1.0f), .tex_coord = glm::vec2(0.0f, 1.0f), .normal = glm::vec3(0.0f, -1.0f, 0.0f), .tangent = glm::vec4(0.0f, 0.0f, -1.0f, 1.0f) },
-		Vertex{.pos = glm::vec3(-1.0f, -1.0f,  1.0f), .tex_coord = glm::vec2(1.0f, 1.0f), .normal = glm::vec3(0.0f, -1.0f, 0.0f), .tangent = glm::vec4(0.0f, 0.0f, -1.0f, 1.0f) },
-		Vertex{.pos = glm::vec3( 1.0f, -1.0f, -1.0f), .tex_coord = glm::vec2(0.0f, 0.0f), .normal = glm::vec3(0.0f, -1.0f, 0.0f), .tangent = glm::vec4(0.0f, 0.0f, -1.0f, 1.0f) },
-		Vertex{.pos = glm::vec3( 1.0f, -1.0f,  1.0f), .tex_coord = glm::vec2(1.0f, 0.0f), .normal = glm::vec3(0.0f, -1.0f, 0.0f), .tangent = glm::vec4(0.0f, 0.0f, -1.0f, 1.0f) },
+		Vertex{.pos = {-1.0f, -1.0f, -1.0f}, .tex_coord = {0.0f, 1.0f}, .normal = {0.0f, -1.0f, 0.0f}, .tangent = {0.0f, 0.0f, -1.0f, 1.0f} },
+		Vertex{.pos = {-1.0f, -1.0f,  1.0f}, .tex_coord = {1.0f, 1.0f}, .normal = {0.0f, -1.0f, 0.0f}, .tangent = {0.0f, 0.0f, -1.0f, 1.0f} },
+		Vertex{.pos = { 1.0f, -1.0f, -1.0f}, .tex_coord = {0.0f, 0.0f}, .normal = {0.0f, -1.0f, 0.0f}, .tangent = {0.0f, 0.0f, -1.0f, 1.0f} },
+		Vertex{.pos = { 1.0f, -1.0f,  1.0f}, .tex_coord = {1.0f, 0.0f}, .normal = {0.0f, -1.0f, 0.0f}, .tangent = {0.0f, 0.0f, -1.0f, 1.0f} },
 	};
 
 	static constexpr std::array<uint16_t, 36> UNIT_CUBE_INDICES =
@@ -180,6 +180,7 @@ namespace Renderer
 	struct Mesh
 	{
 		VulkanBuffer vertex_buffer;
+		VulkanDescriptorAllocation vertex_buffer_descriptor;
 		VulkanBuffer index_buffer;
 		VulkanBuffer blas_buffer;
 
@@ -187,14 +188,18 @@ namespace Renderer
 		uint32_t num_indices = 0;
 
 		Mesh() = default;
-		explicit Mesh(VulkanBuffer vertex_buffer, VulkanBuffer index_buffer, VulkanBuffer blas_buffer, VkIndexType index_type, uint32_t num_indices)
-			: vertex_buffer(vertex_buffer), index_buffer(index_buffer), blas_buffer(blas_buffer), index_type(index_type), num_indices(num_indices)
+		explicit Mesh(VulkanBuffer vertex_buffer, VulkanDescriptorAllocation vertex_buffer_descriptor,
+			VulkanBuffer index_buffer, VulkanBuffer blas_buffer, VkIndexType index_type, uint32_t num_indices)
+			: vertex_buffer(vertex_buffer), vertex_buffer_descriptor(vertex_buffer_descriptor),
+			  index_buffer(index_buffer), blas_buffer(blas_buffer), index_type(index_type), num_indices(num_indices)
 		{
 		}
 
 		~Mesh()
 		{
+			Vulkan::Descriptor::Free(vertex_buffer_descriptor);
 			Vulkan::Buffer::Destroy(vertex_buffer);
+
 			Vulkan::Buffer::Destroy(index_buffer);
 			Vulkan::Buffer::Destroy(blas_buffer);
 		}
@@ -218,11 +223,11 @@ namespace Renderer
 	{
 		struct Entry
 		{
-			uint32_t index;
-
-			Mesh* mesh;
-			GPUMaterial gpu_material;
-			glm::mat4 transform;
+			uint32_t index = 0;
+			
+			Mesh* mesh = nullptr;
+			GPUMaterial gpu_material = {};
+			InstanceData instance_data = {};
 		};
 
 		uint32_t next_free_entry = 0;
@@ -235,6 +240,7 @@ namespace Renderer
 
 			Entry& entry = entries[next_free_entry];
 			entry.index = next_free_entry;
+
 			next_free_entry++;
 			return entry;
 		}
@@ -275,6 +281,7 @@ namespace Renderer
 		} raytracing;
 
 		RingBuffer::Allocation instance_buffer;
+		VulkanDescriptorAllocation instance_buffer_descriptor;
 	};
 
 	struct Data
@@ -382,66 +389,6 @@ namespace Renderer
 	static inline Frame* GetFrameCurrent()
 	{
 		return &data->per_frame[Vulkan::GetCurrentFrameIndex() % Vulkan::MAX_FRAMES_IN_FLIGHT];
-	}
-
-	static std::vector<VkVertexInputBindingDescription> GetVertexBindingDescription()
-	{
-		std::vector<VkVertexInputBindingDescription> binding_descs(2);
-		binding_descs[0].binding = 0;
-		binding_descs[0].stride = sizeof(Vertex);
-		binding_descs[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-		binding_descs[1].binding = 1;
-		binding_descs[1].stride = sizeof(glm::mat4);
-		binding_descs[1].inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
-
-		return binding_descs;
-	}
-
-	static std::vector<VkVertexInputAttributeDescription> GetVertexAttributeDescription()
-	{
-		std::vector<VkVertexInputAttributeDescription> attribute_desc(8);
-		attribute_desc[0].binding = 0;
-		attribute_desc[0].location = 0;
-		attribute_desc[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-		attribute_desc[0].offset = offsetof(Vertex, pos);
-
-		attribute_desc[1].binding = 0;
-		attribute_desc[1].location = 1;
-		attribute_desc[1].format = VK_FORMAT_R32G32_SFLOAT;
-		attribute_desc[1].offset = offsetof(Vertex, tex_coord);
-
-		attribute_desc[2].binding = 0;
-		attribute_desc[2].location = 2;
-		attribute_desc[2].format = VK_FORMAT_R32G32B32_SFLOAT;
-		attribute_desc[2].offset = offsetof(Vertex, normal);
-
-		attribute_desc[3].binding = 0;
-		attribute_desc[3].location = 3;
-		attribute_desc[3].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-		attribute_desc[3].offset = offsetof(Vertex, tangent);
-
-		attribute_desc[4].binding = 1;
-		attribute_desc[4].location = 4;
-		attribute_desc[4].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-		attribute_desc[4].offset = 0;
-
-		attribute_desc[5].binding = 1;
-		attribute_desc[5].location = 5;
-		attribute_desc[5].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-		attribute_desc[5].offset = 16;
-
-		attribute_desc[6].binding = 1;
-		attribute_desc[6].location = 6;
-		attribute_desc[6].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-		attribute_desc[6].offset = 32;
-
-		attribute_desc[7].binding = 1;
-		attribute_desc[7].location = 7;
-		attribute_desc[7].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-		attribute_desc[7].offset = 48;
-
-		return attribute_desc;
 	}
 
 	static void CreateSyncObjects()
@@ -676,29 +623,12 @@ namespace Renderer
 
 	static void CreateRenderPasses()
 	{
-		std::vector<VkVertexInputBindingDescription> geo_input_bindings = GetVertexBindingDescription();
-		std::vector<VkVertexInputAttributeDescription> geo_input_attributes = GetVertexAttributeDescription();
-
-		std::vector<VkVertexInputBindingDescription> unit_cube_input_bindings =
-		{
-			{ .binding = 0, .stride = sizeof(Vertex), .inputRate = VK_VERTEX_INPUT_RATE_VERTEX }
-		};
-		std::vector<VkVertexInputAttributeDescription> unit_cube_input_attributes =
-		{
-			{ .location = 0, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = offsetof(Vertex, pos) },
-			{ .location = 1, .binding = 0, .format = VK_FORMAT_R32G32_SFLOAT, .offset = offsetof(Vertex, tex_coord) },
-			{ .location = 2, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = offsetof(Vertex, normal) },
-			{ .location = 3, .binding = 0, .format = VK_FORMAT_R32G32B32A32_SFLOAT, .offset = offsetof(Vertex, tangent) },
-		};
-
 		// Skybox pass
 		{
 			std::vector<RenderPass::Stage> stages(RENDER_PASS_SKYBOX_NUM_STAGES);
 
 			// Skybox rendering stage
 			Vulkan::GraphicsPipelineInfo pipeline_info = {};
-			pipeline_info.input_bindings = unit_cube_input_bindings;
-			pipeline_info.input_attributes = unit_cube_input_attributes;
 			pipeline_info.color_attachment_formats = { TEXTURE_FORMAT_RGBA16_SFLOAT };
 			pipeline_info.depth_stencil_attachment_format = {};
 			pipeline_info.depth_test = false;
@@ -708,10 +638,14 @@ namespace Renderer
 			pipeline_info.vs_path = "assets/shaders/Skybox.vert";
 			pipeline_info.fs_path = "assets/shaders/Skybox.frag";
 
-			pipeline_info.push_ranges.resize(1);
-			pipeline_info.push_ranges[0].size = 2 * sizeof(uint32_t);
+			pipeline_info.push_ranges.resize(2);
+			pipeline_info.push_ranges[0].size = sizeof(uint32_t);
 			pipeline_info.push_ranges[0].offset = 0;
-			pipeline_info.push_ranges[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+			pipeline_info.push_ranges[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+			pipeline_info.push_ranges[1].size = 2 * sizeof(uint32_t);
+			pipeline_info.push_ranges[1].offset = pipeline_info.push_ranges[0].size;
+			pipeline_info.push_ranges[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
 			RenderPass::Stage& skybox_stage = stages[RENDER_PASS_SKYBOX_STAGE_SKYBOX];
 			skybox_stage.pipeline = Vulkan::CreateGraphicsPipeline(pipeline_info);
@@ -733,14 +667,17 @@ namespace Renderer
 			// Depth pre-pass stage
 			{
 				Vulkan::GraphicsPipelineInfo pipeline_info = {};
-				pipeline_info.input_bindings = geo_input_bindings;
-				pipeline_info.input_attributes = geo_input_attributes;
 				pipeline_info.color_attachment_formats = {};
 				pipeline_info.depth_stencil_attachment_format = { TEXTURE_FORMAT_D32_SFLOAT };
 				pipeline_info.depth_test = true;
 				pipeline_info.depth_write = true;
 				pipeline_info.depth_func = VK_COMPARE_OP_LESS_OR_EQUAL;
 				pipeline_info.vs_path = "assets/shaders/DepthPrepass.vert";
+
+				pipeline_info.push_ranges.resize(1);
+				pipeline_info.push_ranges[0].size = 2 * sizeof(uint32_t);
+				pipeline_info.push_ranges[0].offset = 0;
+				pipeline_info.push_ranges[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
 				RenderPass::Stage& depth_prepass_stage = stages[RENDER_PASS_GEOMETRY_STAGE_DEPTH_PREPASS];
 				depth_prepass_stage.pipeline = Vulkan::CreateGraphicsPipeline(pipeline_info);
@@ -756,8 +693,6 @@ namespace Renderer
 			// Lighting stage
 			{
 				Vulkan::GraphicsPipelineInfo pipeline_info = {};
-				pipeline_info.input_bindings = geo_input_bindings;
-				pipeline_info.input_attributes = geo_input_attributes;
 				pipeline_info.color_attachment_formats = { TEXTURE_FORMAT_RGBA16_SFLOAT };
 				pipeline_info.depth_stencil_attachment_format = { TEXTURE_FORMAT_D32_SFLOAT };
 				pipeline_info.depth_test = true;
@@ -766,10 +701,14 @@ namespace Renderer
 				pipeline_info.vs_path = "assets/shaders/PbrLighting.vert";
 				pipeline_info.fs_path = "assets/shaders/PbrLighting.frag";
 
-				pipeline_info.push_ranges.resize(1);
-				pipeline_info.push_ranges[0].size = 9 * sizeof(uint32_t);
+				pipeline_info.push_ranges.resize(2);
+				pipeline_info.push_ranges[0].size = 2 * sizeof(uint32_t);
 				pipeline_info.push_ranges[0].offset = 0;
-				pipeline_info.push_ranges[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+				pipeline_info.push_ranges[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+				pipeline_info.push_ranges[1].size = 8 * sizeof(uint32_t);
+				pipeline_info.push_ranges[1].offset = pipeline_info.push_ranges[0].size;
+				pipeline_info.push_ranges[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
 				RenderPass::Stage& lighting_stage = stages[RENDER_PASS_GEOMETRY_STAGE_LIGHTING];
 				lighting_stage.pipeline = Vulkan::CreateGraphicsPipeline(pipeline_info);
@@ -829,14 +768,12 @@ namespace Renderer
 			// Generate HDR cubemap stage
 			{
 				Vulkan::GraphicsPipelineInfo pipeline_info = {};
-				pipeline_info.input_bindings = unit_cube_input_bindings;
-				pipeline_info.input_attributes = unit_cube_input_attributes;
 				pipeline_info.color_attachment_formats = { TEXTURE_FORMAT_RGBA16_SFLOAT };
 				pipeline_info.vs_path = "assets/shaders/Cube.vert";
 				pipeline_info.fs_path = "assets/shaders/EquirectangularToCube.frag";
 
 				pipeline_info.push_ranges.resize(2);
-				pipeline_info.push_ranges[0].size = sizeof(glm::mat4);
+				pipeline_info.push_ranges[0].size = sizeof(glm::mat4) + sizeof(uint32_t);
 				pipeline_info.push_ranges[0].offset = 0;
 				pipeline_info.push_ranges[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
@@ -857,14 +794,12 @@ namespace Renderer
 			// Generate irradiance cubemap stage
 			{
 				Vulkan::GraphicsPipelineInfo pipeline_info = {};
-				pipeline_info.input_bindings = unit_cube_input_bindings;
-				pipeline_info.input_attributes = unit_cube_input_attributes;
 				pipeline_info.color_attachment_formats = { TEXTURE_FORMAT_RGBA16_SFLOAT };
 				pipeline_info.vs_path = "assets/shaders/Cube.vert";
 				pipeline_info.fs_path = "assets/shaders/IrradianceCube.frag";
 
 				pipeline_info.push_ranges.resize(2);
-				pipeline_info.push_ranges[0].size = sizeof(glm::mat4);
+				pipeline_info.push_ranges[0].size = sizeof(glm::mat4) + sizeof(uint32_t);
 				pipeline_info.push_ranges[0].offset = 0;
 				pipeline_info.push_ranges[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
@@ -885,14 +820,12 @@ namespace Renderer
 			// Generate prefiltered cubemap stage
 			{
 				Vulkan::GraphicsPipelineInfo pipeline_info = {};
-				pipeline_info.input_bindings = unit_cube_input_bindings;
-				pipeline_info.input_attributes = unit_cube_input_attributes;
 				pipeline_info.color_attachment_formats = { TEXTURE_FORMAT_RGBA16_SFLOAT };
 				pipeline_info.vs_path = "assets/shaders/Cube.vert";
 				pipeline_info.fs_path = "assets/shaders/PrefilteredEnvCube.frag";
 
 				pipeline_info.push_ranges.resize(2);
-				pipeline_info.push_ranges[0].size = sizeof(glm::mat4);
+				pipeline_info.push_ranges[0].size = sizeof(glm::mat4) + sizeof(uint32_t);
 				pipeline_info.push_ranges[0].offset = 0;
 				pipeline_info.push_ranges[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
@@ -1018,9 +951,13 @@ namespace Renderer
 				struct PushConsts
 				{
 					glm::mat4 view_projection;
+					uint32_t vb_index;
+
 					uint32_t src_texture_index;
 					uint32_t src_sampler_index;
 				} push_consts;
+
+				push_consts.vb_index = unit_cube_mesh->vertex_buffer_descriptor.descriptor_offset;
 
 				push_consts.src_texture_index = hdr_equirect_texture->view_descriptor.descriptor_offset;
 				push_consts.src_sampler_index = hdr_equirect_texture->sampler.descriptor.descriptor_offset;
@@ -1057,11 +994,10 @@ namespace Renderer
 
 						push_consts.view_projection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 512.0f) * CUBE_FACING_VIEW_MATRICES[face];
 
-						Vulkan::Command::PushConstants(command_buffer, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &push_consts);
-						Vulkan::Command::PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(glm::mat4), 2 * sizeof(uint32_t), &push_consts.src_texture_index);
+						Vulkan::Command::PushConstants(command_buffer, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4) + sizeof(uint32_t), &push_consts.view_projection);
+						Vulkan::Command::PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(glm::mat4) + sizeof(uint32_t), 2 * sizeof(uint32_t), &push_consts.src_texture_index);
 
-						Vulkan::Command::DrawGeometryIndexed(command_buffer, 1, &unit_cube_mesh->vertex_buffer,
-							&unit_cube_mesh->index_buffer, unit_cube_mesh->index_type, unit_cube_mesh->num_indices);
+						Vulkan::Command::DrawGeometryIndexed(command_buffer, &unit_cube_mesh->index_buffer, unit_cube_mesh->index_type, unit_cube_mesh->num_indices);
 
 						RENDER_PASS_STAGE_END(RENDER_PASS_GEN_IBL_CUBEMAPS_STAGE_HDR_CUBEMAP, command_buffer);
 					}
@@ -1111,6 +1047,7 @@ namespace Renderer
 				struct PushConsts
 				{
 					glm::mat4 view_projection;
+					uint32_t vb_index;
 
 					uint32_t src_texture_index;
 					uint32_t src_sampler_index;
@@ -1118,9 +1055,10 @@ namespace Renderer
 					float delta_theta = (0.5f * glm::pi<float>()) / 64.0f;
 				} push_consts;
 
+				push_consts.vb_index = unit_cube_mesh->vertex_buffer_descriptor.descriptor_offset;
+
 				push_consts.delta_phi /= IBL_IRRADIANCE_CUBEMAP_SAMPLE_MULTIPLIER;
 				push_consts.delta_theta /= IBL_IRRADIANCE_CUBEMAP_SAMPLE_MULTIPLIER;
-
 				push_consts.src_texture_index = hdr_cubemap->view_descriptor.descriptor_offset;
 				push_consts.src_sampler_index = hdr_cubemap->sampler.descriptor.descriptor_offset;
 
@@ -1156,11 +1094,10 @@ namespace Renderer
 
 						push_consts.view_projection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 512.0f) * CUBE_FACING_VIEW_MATRICES[face];
 
-						Vulkan::Command::PushConstants(command_buffer, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &push_consts);
-						Vulkan::Command::PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(glm::mat4), 2 * sizeof(uint32_t) + 2 * sizeof(float), &push_consts.src_texture_index);
+						Vulkan::Command::PushConstants(command_buffer, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4) + sizeof(uint32_t), &push_consts.view_projection);
+						Vulkan::Command::PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(glm::mat4) + sizeof(uint32_t), 2 * sizeof(uint32_t) + 2 * sizeof(float), &push_consts.src_texture_index);
 
-						Vulkan::Command::DrawGeometryIndexed(command_buffer, 1, &unit_cube_mesh->vertex_buffer,
-							&unit_cube_mesh->index_buffer, unit_cube_mesh->index_type, unit_cube_mesh->num_indices);
+						Vulkan::Command::DrawGeometryIndexed(command_buffer, &unit_cube_mesh->index_buffer, unit_cube_mesh->index_type, unit_cube_mesh->num_indices);
 
 						RENDER_PASS_STAGE_END(RENDER_PASS_GEN_IBL_CUBEMAPS_STAGE_IRRADIANCE_CUBEMAP, command_buffer);
 					}
@@ -1208,12 +1145,15 @@ namespace Renderer
 				struct PushConsts
 				{
 					glm::mat4 view_projection;
+					uint32_t vb_index;
 
 					uint32_t src_texture_index;
 					uint32_t src_sampler_index;
 					uint32_t num_samples = IBL_PREFILTERED_CUBEMAP_NUM_SAMPLES;
 					float roughness;
 				} push_consts;
+
+				push_consts.vb_index = unit_cube_mesh->vertex_buffer_descriptor.descriptor_offset;
 
 				push_consts.src_texture_index = hdr_cubemap->view_descriptor.descriptor_offset;
 				push_consts.src_sampler_index = hdr_cubemap->sampler.descriptor.descriptor_offset;
@@ -1250,11 +1190,10 @@ namespace Renderer
 							push_consts.view_projection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 512.0f) * CUBE_FACING_VIEW_MATRICES[face];
 							push_consts.roughness = (float)mip / (float)(num_cube_mips - 1);
 
-							Vulkan::Command::PushConstants(command_buffer, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &push_consts);
-							Vulkan::Command::PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(glm::mat4), 3 * sizeof(uint32_t) + sizeof(float), &push_consts.src_texture_index);
+							Vulkan::Command::PushConstants(command_buffer, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4) + sizeof(uint32_t), &push_consts.view_projection);
+							Vulkan::Command::PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(glm::mat4) + sizeof(uint32_t), 3 * sizeof(uint32_t) + sizeof(float), &push_consts.src_texture_index);
 
-							Vulkan::Command::DrawGeometryIndexed(command_buffer, 1, &unit_cube_mesh->vertex_buffer,
-								&unit_cube_mesh->index_buffer, unit_cube_mesh->index_type, unit_cube_mesh->num_indices);
+							Vulkan::Command::DrawGeometryIndexed(command_buffer, &unit_cube_mesh->index_buffer, unit_cube_mesh->index_type, unit_cube_mesh->num_indices);
 						}
 						RENDER_PASS_STAGE_END(RENDER_PASS_GEN_IBL_CUBEMAPS_STAGE_PREFILTERED_CUBEMAP, command_buffer, data->render_passes.gen_prefiltered_cube);
 					}
@@ -1342,7 +1281,7 @@ namespace Renderer
 
 		Vulkan::Command::PushConstants(command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(uint32_t), &push_consts);
 
-		Vulkan::Command::DrawGeometry(command_buffer, 0, nullptr, 3);
+		Vulkan::Command::DrawGeometry(command_buffer, 3);
 
 		RENDER_PASS_STAGE_END(RENDER_PASS_BRDF_LUT_STAGE_BRDF_LUT, command_buffer);
 		RENDER_PASS_END(data->render_passes.gen_brdf_lut);
@@ -1490,12 +1429,11 @@ namespace Renderer
 		camera_data.proj[1][1] *= -1.0f;
 		camera_data.view_pos = glm::inverse(frame_info.camera_view)[3];
 
-		// Allocate frame UBOs and instance buffer from ring buffer
+		// Allocate frame UBOs from ring buffer
 		frame->ubos.settings_ubo = data->ring_buffer.Allocate(sizeof(RenderSettings), alignof(RenderSettings));
 		frame->ubos.camera_ubo = data->ring_buffer.Allocate(sizeof(GPUCamera), alignof(GPUCamera));
 		frame->ubos.light_ubo = data->ring_buffer.Allocate(3 * sizeof(uint32_t) + sizeof(GPUAreaLight) * MAX_AREA_LIGHTS);
 		frame->ubos.material_ubo = data->ring_buffer.Allocate(sizeof(GPUMaterial) * MAX_UNIQUE_MATERIALS);
-		frame->instance_buffer = data->ring_buffer.Allocate(sizeof(glm::mat4) * MAX_DRAW_LIST_ENTRIES);
 
 		// Write UBO descriptors
 		Vulkan::Descriptor::Write(frame->ubos.descriptors, frame->ubos.settings_ubo.buffer, RESERVED_DESCRIPTOR_UBO_SETTINGS);
@@ -1506,6 +1444,15 @@ namespace Renderer
 		// Write camera data to the camera UBO
 		frame->ubos.camera_ubo.WriteBuffer(0, sizeof(GPUCamera), &camera_data);
 		frame->ubos.settings_ubo.WriteBuffer(0, sizeof(data->settings), &data->settings);
+
+		// Free the previous instance buffer descriptor if valid
+		if (Vulkan::Descriptor::IsValid(frame->instance_buffer_descriptor))
+			Vulkan::Descriptor::Free(frame->instance_buffer_descriptor);
+
+		// Allocate instance buffer from ring buffer and allocate/write the descriptor
+		frame->instance_buffer = data->ring_buffer.Allocate(sizeof(InstanceData) * MAX_DRAW_LIST_ENTRIES);
+		frame->instance_buffer_descriptor = Vulkan::Descriptor::Allocate(VULKAN_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+		Vulkan::Descriptor::Write(frame->instance_buffer_descriptor, frame->instance_buffer.buffer);
 
 		// If white furnace test is enabled, we want to use the white furnace environment map to render instead of the one passed in
 		if (data->settings.white_furnace_test)
@@ -1529,7 +1476,7 @@ namespace Renderer
 			VK_ASSERT(entry.mesh && "Tried to build the TLAS with an invalid mesh");
 
 			mesh_blas_buffers[i] = entry.mesh->blas_buffer;
-			memcpy(&mesh_transforms[i], &entry.transform, sizeof(VkTransformMatrixKHR));
+			memcpy(&mesh_transforms[i], &entry.instance_data.transform, sizeof(VkTransformMatrixKHR));
 		}
 
 		frame->raytracing.tlas = Vulkan::Raytracing::BuildTLAS(frame->command_buffer, frame->raytracing.tlas_scratch, frame->raytracing.tlas_instance_buffer,
@@ -1572,6 +1519,8 @@ namespace Renderer
 
 			struct PushConsts
 			{
+				uint32_t vb_index;
+
 				uint32_t env_texture_index;
 				uint32_t env_sampler_index;
 			} push_consts;
@@ -1579,14 +1528,16 @@ namespace Renderer
 			const Texture* skybox_texture = data->texture_slotmap.Find(data->skybox_texture_handle);
 			VK_ASSERT(skybox_texture && "Skybox cubemap is invalid for currently selected skybox");
 
-			push_consts.env_texture_index = skybox_texture->view_descriptor.descriptor_offset;
-			push_consts.env_sampler_index = 0;
-
 			const Mesh* unit_cube_mesh = data->mesh_slotmap.Find(data->unit_cube_mesh_handle);
 
-			Vulkan::Command::PushConstants(frame->command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push_consts), &push_consts);
-			Vulkan::Command::DrawGeometryIndexed(frame->command_buffer, 1, &unit_cube_mesh->vertex_buffer,
-				&unit_cube_mesh->index_buffer, unit_cube_mesh->index_type, unit_cube_mesh->num_indices);
+			push_consts.vb_index = unit_cube_mesh->vertex_buffer_descriptor.descriptor_offset;
+			Vulkan::Command::PushConstants(frame->command_buffer, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(uint32_t), &push_consts.vb_index);
+
+			push_consts.env_texture_index = skybox_texture->view_descriptor.descriptor_offset;
+			push_consts.env_sampler_index = data->default_sampler.descriptor.descriptor_offset;
+			Vulkan::Command::PushConstants(frame->command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(uint32_t), 2 * sizeof(uint32_t), &push_consts.env_texture_index);
+
+			Vulkan::Command::DrawGeometryIndexed(frame->command_buffer, &unit_cube_mesh->index_buffer, unit_cube_mesh->index_type, unit_cube_mesh->num_indices);
 
 			RENDER_PASS_STAGE_END(RENDER_PASS_SKYBOX_STAGE_SKYBOX, frame->command_buffer);
 		}
@@ -1609,6 +1560,15 @@ namespace Renderer
 				Vulkan::Command::SetViewport(frame->command_buffer, 0, 1, &viewport);
 				Vulkan::Command::SetScissor(frame->command_buffer, 0, 1, &scissor_rect);
 
+				struct PushConsts
+				{
+					uint32_t ib_index;
+					uint32_t vb_index;
+				} push;
+
+				push.ib_index = frame->instance_buffer_descriptor.descriptor_offset;
+				Vulkan::Command::PushConstants(frame->command_buffer, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(uint32_t), &push.ib_index);
+
 				for (uint32_t i = 0; i < data->draw_list.next_free_entry; ++i)
 				{
 					// NOTE: When we do vertex pulling instead, we can store the vertex/index buffer descriptor indices inside the instance data
@@ -1616,9 +1576,11 @@ namespace Renderer
 					const DrawList::Entry& entry = data->draw_list.entries[i];
 					VK_ASSERT(entry.mesh && "Tried to render a mesh with an invalid mesh handle");
 
+					push.vb_index = entry.mesh->vertex_buffer_descriptor.descriptor_offset;
+					Vulkan::Command::PushConstants(frame->command_buffer, VK_SHADER_STAGE_VERTEX_BIT, sizeof(uint32_t), sizeof(uint32_t), &push.vb_index);
+
 					VulkanBuffer vertex_buffers[2] = { entry.mesh->vertex_buffer, frame->instance_buffer.buffer };
-					Vulkan::Command::DrawGeometryIndexed(frame->command_buffer, 2, vertex_buffers,
-						&entry.mesh->index_buffer, entry.mesh->index_type, entry.mesh->num_indices, 1, i);
+					Vulkan::Command::DrawGeometryIndexed(frame->command_buffer, &entry.mesh->index_buffer, entry.mesh->index_type, entry.mesh->num_indices, 1, i);
 				}
 
 				RENDER_PASS_STAGE_END(RENDER_PASS_GEOMETRY_STAGE_DEPTH_PREPASS, frame->command_buffer);
@@ -1650,6 +1612,9 @@ namespace Renderer
 				// Push constants
 				struct PushConsts
 				{
+					uint32_t ib_index;
+					uint32_t vb_index;
+
 					uint32_t irradiance_cubemap_index;
 					uint32_t irradiance_sampler_index;
 					uint32_t prefiltered_cubemap_index;
@@ -1658,8 +1623,10 @@ namespace Renderer
 					uint32_t brdf_lut_index;
 					uint32_t brdf_lut_sampler_index;
 					uint32_t tlas_index;
-					uint32_t mat_index;
 				} push_consts;
+
+				push_consts.ib_index = frame->instance_buffer_descriptor.descriptor_offset;
+				Vulkan::Command::PushConstants(frame->command_buffer, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(uint32_t), &push_consts.ib_index);
 
 				push_consts.irradiance_cubemap_index = irradiance_cubemap->view_descriptor.descriptor_offset;
 				push_consts.irradiance_sampler_index = irradiance_cubemap->sampler.descriptor.descriptor_offset;
@@ -1670,19 +1637,18 @@ namespace Renderer
 				push_consts.brdf_lut_sampler_index = brdf_lut->sampler.descriptor.descriptor_offset;
 				push_consts.tlas_index = frame->raytracing.tlas_descriptor.descriptor_offset;
 
-				Vulkan::Command::PushConstants(frame->command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 8 * sizeof(uint32_t), &push_consts);
+				Vulkan::Command::PushConstants(frame->command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 2 * sizeof(uint32_t), 8 * sizeof(uint32_t), &push_consts.irradiance_cubemap_index);
 
 				for (uint32_t i = 0; i < data->draw_list.next_free_entry; ++i)
 				{
 					const DrawList::Entry& entry = data->draw_list.entries[i];
 					VK_ASSERT(entry.mesh && "Tried to render a mesh with an invalid mesh handle");
 
-					push_consts.mat_index = i;
-					Vulkan::Command::PushConstants(frame->command_buffer, VK_SHADER_STAGE_FRAGMENT_BIT, 8 * sizeof(uint32_t), sizeof(uint32_t), &push_consts.mat_index);
+					push_consts.vb_index = entry.mesh->vertex_buffer_descriptor.descriptor_offset;
+					Vulkan::Command::PushConstants(frame->command_buffer, VK_SHADER_STAGE_VERTEX_BIT, sizeof(uint32_t), sizeof(uint32_t), &push_consts.vb_index);
 
 					VulkanBuffer vertex_buffers[2] = { entry.mesh->vertex_buffer, frame->instance_buffer.buffer };
-					Vulkan::Command::DrawGeometryIndexed(frame->command_buffer, 2, vertex_buffers,
-						&entry.mesh->index_buffer, entry.mesh->index_type, entry.mesh->num_indices, 1, i);
+					Vulkan::Command::DrawGeometryIndexed(frame->command_buffer, &entry.mesh->index_buffer, entry.mesh->index_type, entry.mesh->num_indices, 1, i);
 
 					data->stats.total_vertex_count += entry.mesh->vertex_buffer.size_in_bytes / sizeof(Vertex);
 					data->stats.total_triangle_count += (entry.mesh->index_buffer.size_in_bytes / sizeof(uint32_t)) / 3;
@@ -2060,8 +2026,11 @@ namespace Renderer
 		staging.WriteBuffer(0, vb_size, args.vertices_bytes.data());
 		staging.WriteBuffer(vb_size, ib_size, args.indices_bytes.data());
 
-		// Create vertex and index buffers
+		// Create vertex and index buffers, and storage buffer descriptors (vertex pulling)
 		VulkanBuffer vertex_buffer = Vulkan::Buffer::CreateVertex(vb_size, "Vertex Buffer " + args.name);
+		VulkanDescriptorAllocation vertex_buffer_descriptor = Vulkan::Descriptor::Allocate(VULKAN_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+		Vulkan::Descriptor::Write(vertex_buffer_descriptor, vertex_buffer);
+
 		VulkanBuffer index_buffer = Vulkan::Buffer::CreateIndex(ib_size, "Index Buffer " + args.name);
 
 		// Copy staging buffer data into vertex and index buffers
@@ -2087,7 +2056,7 @@ namespace Renderer
 		std::vector<VulkanBufferBarrier> acceleration_structure_build_to_vertex_index_barriers =
 		{
 			{ vertex_buffer, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-			  VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT, VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT },
+			  VK_ACCESS_2_SHADER_READ_BIT, VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT },
 			{ index_buffer, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
 			  VK_ACCESS_2_INDEX_READ_BIT, VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT }
 		};
@@ -2100,7 +2069,10 @@ namespace Renderer
 
 		Vulkan::Buffer::Destroy(blas_scratch_buffer);
 
-		return data->mesh_slotmap.Emplace(vertex_buffer, index_buffer, blas_buffer, Vulkan::Util::ToVkIndexType(args.index_stride), args.num_indices);
+		return data->mesh_slotmap.Emplace(
+			vertex_buffer, vertex_buffer_descriptor,
+			index_buffer, blas_buffer, Vulkan::Util::ToVkIndexType(args.index_stride), args.num_indices
+		);
 	}
 
 	void DestroyMesh(MeshHandle_t handle)
@@ -2116,11 +2088,12 @@ namespace Renderer
 		if (!entry.mesh)
 			entry.mesh = data->mesh_slotmap.Find(data->unit_cube_mesh_handle);
 
-		entry.transform = transform;
+		memcpy(&entry.instance_data.transform, &transform[0][0], sizeof(glm::mat4));
+		entry.instance_data.material_index = entry.index;
 
 		// Write mesh transform to the instance buffer for the currently active frame
 		Frame* frame = GetFrameCurrent();
-		frame->instance_buffer.WriteBuffer(sizeof(glm::mat4) * entry.index, sizeof(glm::mat4), &entry.transform);
+		frame->instance_buffer.WriteBuffer(sizeof(InstanceData) * entry.index, sizeof(InstanceData), &entry.instance_data);
 		entry.gpu_material = data->default_gpu_material;
 
 		// Write material data to the material UBO
@@ -2183,14 +2156,16 @@ namespace Renderer
 	void SubmitAreaLight(TextureHandle_t texture_handle, const glm::mat4& transform, const glm::vec3& color, float intensity, bool two_sided)
 	{
 		VK_ASSERT(data->num_area_lights < MAX_AREA_LIGHTS && "Exceeded the maximum amount of area lights");
-		Frame* frame = GetFrameCurrent();
 
 		// Add area light to be drawn as a mesh
 		DrawList::Entry& entry = data->draw_list.GetNextEntry();
 		entry.mesh = data->mesh_slotmap.Find(data->unit_quad_mesh_handle);
 
-		entry.transform = transform;
-		frame->instance_buffer.WriteBuffer(sizeof(glm::mat4) * entry.index, sizeof(glm::mat4), &entry.transform);
+		memcpy(&entry.instance_data.transform, &transform[0][0], sizeof(glm::mat4));
+		entry.instance_data.material_index = entry.index;
+
+		Frame* frame = GetFrameCurrent();
+		frame->instance_buffer.WriteBuffer(sizeof(InstanceData) * entry.index, sizeof(InstanceData), &entry.instance_data);
 
 		entry.gpu_material = data->default_gpu_material;
 		entry.gpu_material.albedo_factor = glm::vec4(color * intensity, 1.0f);
@@ -2198,19 +2173,27 @@ namespace Renderer
 		Texture* albedo_texture = data->texture_slotmap.Find(texture_handle);
 		if (albedo_texture)
 			entry.gpu_material.albedo_texture_index = albedo_texture->view_descriptor.descriptor_offset;
-		
+
 		// Write material data to the material ubo for the currently active frame
 		frame->ubos.material_ubo.WriteBuffer(sizeof(GPUMaterial) * entry.index, sizeof(GPUMaterial), &entry.gpu_material);
 
 		// Add GPU data representation for the area light to the light UBO
+		glm::vec3 quad_points[4] =
+		{
+			glm::vec3(UNIT_QUAD_VERTICES[0].pos[0], UNIT_QUAD_VERTICES[0].pos[1], UNIT_QUAD_VERTICES[0].pos[2]),
+			glm::vec3(UNIT_QUAD_VERTICES[1].pos[0], UNIT_QUAD_VERTICES[1].pos[1], UNIT_QUAD_VERTICES[1].pos[2]),
+			glm::vec3(UNIT_QUAD_VERTICES[3].pos[0], UNIT_QUAD_VERTICES[3].pos[1], UNIT_QUAD_VERTICES[3].pos[2]),
+			glm::vec3(UNIT_QUAD_VERTICES[2].pos[0], UNIT_QUAD_VERTICES[2].pos[1], UNIT_QUAD_VERTICES[2].pos[2]),
+		};
+
 		GPUAreaLight gpu_area_light = {};
-		gpu_area_light.vert0 = glm::vec3(transform * glm::vec4(UNIT_QUAD_VERTICES[0].pos, 1.0f));
+		gpu_area_light.vert0 = glm::vec3(transform * glm::vec4(quad_points[0], 1.0f));
 		gpu_area_light.color_red = color.r;
-		gpu_area_light.vert1 = glm::vec3(transform * glm::vec4(UNIT_QUAD_VERTICES[1].pos, 1.0f));
+		gpu_area_light.vert1 = glm::vec3(transform * glm::vec4(quad_points[1], 1.0f));
 		gpu_area_light.color_green = color.g;
-		gpu_area_light.vert2 = glm::vec3(transform * glm::vec4(UNIT_QUAD_VERTICES[3].pos, 1.0f));
+		gpu_area_light.vert2 = glm::vec3(transform * glm::vec4(quad_points[2], 1.0f));
 		gpu_area_light.color_blue = color.b;
-		gpu_area_light.vert3 = glm::vec3(transform * glm::vec4(UNIT_QUAD_VERTICES[2].pos, 1.0f));
+		gpu_area_light.vert3 = glm::vec3(transform * glm::vec4(quad_points[3], 1.0f));
 		gpu_area_light.intensity = intensity;
 		gpu_area_light.two_sided = two_sided;
 

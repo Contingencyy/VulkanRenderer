@@ -10,13 +10,13 @@
 
 #include "Common.glsl"
 
-layout(std140, push_constant) uniform constants
+layout(std140, push_constant) uniform PushConsts
 {
-	layout(offset = 64) uint hdr_tex_idx;
-	layout(offset = 68) uint hdr_samp_idx;
-	layout(offset = 72) float delta_phi;
-	layout(offset = 76) float delta_theta;
-} push_constants;
+	layout(offset = 68) uint hdr_tex_idx;
+	layout(offset = 72) uint hdr_samp_idx;
+	layout(offset = 76) float delta_phi;
+	layout(offset = 80) float delta_theta;
+} push;
 
 layout(location = 0) in vec3 local_position;
 
@@ -35,15 +35,15 @@ void main()
 
 	// Take a set amount of samples for irradiance cube map
 	// Azimuth, two pi
-	for (float phi = 0.0; phi < TWO_PI; phi += push_constants.delta_phi)
+	for (float phi = 0.0; phi < TWO_PI; phi += push.delta_phi)
 	{
 		// Zenith, half pi
-		for (float theta = 0.0; theta < HALF_PI; theta += push_constants.delta_theta)
+		for (float theta = 0.0; theta < HALF_PI; theta += push.delta_theta)
 		{
 			vec3 temp = cos(phi) * right + sin(phi) * up;
 			vec3 sample_dir = cos(theta) * N + sin(theta) * temp;
 			// Weighting the final result by sin(theta) to compensate for the hemisphere having smaller sample areas towards the top
-			irradiance += SampleTextureCube(push_constants.hdr_tex_idx, push_constants.hdr_samp_idx, sample_dir).rgb * cos(theta) * sin(theta);
+			irradiance += SampleTextureCube(push.hdr_tex_idx, push.hdr_samp_idx, sample_dir).rgb * cos(theta) * sin(theta);
 			
 			num_samples++;
 		}

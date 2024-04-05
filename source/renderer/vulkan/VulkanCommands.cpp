@@ -60,37 +60,19 @@ namespace Vulkan
 			vkCmdSetScissor(command_buffer.vk_command_buffer, first_scissor, num_scissors, vk_scissor_rects);
 		}
 
-		void DrawGeometry(const VulkanCommandBuffer& command_buffer, uint32_t num_vertex_buffers, const VulkanBuffer* vertex_buffers,
-			uint32_t num_vertices, uint32_t num_instances, uint32_t first_vertex, uint32_t first_instance)
+		void DrawGeometry(const VulkanCommandBuffer& command_buffer, uint32_t num_vertices, uint32_t num_instances, uint32_t first_vertex, uint32_t first_instance)
 		{
-			std::vector<VkBuffer> vk_vertex_buffers;
-			std::vector<uint64_t> vk_vertex_buffer_offsets;
-
-			for (uint32_t i = 0; i < num_vertex_buffers; ++i)
-			{
-				vk_vertex_buffers.push_back(vertex_buffers[i].vk_buffer);
-				vk_vertex_buffer_offsets.push_back(vertex_buffers[i].offset_in_bytes);
-			}
-
-			if (num_vertex_buffers > 0)
-				vkCmdBindVertexBuffers(command_buffer.vk_command_buffer, 0, 1, vk_vertex_buffers.data(), vk_vertex_buffer_offsets.data());
+			// NOTE: No need to call vkCmdBindVertexBuffers because we use vertex pulling
 			vkCmdDraw(command_buffer.vk_command_buffer, num_vertices, num_instances, first_vertex, first_instance);
 		}
 
-		void DrawGeometryIndexed(const VulkanCommandBuffer& command_buffer, uint32_t num_vertex_buffers, const VulkanBuffer* const vertex_buffers, const VulkanBuffer* const index_buffer,
-			VkIndexType index_type, uint32_t num_indices, uint32_t num_instances, uint32_t first_instance, uint32_t first_index, uint32_t vertex_offset)
+		void DrawGeometryIndexed(const VulkanCommandBuffer& command_buffer, const VulkanBuffer* const index_buffer,	VkIndexType index_type, uint32_t num_indices,
+			uint32_t num_instances, uint32_t first_instance, uint32_t first_index, uint32_t vertex_offset)
 		{
-			std::vector<VkBuffer> vk_vertex_buffers;
-			std::vector<uint64_t> vk_vertex_buffer_offsets;
+			// NOTE: No need to call vkCmdBindVertexBuffers because we use vertex pulling
+			if (index_buffer)
+				vkCmdBindIndexBuffer(command_buffer.vk_command_buffer, index_buffer->vk_buffer, 0, index_type);
 
-			for (uint32_t i = 0; i < num_vertex_buffers; ++i)
-			{
-				vk_vertex_buffers.push_back(vertex_buffers[i].vk_buffer);
-				vk_vertex_buffer_offsets.push_back(vertex_buffers[i].offset_in_bytes);
-			}
-
-			vkCmdBindVertexBuffers(command_buffer.vk_command_buffer, 0, static_cast<uint32_t>(vk_vertex_buffers.size()), vk_vertex_buffers.data(), vk_vertex_buffer_offsets.data());
-			vkCmdBindIndexBuffer(command_buffer.vk_command_buffer, index_buffer->vk_buffer, index_buffer->offset_in_bytes, index_type);
 			vkCmdDrawIndexed(command_buffer.vk_command_buffer, num_indices, num_instances, first_index, vertex_offset, first_instance);
 		}
 

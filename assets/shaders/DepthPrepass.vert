@@ -1,16 +1,17 @@
 #version 460
-
 #include "Common.glsl"
 
-layout(location = 0) in vec3 position;
-layout(location = 1) in vec2 tex_coord;
-layout(location = 2) in vec3 normal;
-layout(location = 3) in vec4 tangent;
-// Takes up 4 locations, 5 to 8
-layout(location = 4) in mat4 transform;
+layout(std140, push_constant) uniform PushConsts
+{
+	layout(offset = 0) uint ib_index;
+	layout(offset = 4) uint vb_index;
+} push;
 
 void main()
 {
-	vec4 world_pos = transform * vec4(position, 1.0f);
+	mat4 transform = GetInstanceTransform(push.ib_index, gl_InstanceIndex);
+	vec3 vertex_pos = GetVertexPos(push.vb_index, gl_VertexIndex);
+
+	vec4 world_pos = transform * vec4(vertex_pos, 1.0f);
 	gl_Position = camera.proj * camera.view * world_pos;
 }

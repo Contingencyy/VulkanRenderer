@@ -1,6 +1,7 @@
 #include "Precomp.h"
 #include "Assets.h"
 #include "renderer/Renderer.h"
+#include "Shared.glsl.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb/stb_image.h"
@@ -69,9 +70,9 @@ private:
 		uint32_t index = GetVertexIndex(context, iFace, iVert);
 		const Vertex& vertex = user_data->vertices_ptr[index];
 
-		outpos[0] = vertex.pos.x;
-		outpos[1] = vertex.pos.y;
-		outpos[2] = vertex.pos.z;
+		outpos[0] = vertex.pos[0];
+		outpos[1] = vertex.pos[1];
+		outpos[2] = vertex.pos[2];
 	}
 
 	static void GetNormal(const SMikkTSpaceContext* context, float outnormal[], int iFace, int iVert)
@@ -81,9 +82,9 @@ private:
 		uint32_t index = GetVertexIndex(context, iFace, iVert);
 		const Vertex& vertex = user_data->vertices_ptr[index];
 
-		outnormal[0] = vertex.normal.x;
-		outnormal[1] = vertex.normal.y;
-		outnormal[2] = vertex.normal.z;
+		outnormal[0] = vertex.normal[0];
+		outnormal[1] = vertex.normal[1];
+		outnormal[2] = vertex.normal[2];
 	}
 
 	static void GetTexCoord(const SMikkTSpaceContext* context, float outuv[], int iFace, int iVert)
@@ -93,8 +94,8 @@ private:
 		uint32_t index = GetVertexIndex(context, iFace, iVert);
 		const Vertex& vertex = user_data->vertices_ptr[index];
 
-		outuv[0] = vertex.tex_coord.x;
-		outuv[1] = vertex.tex_coord.y;
+		outuv[0] = vertex.tex_coord[0];
+		outuv[1] = vertex.tex_coord[1];
 	}
 
 	static void SetTSpaceBasic(const SMikkTSpaceContext* context, const float tangentu[], float fSign, int iFace, int iVert)
@@ -104,10 +105,10 @@ private:
 		uint32_t index = GetVertexIndex(context, iFace, iVert);
 		Vertex& vertex = user_data->vertices_ptr[index];
 
-		vertex.tangent.x = tangentu[0];
-		vertex.tangent.y = tangentu[1];
-		vertex.tangent.z = tangentu[2];
-		vertex.tangent.w = fSign;
+		vertex.tangent[0] = tangentu[0];
+		vertex.tangent[1] = tangentu[1];
+		vertex.tangent[2] = tangentu[2];
+		vertex.tangent[3] = fSign;
 	}
 
 private:
@@ -319,7 +320,9 @@ namespace Assets
 
 						for (size_t l = 0; l < attribute.data->count; ++l)
 						{
-							vertices[l].pos = pos_ptr[l];
+							vertices[l].pos[0] = pos_ptr[l].x;
+							vertices[l].pos[1] = pos_ptr[l].y;
+							vertices[l].pos[2] = pos_ptr[l].z;
 						}
 						break;
 					}
@@ -329,7 +332,8 @@ namespace Assets
 
 						for (size_t l = 0; l < attribute.data->count; ++l)
 						{
-							vertices[l].tex_coord = texcoord_ptr[l];
+							vertices[l].tex_coord[0] = texcoord_ptr[l].x;
+							vertices[l].tex_coord[1] = texcoord_ptr[l].y;
 						}
 						break;
 					}
@@ -339,7 +343,9 @@ namespace Assets
 
 						for (size_t l = 0; l < attribute.data->count; ++l)
 						{
-							vertices[l].normal = normal_ptr[l];
+							vertices[l].normal[0] = normal_ptr[l].x;
+							vertices[l].normal[1] = normal_ptr[l].y;
+							vertices[l].normal[2] = normal_ptr[l].z;
 						}
 						break;
 					}
@@ -349,7 +355,10 @@ namespace Assets
 
 						for (size_t l = 0; l < attribute.data->count; ++l)
 						{
-							vertices[l].tangent = tangent_ptr[l];
+							vertices[l].tangent[0] = tangent_ptr[l].x;
+							vertices[l].tangent[1] = tangent_ptr[l].y;
+							vertices[l].tangent[2] = tangent_ptr[l].z;
+							vertices[l].tangent[3] = tangent_ptr[l].w;
 						}
 						calc_tangents = false;
 						break;

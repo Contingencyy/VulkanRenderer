@@ -1,5 +1,5 @@
 #version 460
-#extension GL_EXT_nonuniform_qualifier : enable
+#include "Common.glsl"
 
 /*
 
@@ -8,20 +8,18 @@
 
 */
 
-layout(std140, push_constant) uniform constants
+layout(std140, push_constant) uniform PushConsts
 {
 	layout(offset = 0) mat4 mvp;
-} push_constants;
-
-layout(location = 0) in vec3 position;
-layout(location = 1) in vec2 tex_coord;
-layout(location = 2) in vec3 normal;
-layout(location = 3) in vec4 tangent;
+	layout(offset = 64) uint vb_index;
+} push;
 
 layout(location = 0) out vec3 local_position;
 
 void main()
 {
-	local_position = position;
-	gl_Position = push_constants.mvp * vec4(position, 1.0);
+	vec3 vertex_pos = GetVertexPos(push.vb_index, gl_VertexIndex);
+
+	local_position = vertex_pos;
+	gl_Position = push.mvp * vec4(vertex_pos, 1.0);
 }

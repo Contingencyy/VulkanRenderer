@@ -2,6 +2,8 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_ray_tracing : enable
 #extension GL_EXT_ray_query : enable
+#extension GL_EXT_buffer_reference : enable
+#extension GL_EXT_buffer_reference2 : enable
 
 #include "Shared.glsl.h"
 
@@ -9,6 +11,73 @@ const float PI = 3.1415926535897932384626433832795;
 const float INV_PI = 1.0 / 3.1415926535897932384626433832795;
 const float TWO_PI = 3.1415926535897932384626433832795 * 2.0;
 const float HALF_PI = 3.1415926535897932384626433832795 * 0.5;
+
+/*
+
+	Storage buffers and acceleration structures
+	Functionality for vertex pulling
+
+*/
+
+layout(set = DESCRIPTOR_SET_STORAGE_BUFFER, binding = 0, std430) readonly buffer VertexSSBOs
+{
+	Vertex vertices[];
+} g_vertex_ssbos[];
+
+layout(set = DESCRIPTOR_SET_STORAGE_BUFFER, binding = 0, std430) readonly buffer InstanceSSBOs
+{
+	InstanceData instance_data[];
+} g_instance_ssbos[];
+
+layout(set = DESCRIPTOR_SET_ACCELERATION_STRUCTURES, binding = 0) uniform accelerationStructureEXT g_tlas_scene[];
+
+vec3 GetVertexPos(uint buffer_index, uint vertex_index)
+{
+	Vertex vertex = g_vertex_ssbos[buffer_index].vertices[vertex_index];
+	return vec3(vertex.pos[0], vertex.pos[1], vertex.pos[2]);
+}
+
+vec2 GetVertexTexCoord(uint buffer_index, uint vertex_index)
+{
+	Vertex vertex = g_vertex_ssbos[buffer_index].vertices[vertex_index];
+	return vec2(vertex.tex_coord[0], vertex.tex_coord[1]);
+}
+
+vec3 GetVertexNormal(uint buffer_index, uint vertex_index)
+{
+	Vertex vertex = g_vertex_ssbos[buffer_index].vertices[vertex_index];
+	return vec3(vertex.normal[0], vertex.normal[1], vertex.normal[2]);
+}
+
+vec4 GetVertexTangent(uint buffer_index, uint vertex_index)
+{
+	Vertex vertex = g_vertex_ssbos[buffer_index].vertices[vertex_index];
+	return vec4(vertex.tangent[0], vertex.tangent[1], vertex.tangent[2], vertex.tangent[3]);
+}
+
+mat4 GetInstanceTransform(uint buffer_index, uint instance_index)
+{
+	InstanceData instance = g_instance_ssbos[buffer_index].instance_data[instance_index];
+	return mat4(
+		instance.transform[0][0], instance.transform[0][1], instance.transform[0][2], instance.transform[0][3],
+		instance.transform[1][0], instance.transform[1][1], instance.transform[1][2], instance.transform[1][3],
+		instance.transform[2][0], instance.transform[2][1], instance.transform[2][2], instance.transform[2][3],
+		instance.transform[3][0], instance.transform[3][1], instance.transform[3][2], instance.transform[3][3]
+	);
+}
+
+uint GetInstanceMaterialIndex(uint buffer_index, uint instance_index)
+{
+	InstanceData instance = g_instance_ssbos[buffer_index].instance_data[instance_index];
+	return instance.material_index;
+}
+
+/*
+
+	Textures and samplers
+	Functionality for sampling from textures
+
+*/
 
 layout(set = DESCRIPTOR_SET_UBO, binding = RESERVED_DESCRIPTOR_UBO_SETTINGS) uniform SettingsUBO
 {
@@ -39,14 +108,6 @@ layout(set = DESCRIPTOR_SET_SAMPLED_IMAGE, binding = 0) uniform textureCube g_cu
 layout(set = DESCRIPTOR_SET_SAMPLER, binding = 0) uniform sampler g_samplers[];
 //layout(set = DESCRIPTOR_SET_SAMPLER, binding = 0) uniform samplerCube g_cube_samplers[];
 
-layout(set = DESCRIPTOR_SET_ACCELERATION_STRUCTURES, binding = 0) uniform accelerationStructureEXT tlas_scene[];
-
-/*
-
-	Texture sampling functions
-
-*/
-
 ivec2 GetTextureDimensions(uint tex_idx)
 {
 	return textureSize(g_textures[tex_idx], 0);
@@ -74,7 +135,7 @@ vec4 SampleTextureCubeLod(uint tex_idx, uint samp_idx, vec3 samp_dir, float lod)
 
 /*
 
-	Others
+	Extra Utility
 
 */
 
