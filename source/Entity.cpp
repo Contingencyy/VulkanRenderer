@@ -9,6 +9,11 @@ Entity::Entity(const std::string& label)
 {
 }
 
+MeshObject::MeshObject(const std::string& label)
+	: MeshObject(MeshHandle_t(), Assets::Material(), glm::identity<glm::mat4>(), label)
+{
+}
+
 MeshObject::MeshObject(MeshHandle_t mesh_handle, const Assets::Material& material, const glm::mat4& transform, const std::string& label)
 	: Entity(label), m_mesh_handle(mesh_handle), m_material(material), m_transform(transform)
 {
@@ -101,34 +106,39 @@ void MeshObject::RenderUI()
 	}
 }
 
-Pointlight::Pointlight(const glm::vec3& pos, const glm::vec3& color, float intensity, const std::string& label)
-	: Entity(label), m_position(pos), m_color(color), m_intensity(intensity)
+//Pointlight::Pointlight(const glm::vec3& pos, const glm::vec3& color, float intensity, const std::string& label)
+//	: Entity(label), m_position(pos), m_color(color), m_intensity(intensity)
+//{
+//}
+//
+//void Pointlight::Update(float dt)
+//{
+//}
+//
+//void Pointlight::Render()
+//{
+//	Renderer::SubmitPointlight(m_position, m_color, m_intensity);
+//}
+//
+//void Pointlight::RenderUI()
+//{
+//	if (ImGui::CollapsingHeader(m_label.c_str()))
+//	{
+//		ImGui::PushID(m_label.c_str());
+//		ImGui::Indent(10.0f);
+//
+//		ImGui::DragFloat3("Position", &m_position[0], 0.01f, -FLT_MAX, FLT_MAX, "%.2f");
+//		ImGui::ColorEdit3("Color", &m_color[0], ImGuiColorEditFlags_DisplayRGB);
+//		ImGui::DragFloat("Intensity", &m_intensity, 0.01f, 0.0f, 10000.0f, "%.2f");
+//
+//		ImGui::Unindent(10.0f);
+//		ImGui::PopID();
+//	}
+//}
+
+AreaLight::AreaLight(const std::string& label)
+	: AreaLight(TextureHandle_t(), glm::identity<glm::mat4>(), glm::vec3(1.0f), 5.0f, true, label)
 {
-}
-
-void Pointlight::Update(float dt)
-{
-}
-
-void Pointlight::Render()
-{
-	Renderer::SubmitPointlight(m_position, m_color, m_intensity);
-}
-
-void Pointlight::RenderUI()
-{
-	if (ImGui::CollapsingHeader(m_label.c_str()))
-	{
-		ImGui::PushID(m_label.c_str());
-		ImGui::Indent(10.0f);
-
-		ImGui::DragFloat3("Position", &m_position[0], 0.01f, -FLT_MAX, FLT_MAX, "%.2f");
-		ImGui::ColorEdit3("Color", &m_color[0], ImGuiColorEditFlags_DisplayRGB);
-		ImGui::DragFloat("Intensity", &m_intensity, 0.01f, 0.0f, 10000.0f, "%.2f");
-
-		ImGui::Unindent(10.0f);
-		ImGui::PopID();
-	}
 }
 
 AreaLight::AreaLight(TextureHandle_t texture_handle, const glm::mat4& transform, const glm::vec3& color, float intensity, bool two_sided, const std::string& label)
@@ -159,10 +169,6 @@ void AreaLight::RenderUI()
 		ImGui::PushID(m_label.c_str());
 		ImGui::Indent(10.0f);
 
-		ImGui::ColorEdit3("Color", &m_color[0], ImGuiColorEditFlags_DisplayRGB);
-		ImGui::DragFloat("Intensity", &m_intensity, 0.01f, 0.0f, 10000.0f, "%.2f");
-		ImGui::Checkbox("Two-sided", &m_two_sided);
-
 		if (ImGui::CollapsingHeader("Transform"))
 		{
 			ImGui::Indent(10.0f);
@@ -189,6 +195,10 @@ void AreaLight::RenderUI()
 				m_transform = glm::rotate(m_transform, glm::radians(m_rotation.z), glm::vec3(0.0f, 0.0f, 1.0f));
 				m_transform = glm::scale(m_transform, m_scale);
 			}
+
+			ImGui::ColorEdit3("Color", &m_color[0], ImGuiColorEditFlags_DisplayRGB);
+			ImGui::DragFloat("Intensity", &m_intensity, 0.01f, 0.0f, 10000.0f, "%.2f");
+			ImGui::Checkbox("Two-sided", &m_two_sided);
 
 			ImGui::Unindent(10.0f);
 		}

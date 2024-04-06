@@ -10,17 +10,17 @@ namespace Assets
 		TextureHandle_t normal_texture_handle;
 		TextureHandle_t metallic_roughness_texture_handle;
 
-		glm::vec4 albedo_factor;
-		float metallic_factor;
-		float roughness_factor;
+		glm::vec4 albedo_factor = glm::vec4(1.0f);
+		float metallic_factor = 1.0f;
+		float roughness_factor = 1.0f;
 
-		bool has_clearcoat;
+		bool has_clearcoat = false;
 		TextureHandle_t clearcoat_alpha_texture_handle;
 		TextureHandle_t clearcoat_normal_texture_handle;
 		TextureHandle_t clearcoat_roughness_texture_handle;
 
-		float clearcoat_alpha_factor;
-		float clearcoat_roughness_factor;
+		float clearcoat_alpha_factor = 1.0f;
+		float clearcoat_roughness_factor = 1.0f;
 	};
 
 	struct Model

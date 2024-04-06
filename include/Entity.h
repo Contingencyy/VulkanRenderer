@@ -20,6 +20,7 @@ protected:
 class MeshObject : public Entity
 {
 public:
+	MeshObject(const std::string& label);
 	MeshObject(MeshHandle_t mesh_handle, const Assets::Material& material, const glm::mat4& transform, const std::string& label);
 
 	virtual void Update(float dt) override;
@@ -37,25 +38,26 @@ private:
 
 };
 
-class Pointlight : public Entity
-{
-public:
-	Pointlight(const glm::vec3& pos, const glm::vec3& color, float intensity, const std::string& label);
-
-	virtual void Update(float dt) override;
-	virtual void Render() override;
-	virtual void RenderUI() override;
-
-private:
-	glm::vec3 m_position = glm::vec3(0.0f);
-	glm::vec3 m_color = glm::vec3(1.0f);
-	float m_intensity = 1.0f;
-
-};
+//class Pointlight : public Entity
+//{
+//public:
+//	Pointlight(const glm::vec3& pos, const glm::vec3& color, float intensity, const std::string& label);
+//
+//	virtual void Update(float dt) override;
+//	virtual void Render() override;
+//	virtual void RenderUI() override;
+//
+//private:
+//	glm::vec3 m_position = glm::vec3(0.0f);
+//	glm::vec3 m_color = glm::vec3(1.0f);
+//	float m_intensity = 1.0f;
+//
+//};
 
 class AreaLight : public Entity
 {
 public:
+	AreaLight(const std::string& label);
 	AreaLight(TextureHandle_t texture_handle, const glm::mat4& transform, const glm::vec3& color, float intensity, bool two_sided, const std::string& label);
 
 	virtual void Update(float dt) override;

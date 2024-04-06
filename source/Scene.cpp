@@ -29,11 +29,38 @@ void Scene::Render()
 
 void Scene::RenderUI()
 {
-	if (ImGui::Begin("Scene"))
+	if (ImGui::Begin("Scene", nullptr, ImGuiWindowFlags_MenuBar))
 	{
-		for (auto& entity : m_entities)
+		if (ImGui::BeginMenuBar())
 		{
-			entity->RenderUI();
+			if (ImGui::BeginMenu("Entities"))
+			{
+				if (ImGui::BeginMenu("New Entity"))
+				{
+					if (ImGui::MenuItem("Mesh"))
+					{
+						AddEntity<MeshObject>("Mesh");
+					}
+					if (ImGui::MenuItem("AreaLight"))
+					{
+						AddEntity<AreaLight>("AreaLight");
+					}
+					ImGui::EndMenu();
+				}
+
+				ImGui::EndMenu();
+			}
+
+			ImGui::EndMenuBar();
+		}
+
+		// Scene Hierarchy UI
+		if (ImGui::CollapsingHeader("Scene Hierarchy"))
+		{
+			for (auto& entity : m_entities)
+			{
+				entity->RenderUI();
+			}
 		}
 	}
 	ImGui::End();
