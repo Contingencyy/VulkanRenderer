@@ -1406,6 +1406,7 @@ namespace Renderer
 
 		// Clean up the renderer data
 		delete data;
+		data = nullptr;
 
 		// Finally, exit the vulkan render backend
 		Vulkan::Exit();
@@ -1782,46 +1783,38 @@ namespace Renderer
 						ImGui::SetTooltip("If enabled, specular direct lighting will be energy conserving, taking multiscatter specular bounces between microfacets into account");
 					}
 
-					ImGui::SetNextItemOpen(false, ImGuiCond_Once);
-					if (ImGui::CollapsingHeader("General"))
+					ImGui::Checkbox("Use squared roughness", (bool*)&data->settings.use_pbr_squared_roughness);
+					if (ImGui::IsItemHovered())
 					{
-						ImGui::Indent(10.0f);
+						ImGui::SetTooltip("If enabled, squares the roughness before doing any lighting calculations, which makes it perceptually more linear");
+					}
+					ImGui::Checkbox("Use clearcoat", (bool*)&data->settings.use_pbr_clearcoat);
+					if (ImGui::IsItemHovered())
+					{
+						ImGui::SetTooltip("Global toggle for clearcoat materials");
+					}
 
-						ImGui::Checkbox("Use squared roughness", (bool*)&data->settings.use_pbr_squared_roughness);
-						if (ImGui::IsItemHovered())
+					if (ImGui::BeginCombo("Diffuse BRDF Model", DIFFUSE_BRDF_MODEL_LABELS[data->settings.pbr_diffuse_brdf_model]))
+					{
+						for (uint32_t i = 0; i < DIFFUSE_BRDF_MODEL_NUM_MODELS; ++i)
 						{
-							ImGui::SetTooltip("If enabled, squares the roughness before doing any lighting calculations, which makes it perceptually more linear");
-						}
-						ImGui::Checkbox("Use clearcoat", (bool*)&data->settings.use_pbr_clearcoat);
-						if (ImGui::IsItemHovered())
-						{
-							ImGui::SetTooltip("Global toggle for clearcoat materials");
-						}
-
-						if (ImGui::BeginCombo("Diffuse BRDF Model", DIFFUSE_BRDF_MODEL_LABELS[data->settings.pbr_diffuse_brdf_model]))
-						{
-							for (uint32_t i = 0; i < DIFFUSE_BRDF_MODEL_NUM_MODELS; ++i)
+							bool is_selected = i == data->settings.pbr_diffuse_brdf_model;
+							if (ImGui::Selectable(DIFFUSE_BRDF_MODEL_LABELS[i], is_selected))
 							{
-								bool is_selected = i == data->settings.pbr_diffuse_brdf_model;
-								if (ImGui::Selectable(DIFFUSE_BRDF_MODEL_LABELS[i], is_selected))
-								{
-									data->settings.pbr_diffuse_brdf_model = i;
-								}
-
-								if (is_selected)
-								{
-									ImGui::SetItemDefaultFocus();
-								}
+								data->settings.pbr_diffuse_brdf_model = i;
 							}
 
-							ImGui::EndCombo();
-						}
-						if (ImGui::IsItemHovered())
-						{
-							ImGui::SetTooltip("Select which diffuse BRDF term to use for direct diffuse lighting");
+							if (is_selected)
+							{
+								ImGui::SetItemDefaultFocus();
+							}
 						}
 
-						ImGui::Unindent(10.0f);
+						ImGui::EndCombo();
+					}
+					if (ImGui::IsItemHovered())
+					{
+						ImGui::SetTooltip("Select which diffuse BRDF term to use for direct diffuse lighting");
 					}
 
 					ImGui::SetNextItemOpen(false, ImGuiCond_Once);

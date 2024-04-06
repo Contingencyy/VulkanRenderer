@@ -36,7 +36,7 @@ namespace Input
 	bool IsKeyPressed(Key key, bool consume = false);
 	bool IsKeyRepeated(Key key, uint32_t& num_repeats);
 	bool IsButtonPressed(Button button, bool consume = false);
-	bool IsButtonRepeated(Key key, uint32_t& num_repeats);
+	bool IsButtonRepeated(Button button, uint32_t& num_repeats);
 
 	float GetInputAxis1D(Key axis_pos, Key axis_neg);
 	

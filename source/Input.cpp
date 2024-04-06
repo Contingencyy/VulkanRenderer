@@ -68,7 +68,7 @@ namespace Input
 
 		MousePosition scroll_prev;
 		MousePosition scroll_curr;
-	} static data;
+	} static *data;
 
 	void GLFWKeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
 	{
@@ -77,12 +77,12 @@ namespace Input
 			return;
 		}
 		
-		if (data.key_mappings.find(key) != data.key_mappings.end())
+		if (data->key_mappings.find(key) != data->key_mappings.end())
 		{
-			Key mapped_key = data.key_mappings.at(key);
-			Data::State& key_state = data.key_states.at(mapped_key);
+			Key mapped_key = data->key_mappings.at(key);
+			Data::State& key_state = data->key_states.at(mapped_key);
 
-			key_state.state = data.action_mappings.at(action);
+			key_state.state = data->action_mappings.at(action);
 			if (key_state.state == KeyState::KeyState_Released)
 			{
 				key_state.num_repeats = 0;
@@ -107,12 +107,12 @@ namespace Input
 			return;
 		}
 
-		if (data.button_mappings.find(button) != data.button_mappings.end())
+		if (data->button_mappings.find(button) != data->button_mappings.end())
 		{
-			Button mapped_button = data.button_mappings.at(button);
-			Data::State& button_state = data.button_states.at(mapped_button);
+			Button mapped_button = data->button_mappings.at(button);
+			Data::State& button_state = data->button_states.at(mapped_button);
 			
-			button_state.state = data.action_mappings.at(action);
+			button_state.state = data->action_mappings.at(action);
 			if (button_state.state == KeyState::KeyState_Released)
 			{
 				button_state.num_repeats = 0;
@@ -135,9 +135,9 @@ namespace Input
 			return;
 		}
 
-		data.mouse_pos_prev = data.mouse_pos_curr;
-		data.mouse_pos_curr.x = xpos;
-		data.mouse_pos_curr.y = ypos;
+		data->mouse_pos_prev = data->mouse_pos_curr;
+		data->mouse_pos_curr.x = xpos;
+		data->mouse_pos_curr.y = ypos;
 	}
 
 	void GLTFMouseScrollCollback(GLFWwindow* window, double xoffset, double yoffset)
@@ -147,39 +147,42 @@ namespace Input
 			return;
 		}
 
-		data.scroll_prev = data.scroll_curr;
-		data.scroll_curr.x += xoffset;
-		data.scroll_curr.y += yoffset;
+		data->scroll_prev = data->scroll_curr;
+		data->scroll_curr.x += xoffset;
+		data->scroll_curr.y += yoffset;
 	}
 
 	void Init(GLFWwindow* window)
 	{
-		data.window = window;
+		data = new Data();
+		data->window = window;
 
 		for (size_t i = 0; i < Key::NumKeys; ++i)
 		{
-			data.key_states.emplace((Key)i, Data::State(KeyState::KeyState_Released, 0));
+			data->key_states.emplace((Key)i, Data::State(KeyState::KeyState_Released, 0));
 		}
 
 		for (size_t i = 0; i < Button::NumButtons; ++i)
 		{
-			data.button_states.emplace((Button)i, Data::State(KeyState::KeyState_Released, 0));
+			data->button_states.emplace((Button)i, Data::State(KeyState::KeyState_Released, 0));
 		}
 	}
 
 	void Exit()
 	{
+		delete data;
+		data = nullptr;
 	}
 
 	void Update()
 	{
-		data.mouse_pos_prev = data.mouse_pos_curr;
-		data.scroll_prev = data.scroll_curr;
+		data->mouse_pos_prev = data->mouse_pos_curr;
+		data->scroll_prev = data->scroll_curr;
 	}
 
 	bool IsKeyPressed(Key key, bool consume)
 	{
-		Data::State& key_state = data.key_states.at(key);
+		Data::State& key_state = data->key_states.at(key);
 		if (key_state.consumed)
 			return false;
 
@@ -189,13 +192,13 @@ namespace Input
 
 	bool IsKeyRepeated(Key key, uint32_t& num_repeats)
 	{
-		num_repeats = data.key_states.at(key).num_repeats;
-		return data.key_states.at(key).state == KeyState::KeyState_Repeat;
+		num_repeats = data->key_states.at(key).num_repeats;
+		return data->key_states.at(key).state == KeyState::KeyState_Repeat;
 	}
 
 	bool IsButtonPressed(Button button, bool consume)
 	{
-		Data::State& button_state = data.button_states.at(button);
+		Data::State& button_state = data->button_states.at(button);
 		if (button_state.consumed)
 			return false;
 
@@ -205,44 +208,44 @@ namespace Input
 
 	bool IsButtonRepeated(Button button, uint32_t& num_repeats)
 	{
-		num_repeats = data.button_states.at(button).num_repeats;
-		return data.button_states.at(button).state == KeyState::KeyState_Repeat;
+		num_repeats = data->button_states.at(button).num_repeats;
+		return data->button_states.at(button).state == KeyState::KeyState_Repeat;
 	}
 
 	float GetInputAxis1D(Key axis_pos, Key axis_neg)
 	{
-		bool pos_state = data.key_states[axis_pos].state != KeyState_Released;
-		bool neg_state = data.key_states[axis_neg].state != KeyState_Released;
+		bool pos_state = data->key_states[axis_pos].state != KeyState_Released;
+		bool neg_state = data->key_states[axis_neg].state != KeyState_Released;
 		return (float)pos_state + (-neg_state);
 	}
 
 	void GetMousePositionAbs(double& x, double& y)
 	{
-		x = data.mouse_pos_curr.x;
-		y = data.mouse_pos_curr.y;
+		x = data->mouse_pos_curr.x;
+		y = data->mouse_pos_curr.y;
 	}
 
 	void GetMousePositionRel(double& x, double& y)
 	{
-		x = data.mouse_pos_curr.x - data.mouse_pos_prev.x;
-		y = data.mouse_pos_curr.y - data.mouse_pos_prev.y;
+		x = data->mouse_pos_curr.x - data->mouse_pos_prev.x;
+		y = data->mouse_pos_curr.y - data->mouse_pos_prev.y;
 	}
 
 	void GetScrollAbs(double& x, double& y)
 	{
-		x = data.scroll_curr.x;
-		y = data.scroll_prev.y;
+		x = data->scroll_curr.x;
+		y = data->scroll_prev.y;
 	}
 
 	void GetScrollRel(double& x, double& y)
 	{
-		x = data.scroll_curr.x - data.scroll_prev.x;
-		y = data.scroll_curr.y - data.scroll_prev.y;
+		x = data->scroll_curr.x - data->scroll_prev.x;
+		y = data->scroll_curr.y - data->scroll_prev.y;
 	}
 
 	bool IsCursorDisabled()
 	{
-		int cursor_mode = glfwGetInputMode(data.window, GLFW_CURSOR);
+		int cursor_mode = glfwGetInputMode(data->window, GLFW_CURSOR);
 		return cursor_mode == GLFW_CURSOR_DISABLED;
 	}
 

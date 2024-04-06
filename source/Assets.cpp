@@ -643,6 +643,7 @@ namespace Assets
 	void Exit()
 	{
 		delete data;
+		data = nullptr;
 	}
 
 	void RenderUI()
