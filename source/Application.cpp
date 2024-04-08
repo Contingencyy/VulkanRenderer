@@ -89,7 +89,7 @@ namespace Application
 		}
 	}
 
-	static void SpawnModelNodeEntity(AssetManager::ModelAsset* model_asset, const AssetManager::ModelAsset::Node& node, const glm::mat4& node_transform)
+	static void SpawnModelNodeEntity(ModelAsset* model_asset, const ModelAsset::Node& node, const glm::mat4& node_transform)
 	{
 		for (uint32_t i = 0; i < node.mesh_handles.size(); ++i)
 		{
@@ -98,7 +98,7 @@ namespace Application
 
 		for (uint32_t i = 0; i < node.children.size(); ++i)
 		{
-			const AssetManager::ModelAsset::Node& child_node = model_asset->nodes[node.children[i]];
+			const ModelAsset::Node& child_node = model_asset->nodes[node.children[i]];
 			glm::mat4 child_transform = node_transform * child_node.transform;
 
 			SpawnModelNodeEntity(model_asset, child_node, child_transform);
@@ -107,13 +107,13 @@ namespace Application
 
 	static void SpawnModelEntity(AssetHandle_t model_handle, const glm::mat4& transform)
 	{
-		AssetManager::ModelAsset* model_asset = AssetManager::GetAsset<AssetManager::ModelAsset>(model_handle);
+		ModelAsset* model_asset = AssetManager::GetAsset<ModelAsset>(model_handle);
 		if (!model_asset)
 			return;
 
 		for (uint32_t i = 0; i < model_asset->root_nodes.size(); ++i)
 		{
-			const AssetManager::ModelAsset::Node& root_node = model_asset->nodes[model_asset->root_nodes[i]];
+			const ModelAsset::Node& root_node = model_asset->nodes[model_asset->root_nodes[i]];
 			glm::mat4 root_transform = transform * root_node.transform;
 		
 			SpawnModelNodeEntity(model_asset, root_node, root_transform);
@@ -145,7 +145,7 @@ namespace Application
 		glm::mat4 area_light_transform = glm::translate(glm::identity<glm::mat4>(), glm::vec3(7.0f, 1.25f, -0.25f));
 		area_light_transform = glm::rotate(area_light_transform, glm::radians(-90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 		area_light_transform = glm::scale(area_light_transform, glm::vec3(2.5f, 1.5f, 1.0f));
-		data->active_scene.AddEntity<AreaLight>(AssetManager::GetAsset<AssetManager::TextureAsset>(data->tex_kermit)->gpu_texture_handle, area_light_transform, glm::vec3(1.0f, 0.95f, 0.8f), 5.0f, true, "AreaLight0");
+		data->active_scene.AddEntity<AreaLight>(AssetManager::GetAsset<TextureAsset>(data->tex_kermit)->gpu_texture_handle, area_light_transform, glm::vec3(1.0f, 0.95f, 0.8f), 5.0f, true, "AreaLight0");
 
 		area_light_transform = glm::translate(glm::identity<glm::mat4>(), glm::vec3(-8.0f, 1.25f, -0.25f));
 		area_light_transform = glm::rotate(area_light_transform, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
@@ -220,7 +220,7 @@ namespace Application
 		Renderer::BeginFrameInfo frame_info = {};
 		frame_info.camera_view = data->active_scene.GetActiveCamera().GetView();
 		frame_info.camera_vfov = data->active_scene.GetActiveCamera().GetVerticalFOV();
-		frame_info.skybox_texture_handle = AssetManager::GetAsset<AssetManager::TextureAsset>(data->tex_hdr)->gpu_texture_handle;
+		frame_info.skybox_texture_handle = AssetManager::GetAsset<TextureAsset>(data->tex_hdr)->gpu_texture_handle;
 		Renderer::BeginFrame(frame_info);
 
 		data->active_scene.Render();

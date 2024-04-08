@@ -17,7 +17,7 @@
 #include "renderer/RingBuffer.h"
 #include "ResourceSlotmap.h"
 #include "Shared.glsl.h"
-#include "AssetManager.h"
+#include "AssetTypes.h"
 
 // Used for area lights
 #include "renderer/LTCMatrices.h"
@@ -2101,7 +2101,7 @@ namespace Renderer
 		data->mesh_slotmap.Delete(handle);
 	}
 
-	void SubmitMesh(MeshHandle_t mesh_handle, const AssetManager::MaterialAsset& material, const glm::mat4& transform)
+	void SubmitMesh(MeshHandle_t mesh_handle, const MaterialAsset& material, const glm::mat4& transform)
 	{
 		DrawList::Entry& entry = data->draw_list.GetNextEntry();
 		// Get the mesh from the slotmap. If it does not exist/is invalid, use the unit cube mesh as a default placeholder

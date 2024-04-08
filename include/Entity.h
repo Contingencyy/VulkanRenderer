@@ -1,6 +1,6 @@
 #pragma once
 #include "renderer/RenderTypes.h"
-#include "AssetManager.h"
+#include "AssetTypes.h"
 
 // Entity interface
 class Entity
@@ -21,7 +21,7 @@ class MeshObject : public Entity
 {
 public:
 	MeshObject(const std::string& label);
-	MeshObject(MeshHandle_t mesh_handle, const AssetManager::MaterialAsset& material, const glm::mat4& transform, const std::string& label);
+	MeshObject(MeshHandle_t mesh_handle, const MaterialAsset& material, const glm::mat4& transform, const std::string& label);
 
 	virtual void Update(float dt) override;
 	virtual void Render() override;
@@ -29,7 +29,7 @@ public:
 
 private:
 	MeshHandle_t m_mesh_handle = {};
-	AssetManager::MaterialAsset m_material;
+	MaterialAsset m_material;
 
 	glm::mat4 m_transform = glm::identity<glm::mat4>();
 	glm::vec3 m_translation = glm::vec3(0.0f);

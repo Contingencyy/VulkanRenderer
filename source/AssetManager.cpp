@@ -602,11 +602,28 @@ namespace AssetManager
 	{
 		if (ImGui::BeginMenuBar())
 		{
-			if (ImGui::MenuItem("Back"))
+			std::filesystem::path new_path = data->current_dir;
+			std::filesystem::path level_path;
+
+			for (std::filesystem::path level : data->current_dir)
+			{
+				level_path /= level;
+
+				ImGui::Text(level.string().c_str());
+				if (ImGui::IsItemClicked())
+				{
+					new_path = level_path;
+				}
+				ImGui::Text("\\");
+			}
+
+			data->current_dir = new_path;
+
+			/*if (ImGui::Button("Back"))
 			{
 				if (data->current_dir.has_parent_path())
 					data->current_dir = data->current_dir.parent_path();
-			}
+			}*/
 
 			ImGui::EndMenuBar();
 		}

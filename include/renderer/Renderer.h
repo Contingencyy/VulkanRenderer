@@ -2,11 +2,7 @@
 #include "renderer/RenderTypes.h"
 
 struct GLFWwindow;
-
-namespace AssetManager
-{
-	struct MaterialAsset;
-}
+struct MaterialAsset;
 
 namespace Renderer
 {
@@ -63,7 +59,7 @@ namespace Renderer
 
 	MeshHandle_t CreateMesh(const CreateMeshArgs& args);
 	void DestroyMesh(MeshHandle_t handle);
-	void SubmitMesh(MeshHandle_t mesh_handle, const AssetManager::MaterialAsset& material, const glm::mat4& transform);
+	void SubmitMesh(MeshHandle_t mesh_handle, const MaterialAsset& material, const glm::mat4& transform);
 	
 	void SubmitPointlight(const glm::vec3& pos, const glm::vec3& color, float intensity);
 	void SubmitAreaLight(TextureHandle_t texture_handle, const glm::mat4& transform, const glm::vec3& color, float intensity, bool two_sided);
