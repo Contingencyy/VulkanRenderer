@@ -160,13 +160,15 @@ namespace Renderer
 		VulkanSampler sampler;
 
 		TextureHandle_t next;
+
 		VkDescriptorSet imgui_descriptor_set = VK_NULL_HANDLE;
 
 		Texture() = default;
 		explicit Texture(VulkanImage image, VulkanImageView view, VulkanDescriptorAllocation descriptor, VulkanSampler sampler)
 			: image(image), view(view), view_descriptor(descriptor), sampler(sampler)
 		{
-			imgui_descriptor_set = Vulkan::AddImGuiTexture(image.vk_image, view.vk_image_view, sampler.vk_sampler);
+			if (view.num_layers == 1)
+				imgui_descriptor_set = Vulkan::AddImGuiTexture(image.vk_image, view.vk_image_view, sampler.vk_sampler);
 		}
 
 		~Texture()
@@ -2013,17 +2015,22 @@ namespace Renderer
 		}
 	}
 
-	void ImGuiRenderTexture(TextureHandle_t handle)
+	void ImGuiRenderTexture(TextureHandle_t handle, float width, float height)
 	{
-		VK_ASSERT(VK_RESOURCE_HANDLE_VALID(handle));
-
-		ImVec2 size = ImVec2(
-			std::min((float)data->render_resolution.width / 8.0f, ImGui::GetWindowSize().x),
-			std::min((float)data->render_resolution.height / 8.0f, ImGui::GetWindowSize().y)
-		);
-
 		const Texture* texture = data->texture_slotmap.Find(handle);
-		ImGui::Image(texture->imgui_descriptor_set, size);
+		if (!texture || !texture->imgui_descriptor_set)
+			texture = data->texture_slotmap.Find(data->default_white_texture_handle);
+
+		ImGui::Image(texture->imgui_descriptor_set, { width, height });
+	}
+
+	void ImGuiRenderTextureButton(TextureHandle_t handle, float width, float height)
+	{
+		const Texture* texture = data->texture_slotmap.Find(handle);
+		if (!texture || !texture->imgui_descriptor_set)
+			texture = data->texture_slotmap.Find(data->default_white_texture_handle);
+
+		ImGui::ImageButton(texture->imgui_descriptor_set, { width, height });
 	}
 
 	MeshHandle_t CreateMesh(const CreateMeshArgs& args)

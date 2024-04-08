@@ -107,7 +107,7 @@ namespace Application
 		Assets::Model* model = Assets::GetModel(filepath);
 		if (!model)
 		{
-			LOG_ERR("Assets", "Failed to fetch model with name {}", filepath.string());
+			LOG_ERR("Assets", "Failed to fetch model with filename {}", filepath.string());
 			return;
 		}
 
@@ -129,7 +129,7 @@ namespace Application
 		Input::Init(data->window);
 		Renderer::Init(data->window, data->window_width, data->window_height);
 
-		Assets::Init("assets\\");
+		Assets::Init("assets");
 		Assets::LoadTexture("assets\\textures\\kermit.png", TEXTURE_FORMAT_RGBA8_UNORM, true, false);
 		
 		Assets::LoadTexture("assets\\textures\\hdr\\Env_Golden_Bay.hdr", TEXTURE_FORMAT_RGBA32_SFLOAT, true, true);

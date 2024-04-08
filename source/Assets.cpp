@@ -146,12 +146,16 @@ namespace Assets
 	{
 		AssetLoadState load_state = ASSET_LOAD_STATE_DISK;
 		TextureHandle_t texture_handle;
+
+		std::string filename;
 	};
 
 	struct ModelAsset
 	{
 		AssetLoadState load_state = ASSET_LOAD_STATE_DISK;
 		Model model;
+
+		std::string filename;
 	};
 
 	struct Data
@@ -162,6 +166,10 @@ namespace Assets
 
 		std::unordered_map<std::filesystem::path, TextureAsset> texture_assets;
 		std::unordered_map<std::filesystem::path, ModelAsset> model_assets;
+
+		std::filesystem::path current_dir;
+		ImVec2 asset_thumbnail_base_size = { 128.0f, 128.0f };
+		ImVec2 asset_thumbnail_base_padding = { 16.0f, 16.0f };
 
 		TangentCalculator tangent_calc;
 	} static *data;
@@ -182,6 +190,7 @@ namespace Assets
 			TextureAsset imported_texture = {};
 			imported_texture.load_state = ASSET_LOAD_STATE_IMPORTED;
 			imported_texture.texture_handle = {};
+			imported_texture.filename = filepath.filename().string();
 
 			data->texture_assets.emplace(filepath, imported_texture);
 		}
@@ -218,6 +227,7 @@ namespace Assets
 			ModelAsset imported_model = {};
 			imported_model.load_state = ASSET_LOAD_STATE_IMPORTED;
 			imported_model.model = {};
+			imported_model.filename = filepath.filename().string();
 
 			data->model_assets.emplace(filepath, imported_model);
 		}
@@ -597,35 +607,47 @@ namespace Assets
 		return model;
 	}
 
-	static void RenderImportedAssetsTree(const std::filesystem::directory_entry& directory)
+	static void RenderAssetBrowserUI()
 	{
-		if (ImGui::TreeNode(directory.path().string().c_str()))
+		if (ImGui::BeginMenuBar())
 		{
-			for (const auto& item : std::filesystem::directory_iterator(directory))
+			if (ImGui::MenuItem("Back"))
 			{
-				// If the current item in the directory is also a directory, recurse into its own tree
-				if (item.is_directory())
-				{
-					RenderImportedAssetsTree(item);
-					continue;
-				}
-
-				if (item.is_regular_file())
-				{
-					if (data->texture_assets.find(item.path()) != data->texture_assets.end())
-					{
-						ImGui::Text(item.path().filename().string().c_str());
-					}
-					
-					if (data->model_assets.find(item.path()) != data->model_assets.end())
-					{
-						ImGui::Text(item.path().filename().string().c_str());
-					}
-				}
+				if (data->current_dir.has_parent_path())
+					data->current_dir = data->current_dir.parent_path();
 			}
 
-			ImGui::TreePop();
+			ImGui::EndMenuBar();
 		}
+
+		float thumbnail_width = data->asset_thumbnail_base_size.x + data->asset_thumbnail_base_padding.x;
+		float content_width = ImGui::GetContentRegionAvail().x;
+		int32_t num_columns = std::max(static_cast<int32_t>(content_width / thumbnail_width), 1);
+
+		ImGui::Columns(num_columns, 0, false);
+
+		for (const auto& item : std::filesystem::directory_iterator(data->current_dir))
+		{
+			std::filesystem::path relative_path = std::filesystem::relative(item.path(), data->assets_base_dir);
+			std::string filename = relative_path.filename().string();
+
+			//TextureHandle_t icon_handle = ;
+
+			Renderer::ImGuiRenderTextureButton(TextureHandle_t(), data->asset_thumbnail_base_size.x, data->asset_thumbnail_base_size.y);
+			if (ImGui::IsItemHovered() &&
+				ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+			{
+				if (item.is_directory())
+				{
+					data->current_dir /= item.path().filename();
+				}
+			}
+			ImGui::TextWrapped(filename.c_str());
+
+			ImGui::NextColumn();
+		}
+
+		ImGui::Columns();
 	}
 
 	void Init(const std::filesystem::path& assets_base_path)
@@ -633,8 +655,10 @@ namespace Assets
 		data = new Data();
 
 		data->assets_base_dir = assets_base_path;
-		data->models_base_dir = assets_base_path.string() + "models";
-		data->textures_base_dir = assets_base_path.string() + "textures";
+		data->models_base_dir = data->assets_base_dir.string() + "\\models";
+		data->textures_base_dir = assets_base_path.string() + "\\textures";
+
+		data->current_dir = data->assets_base_dir;
 
 		ImportTexturesFromDirectory(data->textures_base_dir);
 		ImportModelsFromDirectory(data->models_base_dir);
@@ -648,10 +672,9 @@ namespace Assets
 
 	void RenderUI()
 	{
-		if (ImGui::Begin("Asset Manager"))
+		if (ImGui::Begin("Asset Manager", nullptr, ImGuiWindowFlags_MenuBar))
 		{
-			ImGui::Text("Imported Assets");
-			RenderImportedAssetsTree(std::filesystem::directory_entry(data->assets_base_dir));
+			RenderAssetBrowserUI();
 		}
 		ImGui::End();
 	}

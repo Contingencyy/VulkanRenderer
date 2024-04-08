@@ -76,26 +76,29 @@ void MeshObject::RenderUI()
 		{
 			ImGui::Indent(10.0f);
 
+			float texture_preview_width = std::min(ImGui::GetWindowSize().x, 256.0f);
+			float texture_preview_height = std::min(ImGui::GetWindowSize().y, 256.0f);
+
 			if (VK_RESOURCE_HANDLE_VALID(m_material.albedo_texture_handle))
-				Renderer::ImGuiRenderTexture(m_material.albedo_texture_handle);
+				Renderer::ImGuiRenderTexture(m_material.albedo_texture_handle, texture_preview_width, texture_preview_height);
 			ImGui::ColorEdit3("Albedo factor", &m_material.albedo_factor.x, ImGuiColorEditFlags_DisplayRGB);
 
 			if (VK_RESOURCE_HANDLE_VALID(m_material.normal_texture_handle))
-				Renderer::ImGuiRenderTexture(m_material.normal_texture_handle);
+				Renderer::ImGuiRenderTexture(m_material.normal_texture_handle, texture_preview_width, texture_preview_height);
 
 			if (VK_RESOURCE_HANDLE_VALID(m_material.metallic_roughness_texture_handle))
-				Renderer::ImGuiRenderTexture(m_material.metallic_roughness_texture_handle);
+				Renderer::ImGuiRenderTexture(m_material.metallic_roughness_texture_handle, texture_preview_width, texture_preview_height);
 			ImGui::SliderFloat("Metallic factor", &m_material.metallic_factor, 0.0f, 1.0f);
 			ImGui::SliderFloat("Roughness factor", &m_material.roughness_factor, 0.0f, 1.0f);
 
 			ImGui::Checkbox("Clearcoat", &m_material.has_clearcoat);
 			if (VK_RESOURCE_HANDLE_VALID(m_material.clearcoat_alpha_texture_handle))
-				Renderer::ImGuiRenderTexture(m_material.clearcoat_alpha_texture_handle);
+				Renderer::ImGuiRenderTexture(m_material.clearcoat_alpha_texture_handle, texture_preview_width, texture_preview_height);
 			ImGui::SliderFloat("Clearcoat alpha factor", &m_material.clearcoat_alpha_factor, 0.0f, 1.0f);
 			if (VK_RESOURCE_HANDLE_VALID(m_material.clearcoat_normal_texture_handle))
-				Renderer::ImGuiRenderTexture(m_material.clearcoat_normal_texture_handle);
+				Renderer::ImGuiRenderTexture(m_material.clearcoat_normal_texture_handle, texture_preview_width, texture_preview_height);
 			if (VK_RESOURCE_HANDLE_VALID(m_material.clearcoat_roughness_texture_handle))
-				Renderer::ImGuiRenderTexture(m_material.clearcoat_roughness_texture_handle);
+				Renderer::ImGuiRenderTexture(m_material.clearcoat_roughness_texture_handle, texture_preview_width, texture_preview_height);
 			ImGui::SliderFloat("Clearcoat roughness factor", &m_material.clearcoat_roughness_factor, 0.0f, 1.0f);
 
 			ImGui::Unindent(10.0f);
@@ -195,6 +198,12 @@ void AreaLight::RenderUI()
 				m_transform = glm::rotate(m_transform, glm::radians(m_rotation.z), glm::vec3(0.0f, 0.0f, 1.0f));
 				m_transform = glm::scale(m_transform, m_scale);
 			}
+
+			float texture_preview_width = std::min(ImGui::GetWindowSize().x, 256.0f);
+			float texture_preview_height = std::min(ImGui::GetWindowSize().y, 256.0f);
+
+			if (VK_RESOURCE_HANDLE_VALID(m_texture_handle))
+				Renderer::ImGuiRenderTexture(m_texture_handle, texture_preview_width, texture_preview_height);
 
 			ImGui::ColorEdit3("Color", &m_color[0], ImGuiColorEditFlags_DisplayRGB);
 			ImGui::DragFloat("Intensity", &m_intensity, 0.01f, 0.0f, 10000.0f, "%.2f");
