@@ -76,10 +76,10 @@ namespace Renderer
 
 	static constexpr std::array<Vertex, 4> UNIT_QUAD_VERTICES =
 	{
-		Vertex{.pos = {-1.0f, -1.0f, 0.0f}, .tex_coord = {0.0f, 1.0f}, .normal = {0.0f, 0.0f, 1.0f}, .tangent = {1.0f, 0.0f, 0.0f, 1.0f} },
-		Vertex{.pos = { 1.0f, -1.0f, 0.0f}, .tex_coord = {1.0f, 1.0f}, .normal = {0.0f, 0.0f, 1.0f}, .tangent = {1.0f, 0.0f, 0.0f, 1.0f} },
-		Vertex{.pos = {-1.0f,  1.0f, 0.0f}, .tex_coord = {0.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f}, .tangent = {1.0f, 0.0f, 0.0f, 1.0f} },
-		Vertex{.pos = { 1.0f,  1.0f, 0.0f}, .tex_coord = {1.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f}, .tangent = {1.0f, 0.0f, 0.0f, 1.0f} }
+		Vertex{.pos = {-0.5f, -0.5f, 0.0f}, .tex_coord = {0.0f, 1.0f}, .normal = {0.0f, 0.0f, 1.0f}, .tangent = {1.0f, 0.0f, 0.0f, 1.0f} },
+		Vertex{.pos = { 0.5f, -0.5f, 0.0f}, .tex_coord = {1.0f, 1.0f}, .normal = {0.0f, 0.0f, 1.0f}, .tangent = {1.0f, 0.0f, 0.0f, 1.0f} },
+		Vertex{.pos = {-0.5f,  0.5f, 0.0f}, .tex_coord = {0.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f}, .tangent = {1.0f, 0.0f, 0.0f, 1.0f} },
+		Vertex{.pos = { 0.5f,  0.5f, 0.0f}, .tex_coord = {1.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f}, .tangent = {1.0f, 0.0f, 0.0f, 1.0f} }
 	};
 
 	static constexpr std::array<uint16_t, 6> UNIT_QUAD_INDICES =
@@ -90,40 +90,40 @@ namespace Renderer
 	static constexpr std::array<Vertex, 24> UNIT_CUBE_VERTICES =
 	{
 		// FRONT
-		Vertex{.pos = {-1.0f, -1.0f, 1.0f}, .tex_coord = {0.0f, 1.0f}, .normal = {0.0f, 0.0f, 1.0f}, .tangent = {1.0f, 0.0f, 0.0f, 1.0f} },
-		Vertex{.pos = { 1.0f, -1.0f, 1.0f}, .tex_coord = {1.0f, 1.0f}, .normal = {0.0f, 0.0f, 1.0f}, .tangent = {1.0f, 0.0f, 0.0f, 1.0f} },
-		Vertex{.pos = {-1.0f,  1.0f, 1.0f}, .tex_coord = {0.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f}, .tangent = {1.0f, 0.0f, 0.0f, 1.0f} },
-		Vertex{.pos = { 1.0f,  1.0f, 1.0f}, .tex_coord = {1.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f}, .tangent = {1.0f, 0.0f, 0.0f, 1.0f} },
+		Vertex{.pos = {-0.5f, -0.5f, 0.5f}, .tex_coord = {0.0f, 1.0f}, .normal = {0.0f, 0.0f, 1.0f}, .tangent = {1.0f, 0.0f, 0.0f, 1.0f} },
+		Vertex{.pos = { 0.5f, -0.5f, 0.5f}, .tex_coord = {1.0f, 1.0f}, .normal = {0.0f, 0.0f, 1.0f}, .tangent = {1.0f, 0.0f, 0.0f, 1.0f} },
+		Vertex{.pos = {-0.5f,  0.5f, 0.5f}, .tex_coord = {0.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f}, .tangent = {1.0f, 0.0f, 0.0f, 1.0f} },
+		Vertex{.pos = { 0.5f,  0.5f, 0.5f}, .tex_coord = {1.0f, 0.0f}, .normal = {0.0f, 0.0f, 1.0f}, .tangent = {1.0f, 0.0f, 0.0f, 1.0f} },
 
 		// BACK
-		Vertex{.pos = {-1.0f, -1.0f, -1.0f}, .tex_coord = {0.0f, 1.0f}, .normal = {0.0f, 0.0f, -1.0f}, .tangent = {-1.0f, 0.0f, 0.0f, -1.0f} },
-		Vertex{.pos = { 1.0f, -1.0f, -1.0f}, .tex_coord = {1.0f, 1.0f}, .normal = {0.0f, 0.0f, -1.0f}, .tangent = {-1.0f, 0.0f, 0.0f, -1.0f} },
-		Vertex{.pos = {-1.0f,  1.0f, -1.0f}, .tex_coord = {0.0f, 0.0f}, .normal = {0.0f, 0.0f, -1.0f}, .tangent = {-1.0f, 0.0f, 0.0f, -1.0f} },
-		Vertex{.pos = { 1.0f,  1.0f, -1.0f}, .tex_coord = {1.0f, 0.0f}, .normal = {0.0f, 0.0f, -1.0f}, .tangent = {-1.0f, 0.0f, 0.0f, -1.0f} },
+		Vertex{.pos = {-0.5f, -0.5f, -0.5f}, .tex_coord = {0.0f, 1.0f}, .normal = {0.0f, 0.0f, -1.0f}, .tangent = {-1.0f, 0.0f, 0.0f, -1.0f} },
+		Vertex{.pos = { 0.5f, -0.5f, -0.5f}, .tex_coord = {1.0f, 1.0f}, .normal = {0.0f, 0.0f, -1.0f}, .tangent = {-1.0f, 0.0f, 0.0f, -1.0f} },
+		Vertex{.pos = {-0.5f,  0.5f, -0.5f}, .tex_coord = {0.0f, 0.0f}, .normal = {0.0f, 0.0f, -1.0f}, .tangent = {-1.0f, 0.0f, 0.0f, -1.0f} },
+		Vertex{.pos = { 0.5f,  0.5f, -0.5f}, .tex_coord = {1.0f, 0.0f}, .normal = {0.0f, 0.0f, -1.0f}, .tangent = {-1.0f, 0.0f, 0.0f, -1.0f} },
 
 		// LEFT
-		Vertex{.pos = {-1.0f, -1.0f, -1.0f}, .tex_coord = {0.0f, 1.0f}, .normal = {-1.0f, 0.0f, 0.0f}, .tangent = {0.0f, -1.0f, 0.0f, -1.0f} },
-		Vertex{.pos = {-1.0f, -1.0f,  1.0f}, .tex_coord = {1.0f, 1.0f}, .normal = {-1.0f, 0.0f, 0.0f}, .tangent = {0.0f, -1.0f, 0.0f, -1.0f} },
-		Vertex{.pos = {-1.0f,  1.0f, -1.0f}, .tex_coord = {0.0f, 0.0f}, .normal = {-1.0f, 0.0f, 0.0f}, .tangent = {0.0f, -1.0f, 0.0f, -1.0f} },
-		Vertex{.pos = {-1.0f,  1.0f,  1.0f}, .tex_coord = {1.0f, 0.0f}, .normal = {-1.0f, 0.0f, 0.0f}, .tangent = {0.0f, -1.0f, 0.0f, -1.0f} },
+		Vertex{.pos = {-0.5f, -0.5f, -0.5f}, .tex_coord = {0.0f, 1.0f}, .normal = {-1.0f, 0.0f, 0.0f}, .tangent = {0.0f, -1.0f, 0.0f, -1.0f} },
+		Vertex{.pos = {-0.5f, -0.5f,  0.5f}, .tex_coord = {1.0f, 1.0f}, .normal = {-1.0f, 0.0f, 0.0f}, .tangent = {0.0f, -1.0f, 0.0f, -1.0f} },
+		Vertex{.pos = {-0.5f,  0.5f, -0.5f}, .tex_coord = {0.0f, 0.0f}, .normal = {-1.0f, 0.0f, 0.0f}, .tangent = {0.0f, -1.0f, 0.0f, -1.0f} },
+		Vertex{.pos = {-0.5f,  0.5f,  0.5f}, .tex_coord = {1.0f, 0.0f}, .normal = {-1.0f, 0.0f, 0.0f}, .tangent = {0.0f, -1.0f, 0.0f, -1.0f} },
 
 		// RIGHT
-		Vertex{.pos = {1.0f, -1.0f, -1.0f}, .tex_coord = {0.0f, 1.0f}, .normal = {1.0f, 0.0f, 0.0f}, .tangent = {0.0f, 1.0f, 0.0f, 1.0f} },
-		Vertex{.pos = {1.0f, -1.0f,  1.0f}, .tex_coord = {1.0f, 1.0f}, .normal = {1.0f, 0.0f, 0.0f}, .tangent = {0.0f, 1.0f, 0.0f, 1.0f} },
-		Vertex{.pos = {1.0f,  1.0f, -1.0f}, .tex_coord = {0.0f, 0.0f}, .normal = {1.0f, 0.0f, 0.0f}, .tangent = {0.0f, 1.0f, 0.0f, 1.0f} },
-		Vertex{.pos = {1.0f,  1.0f,  1.0f}, .tex_coord = {1.0f, 0.0f}, .normal = {1.0f, 0.0f, 0.0f}, .tangent = {0.0f, 1.0f, 0.0f, 1.0f} },
+		Vertex{.pos = {0.5f, -0.5f, -0.5f}, .tex_coord = {0.0f, 1.0f}, .normal = {1.0f, 0.0f, 0.0f}, .tangent = {0.0f, 1.0f, 0.0f, 1.0f} },
+		Vertex{.pos = {0.5f, -0.5f,  0.5f}, .tex_coord = {1.0f, 1.0f}, .normal = {1.0f, 0.0f, 0.0f}, .tangent = {0.0f, 1.0f, 0.0f, 1.0f} },
+		Vertex{.pos = {0.5f,  0.5f, -0.5f}, .tex_coord = {0.0f, 0.0f}, .normal = {1.0f, 0.0f, 0.0f}, .tangent = {0.0f, 1.0f, 0.0f, 1.0f} },
+		Vertex{.pos = {0.5f,  0.5f,  0.5f}, .tex_coord = {1.0f, 0.0f}, .normal = {1.0f, 0.0f, 0.0f}, .tangent = {0.0f, 1.0f, 0.0f, 1.0f} },
 
 		// TOP
-		Vertex{.pos = {-1.0f, 1.0f, -1.0f}, .tex_coord = {0.0f, 1.0f}, .normal = {0.0f, 1.0f, 0.0f}, .tangent = {0.0f, 0.0f, 1.0f, 1.0f} },
-		Vertex{.pos = {-1.0f, 1.0f,  1.0f}, .tex_coord = {1.0f, 1.0f}, .normal = {0.0f, 1.0f, 0.0f}, .tangent = {0.0f, 0.0f, 1.0f, 1.0f} },
-		Vertex{.pos = { 1.0f, 1.0f, -1.0f}, .tex_coord = {0.0f, 0.0f}, .normal = {0.0f, 1.0f, 0.0f}, .tangent = {0.0f, 0.0f, 1.0f, 1.0f} },
-		Vertex{.pos = { 1.0f, 1.0f,  1.0f}, .tex_coord = {1.0f, 0.0f}, .normal = {0.0f, 1.0f, 0.0f}, .tangent = {0.0f, 0.0f, 1.0f, 1.0f} },
+		Vertex{.pos = {-0.5f, 0.5f, -0.5f}, .tex_coord = {0.0f, 1.0f}, .normal = {0.0f, 1.0f, 0.0f}, .tangent = {0.0f, 0.0f, 1.0f, 1.0f} },
+		Vertex{.pos = {-0.5f, 0.5f,  0.5f}, .tex_coord = {1.0f, 1.0f}, .normal = {0.0f, 1.0f, 0.0f}, .tangent = {0.0f, 0.0f, 1.0f, 1.0f} },
+		Vertex{.pos = { 0.5f, 0.5f, -0.5f}, .tex_coord = {0.0f, 0.0f}, .normal = {0.0f, 1.0f, 0.0f}, .tangent = {0.0f, 0.0f, 1.0f, 1.0f} },
+		Vertex{.pos = { 0.5f, 0.5f,  0.5f}, .tex_coord = {1.0f, 0.0f}, .normal = {0.0f, 1.0f, 0.0f}, .tangent = {0.0f, 0.0f, 1.0f, 1.0f} },
 
 		// BOTTOM
-		Vertex{.pos = {-1.0f, -1.0f, -1.0f}, .tex_coord = {0.0f, 1.0f}, .normal = {0.0f, -1.0f, 0.0f}, .tangent = {0.0f, 0.0f, -1.0f, 1.0f} },
-		Vertex{.pos = {-1.0f, -1.0f,  1.0f}, .tex_coord = {1.0f, 1.0f}, .normal = {0.0f, -1.0f, 0.0f}, .tangent = {0.0f, 0.0f, -1.0f, 1.0f} },
-		Vertex{.pos = { 1.0f, -1.0f, -1.0f}, .tex_coord = {0.0f, 0.0f}, .normal = {0.0f, -1.0f, 0.0f}, .tangent = {0.0f, 0.0f, -1.0f, 1.0f} },
-		Vertex{.pos = { 1.0f, -1.0f,  1.0f}, .tex_coord = {1.0f, 0.0f}, .normal = {0.0f, -1.0f, 0.0f}, .tangent = {0.0f, 0.0f, -1.0f, 1.0f} },
+		Vertex{.pos = {-0.5f, -0.5f, -0.5f}, .tex_coord = {0.0f, 1.0f}, .normal = {0.0f, -1.0f, 0.0f}, .tangent = {0.0f, 0.0f, -1.0f, 1.0f} },
+		Vertex{.pos = {-0.5f, -0.5f,  0.5f}, .tex_coord = {1.0f, 1.0f}, .normal = {0.0f, -1.0f, 0.0f}, .tangent = {0.0f, 0.0f, -1.0f, 1.0f} },
+		Vertex{.pos = { 0.5f, -0.5f, -0.5f}, .tex_coord = {0.0f, 0.0f}, .normal = {0.0f, -1.0f, 0.0f}, .tangent = {0.0f, 0.0f, -1.0f, 1.0f} },
+		Vertex{.pos = { 0.5f, -0.5f,  0.5f}, .tex_coord = {1.0f, 0.0f}, .normal = {0.0f, -1.0f, 0.0f}, .tangent = {0.0f, 0.0f, -1.0f, 1.0f} },
 	};
 
 	static constexpr std::array<uint16_t, 36> UNIT_CUBE_INDICES =
