@@ -1,5 +1,5 @@
 #include "Precomp.h"
-#include "AssetImporter.h"
+#include "assets/AssetImporter.h"
 
 namespace AssetImporter
 {

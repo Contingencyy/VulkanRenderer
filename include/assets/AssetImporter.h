@@ -1,5 +1,5 @@
 #pragma once
-#include "AssetTypes.h"
+#include "assets/AssetTypes.h"
 
 namespace AssetImporter
 {

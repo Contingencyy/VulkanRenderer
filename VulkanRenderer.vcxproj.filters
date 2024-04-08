@@ -24,7 +24,7 @@
     <ClCompile Include="source\Application.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="source\AssetManager.cpp">
+    <ClCompile Include="source\assets\AssetManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="source\Input.cpp">
@@ -117,6 +117,12 @@
     <ClCompile Include="source\renderer\vulkan\VulkanRaytracing.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="source\assets\AssetImporter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="source\assets\AssetTypes.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\Logger.h">
@@ -128,7 +134,7 @@
     <ClInclude Include="include\Application.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="include\AssetManager.h">
+    <ClInclude Include="include\assets\AssetManager.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\ResourceSlotmap.h">
@@ -225,6 +231,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\renderer\LTCMatrices.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\assets\AssetImporter.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\assets\AssetTypes.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

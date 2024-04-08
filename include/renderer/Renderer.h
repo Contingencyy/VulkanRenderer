@@ -41,8 +41,8 @@ namespace Renderer
 
 	TextureHandle_t CreateTexture(const CreateTextureArgs& args);
 	void DestroyTexture(TextureHandle_t handle);
-	void ImGuiRenderTexture(TextureHandle_t handle, float width, float height);
-	void ImGuiRenderTextureButton(TextureHandle_t handle, float width, float height);
+	void ImGuiImage(TextureHandle_t handle, float width, float height);
+	void ImGuiImageButton(TextureHandle_t handle, float width, float height);
 
 	struct CreateMeshArgs
 	{

@@ -2,7 +2,7 @@
 #include "Application.h"
 #include "renderer/Renderer.h"
 #include "Logger.h"
-#include "AssetManager.h"
+#include "assets/AssetManager.h"
 #include "Input.h"
 #include "Scene.h"
 

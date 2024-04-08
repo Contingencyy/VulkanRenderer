@@ -17,7 +17,7 @@
 #include "renderer/RingBuffer.h"
 #include "ResourceSlotmap.h"
 #include "Shared.glsl.h"
-#include "AssetTypes.h"
+#include "assets/AssetTypes.h"
 
 // Used for area lights
 #include "renderer/LTCMatrices.h"
@@ -2015,7 +2015,7 @@ namespace Renderer
 		}
 	}
 
-	void ImGuiRenderTexture(TextureHandle_t handle, float width, float height)
+	void ImGuiImage(TextureHandle_t handle, float width, float height)
 	{
 		const Texture* texture = data->texture_slotmap.Find(handle);
 		if (!texture || !texture->imgui_descriptor_set)
@@ -2024,7 +2024,7 @@ namespace Renderer
 		ImGui::Image(texture->imgui_descriptor_set, { width, height });
 	}
 
-	void ImGuiRenderTextureButton(TextureHandle_t handle, float width, float height)
+	void ImGuiImageButton(TextureHandle_t handle, float width, float height)
 	{
 		const Texture* texture = data->texture_slotmap.Find(handle);
 		if (!texture || !texture->imgui_descriptor_set)

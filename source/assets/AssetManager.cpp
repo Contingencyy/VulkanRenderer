@@ -1,5 +1,5 @@
 #include "Precomp.h"
-#include "AssetManager.h"
+#include "assets/AssetManager.h"
 #include "renderer/Renderer.h"
 #include "Shared.glsl.h"
 
@@ -641,7 +641,10 @@ namespace AssetManager
 
 			//TextureHandle_t icon_handle = ;
 
-			Renderer::ImGuiRenderTextureButton(TextureHandle_t(), data->asset_thumbnail_base_size.x, data->asset_thumbnail_base_size.y);
+			ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+			Renderer::ImGuiImageButton(TextureHandle_t(), data->asset_thumbnail_base_size.x, data->asset_thumbnail_base_size.y);
+			ImGui::PopStyleColor();
+
 			if (ImGui::IsItemHovered() &&
 				ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
 			{

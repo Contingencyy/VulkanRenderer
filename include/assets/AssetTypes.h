@@ -28,6 +28,7 @@ struct Asset
 	AssetLoadState load_state = ASSET_LOAD_STATE_NONE;
 
 	std::filesystem::path filepath;
+	TextureHandle_t preview_render_handle;
 };
 
 struct TextureAsset : Asset

@@ -1,6 +1,6 @@
 #pragma once
 #include "renderer/RenderTypes.h"
-#include "AssetTypes.h"
+#include "assets/AssetTypes.h"
 
 // Entity interface
 class Entity
