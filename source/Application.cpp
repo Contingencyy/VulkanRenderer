@@ -2,7 +2,7 @@
 #include "Application.h"
 #include "renderer/Renderer.h"
 #include "Logger.h"
-#include "Assets.h"
+#include "AssetManager.h"
 #include "Input.h"
 #include "Scene.h"
 
@@ -10,8 +10,6 @@
 
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_glfw.h"
-
-#include <filesystem>
 
 namespace Application
 {
@@ -31,6 +29,11 @@ namespace Application
 		std::chrono::duration<float> delta_time = std::chrono::duration<float>(0.0f);
 
 		Scene active_scene;
+
+		AssetHandle_t tex_kermit;
+		AssetHandle_t tex_hdr;
+		AssetHandle_t sponza_mesh;
+		AssetHandle_t model_mesh;
 	} static *data;
 
 	const uint32_t DEFAULT_WINDOW_WIDTH = 1280;
@@ -86,7 +89,7 @@ namespace Application
 		}
 	}
 
-	static void SpawnModelNodeEntity(const Assets::Model* model, const Assets::Model::Node& node, const glm::mat4& node_transform)
+	static void SpawnModelNodeEntity(AssetManager::ModelAsset* model_asset, const AssetManager::ModelAsset::Node& node, const glm::mat4& node_transform)
 	{
 		for (uint32_t i = 0; i < node.mesh_handles.size(); ++i)
 		{
@@ -95,28 +98,25 @@ namespace Application
 
 		for (uint32_t i = 0; i < node.children.size(); ++i)
 		{
-			const Assets::Model::Node& child_node = model->nodes[node.children[i]];
+			const AssetManager::ModelAsset::Node& child_node = model_asset->nodes[node.children[i]];
 			glm::mat4 child_transform = node_transform * child_node.transform;
 
-			SpawnModelNodeEntity(model, child_node, child_transform);
+			SpawnModelNodeEntity(model_asset, child_node, child_transform);
 		}
 	}
 
-	static void SpawnModelEntity(const std::filesystem::path& filepath, const glm::mat4& transform)
+	static void SpawnModelEntity(AssetHandle_t model_handle, const glm::mat4& transform)
 	{
-		Assets::Model* model = Assets::GetModel(filepath);
-		if (!model)
-		{
-			LOG_ERR("Assets", "Failed to fetch model with filename {}", filepath.string());
+		AssetManager::ModelAsset* model_asset = AssetManager::GetAsset<AssetManager::ModelAsset>(model_handle);
+		if (!model_asset)
 			return;
-		}
 
-		for (uint32_t i = 0; i < model->root_nodes.size(); ++i)
+		for (uint32_t i = 0; i < model_asset->root_nodes.size(); ++i)
 		{
-			const Assets::Model::Node& root_node = model->nodes[model->root_nodes[i]];
+			const AssetManager::ModelAsset::Node& root_node = model_asset->nodes[model_asset->root_nodes[i]];
 			glm::mat4 root_transform = transform * root_node.transform;
 		
-			SpawnModelNodeEntity(model, root_node, root_transform);
+			SpawnModelNodeEntity(model_asset, root_node, root_transform);
 		}
 	}
 
@@ -129,23 +129,23 @@ namespace Application
 		Input::Init(data->window);
 		Renderer::Init(data->window, data->window_width, data->window_height);
 
-		Assets::Init("assets");
-		Assets::LoadTexture("assets\\textures\\kermit.png", TEXTURE_FORMAT_RGBA8_UNORM, true, false);
+		AssetManager::Init("assets");
+		data->tex_kermit = AssetManager::LoadTexture("assets\\textures\\kermit.png", TEXTURE_FORMAT_RGBA8_UNORM, true, false);
 		
-		Assets::LoadTexture("assets\\textures\\hdr\\Env_Golden_Bay.hdr", TEXTURE_FORMAT_RGBA32_SFLOAT, true, true);
+		data->tex_hdr = AssetManager::LoadTexture("assets\\textures\\hdr\\Env_Golden_Bay.hdr", TEXTURE_FORMAT_RGBA32_SFLOAT, true, true);
 
-		Assets::LoadGLTF("assets\\models\\gltf\\SponzaOld\\Sponza.gltf");
-		Assets::LoadGLTF("assets\\models\\gltf\\ClearCoatSphere\\ClearcoatSphere.gltf");
+		data->sponza_mesh = AssetManager::LoadGLTF("assets\\models\\gltf\\SponzaOld\\Sponza.gltf");
+		data->model_mesh = AssetManager::LoadGLTF("assets\\models\\gltf\\ClearCoatSphere\\ClearcoatSphere.gltf");
 
 		glm::mat4 transform = glm::scale(glm::identity<glm::mat4>(), glm::vec3(1.0f));
-		SpawnModelEntity("assets\\models\\gltf\\SponzaOld\\Sponza.gltf", transform);
+		SpawnModelEntity(data->sponza_mesh, transform);
 		transform = glm::scale(glm::translate(glm::identity<glm::mat4>(), glm::vec3(-2.5f, 1.25f, -0.25f)), glm::vec3(1.0f));
-		SpawnModelEntity("assets\\models\\gltf\\ClearCoatSphere\\ClearcoatSphere.gltf", transform);
+		SpawnModelEntity(data->model_mesh, transform);
 
 		glm::mat4 area_light_transform = glm::translate(glm::identity<glm::mat4>(), glm::vec3(7.0f, 1.25f, -0.25f));
 		area_light_transform = glm::rotate(area_light_transform, glm::radians(-90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 		area_light_transform = glm::scale(area_light_transform, glm::vec3(2.5f, 1.5f, 1.0f));
-		data->active_scene.AddEntity<AreaLight>(Assets::GetTexture("assets\\textures\\kermit.png"), area_light_transform, glm::vec3(1.0f, 0.95f, 0.8f), 5.0f, true, "AreaLight0");
+		data->active_scene.AddEntity<AreaLight>(AssetManager::GetAsset<AssetManager::TextureAsset>(data->tex_kermit)->gpu_texture_handle, area_light_transform, glm::vec3(1.0f, 0.95f, 0.8f), 5.0f, true, "AreaLight0");
 
 		area_light_transform = glm::translate(glm::identity<glm::mat4>(), glm::vec3(-8.0f, 1.25f, -0.25f));
 		area_light_transform = glm::rotate(area_light_transform, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
@@ -159,7 +159,7 @@ namespace Application
 	{
 		is_running = false;
 
-		Assets::Exit();
+		AssetManager::Exit();
 		Renderer::Exit();
 		Input::Exit();
 
@@ -185,7 +185,7 @@ namespace Application
 		if (data->render_ui)
 		{
 			data->active_scene.RenderUI();
-			Assets::RenderUI();
+			AssetManager::RenderUI();
 			Renderer::RenderUI();
 
 			if (ImGui::Begin("Application", nullptr, ImGuiWindowFlags_MenuBar))
@@ -220,7 +220,7 @@ namespace Application
 		Renderer::BeginFrameInfo frame_info = {};
 		frame_info.camera_view = data->active_scene.GetActiveCamera().GetView();
 		frame_info.camera_vfov = data->active_scene.GetActiveCamera().GetVerticalFOV();
-		frame_info.skybox_texture_handle = Assets::GetTexture("assets\\textures\\hdr\\Env_Golden_Bay.hdr");
+		frame_info.skybox_texture_handle = AssetManager::GetAsset<AssetManager::TextureAsset>(data->tex_hdr)->gpu_texture_handle;
 		Renderer::BeginFrame(frame_info);
 
 		data->active_scene.Render();

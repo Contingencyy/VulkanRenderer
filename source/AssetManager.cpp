@@ -1,5 +1,5 @@
 #include "Precomp.h"
-#include "Assets.h"
+#include "AssetManager.h"
 #include "renderer/Renderer.h"
 #include "Shared.glsl.h"
 
@@ -12,8 +12,6 @@
 #include "mikkt/mikktspace.h"
 
 #include "imgui/imgui.h"
-
-#include <filesystem>
 
 class TangentCalculator
 {
@@ -132,31 +130,8 @@ private:
 
 };
 
-namespace Assets
+namespace AssetManager
 {
-
-	enum AssetLoadState
-	{
-		ASSET_LOAD_STATE_DISK,
-		ASSET_LOAD_STATE_IMPORTED,
-		ASSET_LOAD_STATE_LOADED
-	};
-
-	struct TextureAsset
-	{
-		AssetLoadState load_state = ASSET_LOAD_STATE_DISK;
-		TextureHandle_t texture_handle;
-
-		std::string filename;
-	};
-
-	struct ModelAsset
-	{
-		AssetLoadState load_state = ASSET_LOAD_STATE_DISK;
-		Model model;
-
-		std::string filename;
-	};
 
 	struct Data
 	{
@@ -164,8 +139,7 @@ namespace Assets
 		std::filesystem::path models_base_dir;
 		std::filesystem::path textures_base_dir;
 
-		std::unordered_map<std::filesystem::path, TextureAsset> texture_assets;
-		std::unordered_map<std::filesystem::path, ModelAsset> model_assets;
+		std::unordered_map<AssetHandle_t, std::unique_ptr<Asset>> assets;
 
 		std::filesystem::path current_dir;
 		ImVec2 asset_thumbnail_base_size = { 128.0f, 128.0f };
@@ -173,6 +147,21 @@ namespace Assets
 
 		TangentCalculator tangent_calc;
 	} static *data;
+
+	static AssetHandle_t AssetHandleFromFilepath(const std::filesystem::path& filepath)
+	{
+		return AssetHandle_t(std::hash<std::filesystem::path>{}(filepath));
+	}
+
+	static bool IsAssetImported(AssetHandle_t handle)
+	{
+		return data->assets.find(handle) != data->assets.end();
+	}
+
+	static bool IsAssetLoaded(const Asset& asset)
+	{
+		return asset.load_state == ASSET_LOAD_STATE_LOADED;
+	}
 
 	static void ImportTexture(const std::filesystem::path& filepath)
 	{
@@ -184,15 +173,16 @@ namespace Assets
 			filepath.extension() == ".jpeg" ||
 			filepath.extension() == ".hdr")
 		{
-			if (data->texture_assets.find(filepath) != data->texture_assets.end())
-				return;
+			AssetHandle_t handle = AssetHandleFromFilepath(filepath);
 
-			TextureAsset imported_texture = {};
-			imported_texture.load_state = ASSET_LOAD_STATE_IMPORTED;
-			imported_texture.texture_handle = {};
-			imported_texture.filename = filepath.filename().string();
+			TextureAsset texture_asset = {};
+			texture_asset.handle = handle;
+			texture_asset.filepath = filepath;
+			texture_asset.type = ASSET_TYPE_TEXTURE;
+			texture_asset.load_state = ASSET_LOAD_STATE_IMPORTED;
+			texture_asset.gpu_texture_handle = TextureHandle_t();
 
-			data->texture_assets.emplace(filepath, imported_texture);
+			data->assets.insert({ handle, std::make_unique<TextureAsset>(texture_asset) });
 		}
 	}
 
@@ -221,15 +211,19 @@ namespace Assets
 
 		if (filepath.extension() == ".gltf")
 		{
-			if (data->model_assets.find(filepath) != data->model_assets.end())
+			AssetHandle_t handle = {};
+			handle.value = std::hash<std::filesystem::path>{}(filepath);
+
+			if (data->assets.find(handle) != data->assets.end())
 				return;
 
-			ModelAsset imported_model = {};
-			imported_model.load_state = ASSET_LOAD_STATE_IMPORTED;
-			imported_model.model = {};
-			imported_model.filename = filepath.filename().string();
+			ModelAsset model_asset = {};
+			model_asset.handle = handle;
+			model_asset.filepath = filepath;
+			model_asset.type = ASSET_TYPE_MODEL;
+			model_asset.load_state = ASSET_LOAD_STATE_IMPORTED;
 
-			data->model_assets.emplace(filepath, imported_model);
+			data->assets.insert({ handle, std::make_unique<ModelAsset>(model_asset) });
 		}
 	}
 
@@ -294,19 +288,20 @@ namespace Assets
 
 	static TextureHandle_t LoadGLTFTexture(cgltf_image& gltf_image, const std::filesystem::path& filepath, TextureFormat format)
 	{
-		if (VK_RESOURCE_HANDLE_VALID(GetTexture(gltf_image.uri)))
-		{
-			return GetTexture(gltf_image.uri);
-		}
-
 		char* combined_char = nullptr;
 		CreateFilepathFromUri(filepath.string(), gltf_image.uri, &combined_char);
 		std::filesystem::path combined_filepath = combined_char;
 		delete combined_char;
 
-		ImportTexture(combined_filepath);
-		LoadTexture(combined_filepath, format, true, false);
-		return GetTexture(combined_filepath);
+		AssetHandle_t handle = AssetHandleFromFilepath(combined_filepath);
+		if (!IsAssetImported(handle))
+			ImportTexture(combined_filepath);
+
+		TextureAsset* texture_asset = GetAsset<TextureAsset>(handle);
+		if (!IsAssetLoaded(*texture_asset))
+			LoadTexture(combined_filepath, format, true, false);
+
+		return texture_asset->gpu_texture_handle;
 	}
 
 	template<typename T>
@@ -367,7 +362,7 @@ namespace Assets
 		return transform;
 	}
 
-	static Model ReadGLTF(const std::filesystem::path& filepath)
+	static void ReadGLTF(const std::filesystem::path& filepath, ModelAsset& model)
 	{
 		cgltf_options options = {};
 		/*options.memory.alloc_func = [](void* user, cgltf_size size)
@@ -382,7 +377,7 @@ namespace Assets
 
 		if (parsed != cgltf_result_success)
 		{
-			VK_EXCEPT("Assets", "Failed to load GLTF file: {}", filepath.string());
+			VK_EXCEPT("AssetManager", "Failed to load GLTF file: {}", filepath.string());
 		}
 
 		cgltf_load_buffers(&options, gltf_data, filepath.string().c_str());
@@ -394,9 +389,6 @@ namespace Assets
 			cgltf_mesh* mesh = &gltf_data->meshes[i];
 			num_meshes += mesh->primitives_count;
 		}
-
-		Model model = {};
-		model.name = filepath.string();
 
 		std::vector<MeshHandle_t> mesh_handles(num_meshes);
 		uint32_t mesh_handle_index_current = 0;
@@ -498,7 +490,7 @@ namespace Assets
 		}
 
 		// Create all materials
-		std::vector<Material> materials(gltf_data->materials_count);
+		std::vector<MaterialAsset> materials(gltf_data->materials_count);
 
 		for (uint32_t i = 0; i < gltf_data->materials_count; ++i)
 		{
@@ -564,7 +556,7 @@ namespace Assets
 		for (uint32_t i = 0; i < gltf_data->nodes_count; ++i)
 		{
 			cgltf_node& gltf_node = gltf_data->nodes[i];
-			Model::Node& model_node = model.nodes[i];
+			ModelAsset::Node& model_node = model.nodes[i];
 			model_node.transform = CGLTFNodeGetTransform(gltf_node);
 
 			model_node.children.resize(gltf_node.children_count);
@@ -604,7 +596,6 @@ namespace Assets
 		}
 
 		cgltf_free(gltf_data);
-		return model;
 	}
 
 	static void RenderAssetBrowserUI()
@@ -679,74 +670,61 @@ namespace Assets
 		ImGui::End();
 	}
 
-	void LoadTexture(const std::filesystem::path& filepath, TextureFormat format, bool gen_mips, bool is_environment_map)
+	AssetHandle_t LoadTexture(const std::filesystem::path& filepath, TextureFormat format, bool gen_mips, bool is_environment_map)
 	{
-		auto iter = data->texture_assets.find(filepath);
-		if (iter == data->texture_assets.end())
+		AssetHandle_t handle = AssetHandleFromFilepath(filepath);
+		if (!IsAssetImported(handle))
+			ImportTexture(filepath);
+
+		TextureAsset* texture_asset = GetAsset<TextureAsset>(handle);
+
+		// Check if the asset is loaded, and if not, load it
+		if (!IsAssetLoaded(*texture_asset))
 		{
-			LOG_WARN("Assets::LoadTexture", "Tried to load a texture which has not been imported");
-			return;
+			ReadImageResult image = ReadImage(filepath, IsHDRFormat(format));
+
+			Renderer::CreateTextureArgs args = {};
+			args.width = (uint32_t)image.width;
+			args.height = (uint32_t)image.height;
+			args.src_stride = (uint32_t)(image.num_components * image.component_size);
+			args.format = format;
+			uint32_t total_image_byte_size = args.width * args.height * args.src_stride;
+			args.pixel_bytes = std::span<uint8_t>(image.pixels, total_image_byte_size);
+			args.generate_mips = gen_mips;
+			args.is_environment_map = is_environment_map;
+
+			TextureHandle_t texture_handle = Renderer::CreateTexture(args);
+			texture_asset->gpu_texture_handle = texture_handle;
+			texture_asset->load_state = ASSET_LOAD_STATE_LOADED;
+
+			stbi_image_free(image.pixels);
 		}
 
-		ReadImageResult image = ReadImage(filepath, IsHDRFormat(format));
-
-		Renderer::CreateTextureArgs args = {};
-		args.width = (uint32_t)image.width;
-		args.height = (uint32_t)image.height;
-		args.src_stride = (uint32_t)(image.num_components * image.component_size);
-		args.format = format;
-		uint32_t total_image_byte_size = args.width * args.height * args.src_stride;
-		args.pixel_bytes = std::span<uint8_t>(image.pixels, total_image_byte_size);
-		args.generate_mips = gen_mips;
-		args.is_environment_map = is_environment_map;
-
-		TextureHandle_t texture_handle = Renderer::CreateTexture(args);
-
-		TextureAsset& imported_texture = iter->second;
-		imported_texture.load_state = ASSET_LOAD_STATE_LOADED;
-		imported_texture.texture_handle = texture_handle;
-
-		stbi_image_free(image.pixels);
+		return handle;
 	}
 
-	TextureHandle_t GetTexture(const std::filesystem::path& filepath)
+	AssetHandle_t LoadGLTF(const std::filesystem::path& filepath)
 	{
-		auto iter = data->texture_assets.find(filepath);
-		if (iter != data->texture_assets.end())
+		AssetHandle_t handle = AssetHandleFromFilepath(filepath);
+		if (!IsAssetImported(handle))
+			ImportModel(filepath);
+
+		ModelAsset* model_asset = GetAsset<ModelAsset>(handle);
+
+		if (!IsAssetLoaded(*model_asset))
 		{
-			if (iter->second.load_state != ASSET_LOAD_STATE_LOADED)
-				LOG_ERR("Assets::GetModel", "Model was imported but not loaded");
-			else
-				return iter->second.texture_handle;
+			ReadGLTF(filepath, *model_asset);
+
+			model_asset->load_state = ASSET_LOAD_STATE_LOADED;
 		}
 
-		return TextureHandle_t();
+		return handle;
 	}
 
-	void LoadGLTF(const std::filesystem::path& filepath)
+	Asset* GetAssetEx(AssetHandle_t handle)
 	{
-		auto iter = data->model_assets.find(filepath);
-		if (iter == data->model_assets.end())
-		{
-			LOG_WARN("Assets::LoadGLTF", "Tried to load a GLTF model which has not been imported");
-			return;
-		}
-
-		ModelAsset& imported_model = iter->second;
-		imported_model.load_state = ASSET_LOAD_STATE_LOADED;
-		imported_model.model = ReadGLTF(filepath);
-	}
-
-	Model* GetModel(const std::filesystem::path& filepath)
-	{
-		auto iter = data->model_assets.find(filepath);
-		if (iter != data->model_assets.end())
-		{
-			if (iter->second.load_state != ASSET_LOAD_STATE_LOADED)
-				LOG_ERR("Assets::GetModel", "Model was imported but not loaded");
-			else
-				return &data->model_assets.at(filepath).model;
-		}
+		if (IsAssetImported(handle))
+			return data->assets.at(handle).get();
 
 		return nullptr;
 	}

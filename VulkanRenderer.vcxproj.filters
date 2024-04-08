@@ -24,7 +24,7 @@
     <ClCompile Include="source\Application.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="source\Assets.cpp">
+    <ClCompile Include="source\AssetManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="source\Input.cpp">
@@ -128,10 +128,10 @@
     <ClInclude Include="include\Application.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="include\Assets.h">
+    <ClInclude Include="include\AssetManager.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="include\renderer\ResourceSlotmap.h">
+    <ClInclude Include="include\ResourceSlotmap.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\renderer\RenderTypes.h">

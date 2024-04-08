@@ -53,6 +53,10 @@
 
 struct ResourceHandle_t
 {
+	ResourceHandle_t() = default;
+	ResourceHandle_t(uint64_t value)
+		: value(value) {}
+
 	union
 	{
 		uint64_t value = ~0u;
@@ -62,6 +66,20 @@ struct ResourceHandle_t
 			uint32_t version;
 		};
 	};
+
+	bool operator==(const ResourceHandle_t& other) const
+	{
+		return value == other.value;
+	}
+};
+
+template<>
+struct std::hash<ResourceHandle_t>
+{
+	std::size_t operator()(const ResourceHandle_t& key) const
+	{
+		return key.value;
+	}
 };
 
 #define VK_RESOURCE_HANDLE_VALID(handle) (handle.index != ~0u && handle.version != ~0u)

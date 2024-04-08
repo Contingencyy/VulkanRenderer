@@ -10,11 +10,11 @@ Entity::Entity(const std::string& label)
 }
 
 MeshObject::MeshObject(const std::string& label)
-	: MeshObject(MeshHandle_t(), Assets::Material(), glm::identity<glm::mat4>(), label)
+	: MeshObject(MeshHandle_t(), AssetManager::MaterialAsset(), glm::identity<glm::mat4>(), label)
 {
 }
 
-MeshObject::MeshObject(MeshHandle_t mesh_handle, const Assets::Material& material, const glm::mat4& transform, const std::string& label)
+MeshObject::MeshObject(MeshHandle_t mesh_handle, const AssetManager::MaterialAsset& material, const glm::mat4& transform, const std::string& label)
 	: Entity(label), m_mesh_handle(mesh_handle), m_material(material), m_transform(transform)
 {
 	glm::vec3 skew(0.0f);

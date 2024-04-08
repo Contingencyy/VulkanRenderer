@@ -179,7 +179,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="source\Application.cpp" />
-    <ClCompile Include="source\Assets.cpp" />
+    <ClCompile Include="source\AssetManager.cpp" />
     <ClCompile Include="source\Camera.cpp" />
     <ClCompile Include="source\Entity.cpp" />
     <ClCompile Include="source\Input.cpp" />
@@ -215,7 +215,7 @@
     <ClInclude Include="extern\imgui\imgui_impl_vulkan.h" />
     <ClInclude Include="extern\imgui\imgui_internal.h" />
     <ClInclude Include="include\Application.h" />
-    <ClInclude Include="include\Assets.h" />
+    <ClInclude Include="include\AssetManager.h" />
     <ClInclude Include="include\Camera.h" />
     <ClInclude Include="include\Entity.h" />
     <ClInclude Include="include\Input.h" />
@@ -226,7 +226,7 @@
     <ClInclude Include="include\renderer\Renderer.h" />
     <ClInclude Include="include\renderer\RenderPass.h" />
     <ClInclude Include="include\renderer\RenderTypes.h" />
-    <ClInclude Include="include\renderer\ResourceSlotmap.h" />
+    <ClInclude Include="include\ResourceSlotmap.h" />
     <ClInclude Include="include\renderer\RingBuffer.h" />
     <ClInclude Include="include\renderer\vulkan\VulkanCommandBuffer.h" />
     <ClInclude Include="include\renderer\vulkan\VulkanCommandPool.h" />
