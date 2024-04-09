@@ -9,6 +9,8 @@
 #include "cgltf/cgltf.h"
 #include "mikkt/mikktspace.h"
 
+#include "imgui/imgui.h"
+
 namespace AssetImporter
 {
 
@@ -536,6 +538,40 @@ namespace AssetImporter
 		return ASSET_TYPE_NUM_TYPES;
 	}
 
+	bool RenderImportTextureDialogue(const std::filesystem::path& filepath)
+	{
+		ImGui::Text("Import Texture Asset");
+
+		static TextureFormat selected_format = TEXTURE_FORMAT_UNDEFINED;
+		static bool gen_mips = true;
+		static bool is_environment_map = false;
+
+		if (ImGui::BeginCombo("Format", TextureFormatToString(selected_format).c_str()))
+		{
+			for (uint32_t i = 0; i < TEXTURE_FORMAT_NUM_FORMATS; ++i)
+			{
+				bool is_selected = i == selected_format;
+				if (ImGui::Selectable(TextureFormatToString((TextureFormat)i).c_str(), is_selected))
+					selected_format = (TextureFormat)i;
+
+				if (is_selected)
+					ImGui::SetItemDefaultFocus();
+			}
+
+			ImGui::EndCombo();
+		}
+		ImGui::Checkbox("Generate Mips", &gen_mips);
+		ImGui::Checkbox("Is environment map", &is_environment_map);
+
+		if (ImGui::Button("Import"))
+		{
+			AssetManager::ImportTexture(filepath, selected_format, gen_mips, is_environment_map);
+			return true;
+		}
+
+		return false;
+	}
+
 	std::unique_ptr<TextureAsset> ImportTexture(const std::filesystem::path& filepath, TextureFormat format, bool gen_mips, bool is_environment_map)
 	{
 		if (!filepath.has_extension())
@@ -581,6 +617,19 @@ namespace AssetImporter
 		texture_asset.preview_texture_render_handle = texture_asset.texture_render_handle;
 
 		stbi_image_free(image.pixels);
+	}
+
+	bool RenderImportModelDialogue(const std::filesystem::path& filepath)
+	{
+		ImGui::Text("Import Texture Asset");
+		
+		if (ImGui::Button("Import"))
+		{
+			AssetManager::ImportModel(filepath);
+			return true;
+		}
+
+		return false;
 	}
 
 	std::unique_ptr<ModelAsset> ImportModel(const std::filesystem::path& filepath)

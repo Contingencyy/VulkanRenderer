@@ -43,10 +43,11 @@ struct TextureAsset : Asset
 
 	virtual void RenderTooltip();
 
-	RenderResourceHandle texture_render_handle;
 	TextureFormat format = TEXTURE_FORMAT_UNDEFINED;
 	bool mips = true;
 	bool is_environment_map = false;
+
+	RenderResourceHandle texture_render_handle;
 };
 
 struct MaterialAsset : Asset

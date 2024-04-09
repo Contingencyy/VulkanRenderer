@@ -61,28 +61,17 @@ namespace AssetManager
 			{
 			case ASSET_TYPE_TEXTURE:
 			{
-				ImGui::Text("Import Texture");
-				if (ImGui::Button("Import"))
-				{
-					AssetHandle imported_handle = ImportTexture(data->importing_asset_filepath, TEXTURE_FORMAT_RGBA8_UNORM, true, false);
-					AssetImporter::LoadTexture(*AssetManager::GetAsset<TextureAsset>(imported_handle));
-					data->is_importing_asset = false;
-				}
+				data->is_importing_asset = !AssetImporter::RenderImportTextureDialogue(data->importing_asset_filepath);
 			} break;
 			case ASSET_TYPE_MODEL:
 			{
-				ImGui::Text("Import Model");
-				if (ImGui::Button("Import"))
-				{
-					AssetHandle imported_handle = ImportModel(data->importing_asset_filepath);
-					AssetImporter::LoadModel(*AssetManager::GetAsset<ModelAsset>(imported_handle));
-					data->is_importing_asset = false;
-				}
+				data->is_importing_asset = !AssetImporter::RenderImportModelDialogue(data->importing_asset_filepath);
 			} break;
 			default:
 			{
 				LOG_ERR("AssetManager::RenderAssetImportDialogue", "Asset type not supported for file %s", data->importing_asset_filepath.string());
 				ImGui::Text("File type is not supported for import as an asset");
+				data->is_importing_asset = !ImGui::Button("Close");
 			} break;
 			}
 		}
@@ -196,6 +185,7 @@ namespace AssetManager
 		std::unique_ptr<TextureAsset> texture_asset = std::move(AssetImporter::ImportTexture(filepath, format, gen_mips, is_hdr_environment));
 		AssetHandle handle = texture_asset->handle;
 
+		AssetImporter::LoadTexture(*texture_asset);
 		data->assets.insert({ handle, std::move(texture_asset) });
 		return handle;
 	}
@@ -213,6 +203,7 @@ namespace AssetManager
 		std::unique_ptr<ModelAsset> model_asset = std::move(AssetImporter::ImportModel(filepath));
 		AssetHandle handle = model_asset->handle;
 
+		AssetImporter::LoadModel(*model_asset);
 		data->assets.insert({ model_asset->handle, std::move(model_asset) });
 		return handle;
 	}
