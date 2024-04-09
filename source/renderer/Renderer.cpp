@@ -154,6 +154,8 @@ namespace Renderer
 
 	struct Texture
 	{
+		TextureCreateInfo texture_info;
+
 		VulkanImage image;
 		VulkanImageView view;
 		VulkanDescriptorAllocation view_descriptor;
@@ -162,18 +164,28 @@ namespace Renderer
 		RenderResourceHandle next;
 
 		VkDescriptorSet imgui_descriptor_set = VK_NULL_HANDLE;
+		VulkanImageView imgui_2D_view;
 
 		Texture() = default;
-		explicit Texture(VulkanImage image, VulkanImageView view, VulkanDescriptorAllocation descriptor, VulkanSampler sampler)
-			: image(image), view(view), view_descriptor(descriptor), sampler(sampler)
+		explicit Texture(const TextureCreateInfo& texture_info, VulkanImage image, VulkanImageView view, VulkanDescriptorAllocation descriptor, VulkanSampler sampler)
+			: texture_info(texture_info), image(image), view(view), view_descriptor(descriptor), sampler(sampler)
 		{
-			// TODO: This check should be for Texture2D, not layers == 1
-			if (view.num_layers == 1)
-				imgui_descriptor_set = Vulkan::AddImGuiTexture(image.vk_image, view.vk_image_view, sampler.vk_sampler);
+			TextureViewCreateInfo view_info = {};
+			view_info.format = texture_info.format;
+			view_info.dimension = TEXTURE_DIMENSION_2D;
+			view_info.base_mip = 0;
+			view_info.num_mips = texture_info.num_mips;
+			view_info.base_layer = 0;
+			view_info.num_layers = 1;
+
+			imgui_2D_view = Vulkan::ImageView::Create(image, view_info);
+			imgui_descriptor_set = Vulkan::AddImGuiTexture(image.vk_image, imgui_2D_view.vk_image_view, sampler.vk_sampler);
 		}
 
 		~Texture()
 		{
+			Vulkan::ImageView::Destroy(imgui_2D_view);
+
 			Vulkan::Descriptor::Free(view_descriptor);
 			Vulkan::ImageView::Destroy(view);
 			Vulkan::Image::Destroy(image);
@@ -953,7 +965,7 @@ namespace Renderer
 				VulkanDescriptorAllocation hdr_cubemap_descriptor = Vulkan::Descriptor::Allocate(VULKAN_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
 				Vulkan::Descriptor::Write(hdr_cubemap_descriptor, hdr_cubemap_view, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
 
-				hdr_cubemap_handle = data->texture_slotmap.Emplace(hdr_cubemap_image, hdr_cubemap_view, hdr_cubemap_descriptor, data->ibl_sampler);
+				hdr_cubemap_handle = data->texture_slotmap.Emplace(texture_info, hdr_cubemap_image, hdr_cubemap_view, hdr_cubemap_descriptor, data->ibl_sampler);
 				hdr_cubemap = data->texture_slotmap.Find(hdr_cubemap_handle);
 
 				// Render all 6 faces of the cube map using 6 different camera view matrices
@@ -1049,7 +1061,7 @@ namespace Renderer
 				VulkanDescriptorAllocation irradiance_cubemap_descriptor = Vulkan::Descriptor::Allocate(VULKAN_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
 				Vulkan::Descriptor::Write(irradiance_cubemap_descriptor, irradiance_cubemap_view, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
 
-				irradiance_cubemap_handle = data->texture_slotmap.Emplace(irradiance_cubemap_image, irradiance_cubemap_view, irradiance_cubemap_descriptor, data->ibl_sampler);
+				irradiance_cubemap_handle = data->texture_slotmap.Emplace(texture_info, irradiance_cubemap_image, irradiance_cubemap_view, irradiance_cubemap_descriptor, data->ibl_sampler);
 				irradiance_cubemap = data->texture_slotmap.Find(irradiance_cubemap_handle);
 
 				// Render all 6 faces of the cube map using 6 different camera view matrices
@@ -1150,7 +1162,7 @@ namespace Renderer
 				VulkanDescriptorAllocation prefiltered_descriptor = Vulkan::Descriptor::Allocate(VULKAN_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
 				Vulkan::Descriptor::Write(prefiltered_descriptor, prefiltered_cubemap_view, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
 
-				prefiltered_cubemap_handle = data->texture_slotmap.Emplace(prefiltered_cubemap_image, prefiltered_cubemap_view, prefiltered_descriptor, data->ibl_sampler);
+				prefiltered_cubemap_handle = data->texture_slotmap.Emplace(texture_info, prefiltered_cubemap_image, prefiltered_cubemap_view, prefiltered_descriptor, data->ibl_sampler);
 				prefiltered_cubemap = data->texture_slotmap.Find(prefiltered_cubemap_handle);
 
 				VkViewport viewport = {};
@@ -1267,7 +1279,7 @@ namespace Renderer
 		VulkanDescriptorAllocation brdf_lut_descriptor = Vulkan::Descriptor::Allocate(VULKAN_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
 		Vulkan::Descriptor::Write(brdf_lut_descriptor, brdf_lut_view, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
 
-		data->ibl.brdf_lut_handle = data->texture_slotmap.Emplace(brdf_lut, brdf_lut_view, brdf_lut_descriptor, data->ibl_sampler);
+		data->ibl.brdf_lut_handle = data->texture_slotmap.Emplace(texture_info, brdf_lut, brdf_lut_view, brdf_lut_descriptor, data->ibl_sampler);
 		
 		VkViewport viewport = {};
 		viewport.x = 0.0f, viewport.y = 0.0f;
@@ -1986,7 +1998,7 @@ namespace Renderer
 		Vulkan::CommandBuffer::Reset(command_buffer);
 		Vulkan::CommandPool::FreeCommandBuffer(data->command_pools.graphics_compute, command_buffer);
 
-		RenderResourceHandle texture_handle = data->texture_slotmap.Emplace(image, view, view_descriptor, data->default_sampler);
+		RenderResourceHandle texture_handle = data->texture_slotmap.Emplace(texture_info, image, view, view_descriptor, data->default_sampler);
 
 		// If the texture is  an environment map, further processing is required
 		// Generate textures required for image-based lighting from the HDR equirectangular texture

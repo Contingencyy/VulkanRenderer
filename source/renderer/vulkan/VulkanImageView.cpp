@@ -37,6 +37,7 @@ namespace Vulkan
 			VulkanImageView image_view = {};
 			image_view.image = image;
 			image_view.vk_image_view = vk_image_view;
+			image_view.vk_image_view_type = Util::ToVkViewType(texture_view_info.dimension);
 			image_view.base_mip = vk_view_info.subresourceRange.baseMipLevel;
 			image_view.num_mips = vk_view_info.subresourceRange.levelCount;
 			image_view.base_layer = vk_view_info.subresourceRange.baseArrayLayer;

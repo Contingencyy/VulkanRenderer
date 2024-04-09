@@ -19,9 +19,77 @@ namespace AssetManager
 		std::filesystem::path current_dir;
 		ImVec2 asset_thumbnail_base_size = { 128.0f, 128.0f };
 		ImVec2 asset_thumbnail_base_padding = { 16.0f, 16.0f };
+
+		bool is_importing_asset = false;
+		std::filesystem::path importing_asset_filepath;
 	} static *data;
 
-	static void RenderAssetBrowserUI()
+	// NOTE: These template specializations need to be up here so that we can use them in the code below
+	template<>
+	TextureAsset* GetAsset(AssetHandle handle)
+	{
+		if (!IsAssetImported(handle))
+			return nullptr;
+
+		TextureAsset* asset = dynamic_cast<TextureAsset*>(data->assets.at(handle).get());
+		if (!IsAssetLoaded(handle))
+			AssetImporter::LoadTexture(*asset);
+
+		return asset;
+	}
+
+	template<>
+	ModelAsset* GetAsset(AssetHandle handle)
+	{
+		if (!IsAssetImported(handle))
+			return nullptr;
+
+		ModelAsset* asset = dynamic_cast<ModelAsset*>(data->assets.at(handle).get());
+		if (!IsAssetLoaded(handle))
+			AssetImporter::LoadModel(*asset);
+
+		return asset;
+	}
+
+	static void RenderAssetImportDialogue()
+	{
+		if (ImGui::Begin("Import Asset"))
+		{
+			AssetType type = AssetImporter::GetAssetTypeFromFileExtension(data->importing_asset_filepath);
+
+			switch (type)
+			{
+			case ASSET_TYPE_TEXTURE:
+			{
+				ImGui::Text("Import Texture");
+				if (ImGui::Button("Import"))
+				{
+					AssetHandle imported_handle = ImportTexture(data->importing_asset_filepath, TEXTURE_FORMAT_RGBA8_UNORM, true, false);
+					AssetImporter::LoadTexture(*AssetManager::GetAsset<TextureAsset>(imported_handle));
+					data->is_importing_asset = false;
+				}
+			} break;
+			case ASSET_TYPE_MODEL:
+			{
+				ImGui::Text("Import Model");
+				if (ImGui::Button("Import"))
+				{
+					AssetHandle imported_handle = ImportModel(data->importing_asset_filepath);
+					AssetImporter::LoadModel(*AssetManager::GetAsset<ModelAsset>(imported_handle));
+					data->is_importing_asset = false;
+				}
+			} break;
+			default:
+			{
+				LOG_ERR("AssetManager::RenderAssetImportDialogue", "Asset type not supported for file %s", data->importing_asset_filepath.string());
+				ImGui::Text("File type is not supported for import as an asset");
+			} break;
+			}
+		}
+		ImGui::End();
+	}
+
+	static void RenderAssetBrowser()
 	{
 		if (ImGui::BeginMenuBar())
 		{
@@ -59,9 +127,8 @@ namespace AssetManager
 			AssetHandle handle = AssetImporter::MakeAssetHandleFromFilepath(item.path());
 			RenderResourceHandle preview_texture_render_handle;
 
-			auto iter = data->assets.find(handle);
-			if (iter != data->assets.end())
-				preview_texture_render_handle = iter->second->preview_texture_render_handle;
+			if (IsAssetImported(handle))
+				preview_texture_render_handle = data->assets.at(handle)->preview_texture_render_handle;
 
 			ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
 			Renderer::ImGuiImageButton(preview_texture_render_handle, data->asset_thumbnail_base_size.x, data->asset_thumbnail_base_size.y);
@@ -69,13 +136,22 @@ namespace AssetManager
 
 			if (ImGui::IsItemHovered())
 			{
-				if (iter != data->assets.end())
-					iter->second->RenderTooltip();
+				if (IsAssetImported(handle))
+					data->assets.at(handle)->RenderTooltip();
 
 				if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) &&
 					item.is_directory())
 				{
 					data->current_dir /= item.path().filename();
+				}
+
+				if (!IsAssetImported(handle) &&
+					ImGui::IsItemClicked(ImGuiMouseButton_Right) &&
+					item.is_regular_file() &&
+					!data->is_importing_asset)
+				{
+					data->is_importing_asset = true;
+					data->importing_asset_filepath = item.path();
 				}
 			}
 			ImGui::TextWrapped(filename.c_str());
@@ -84,6 +160,9 @@ namespace AssetManager
 		}
 
 		ImGui::Columns();
+
+		if (data->is_importing_asset)
+			RenderAssetImportDialogue();
 	}
 
 	void Init(const std::filesystem::path& assets_base_path)
@@ -107,7 +186,7 @@ namespace AssetManager
 	{
 		if (ImGui::Begin("Asset Manager", nullptr, ImGuiWindowFlags_MenuBar))
 		{
-			RenderAssetBrowserUI();
+			RenderAssetBrowser();
 		}
 		ImGui::End();
 	}
@@ -150,32 +229,6 @@ namespace AssetManager
 
 		Asset* asset = data->assets.at(handle).get();
 		return asset->load_state == ASSET_LOAD_STATE_LOADED;
-	}
-
-	template<>
-	TextureAsset* GetAsset(AssetHandle handle)
-	{
-		if (!IsAssetImported(handle))
-			return nullptr;
-
-		TextureAsset* asset = dynamic_cast<TextureAsset*>(data->assets.at(handle).get());
-		if (!IsAssetLoaded(handle))
-			AssetImporter::LoadTexture(*asset);
-
-		return asset;
-	}
-
-	template<>
-	ModelAsset* GetAsset(AssetHandle handle)
-	{
-		if (!IsAssetImported(handle))
-			return nullptr;
-
-		ModelAsset* asset = dynamic_cast<ModelAsset*>(data->assets.at(handle).get());
-		if (!IsAssetLoaded(handle))
-			AssetImporter::LoadModel(*asset);
-
-		return asset;
 	}
 
 }

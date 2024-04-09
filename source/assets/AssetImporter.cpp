@@ -519,6 +519,23 @@ namespace AssetImporter
 		return std::hash<std::filesystem::path>{}(filepath);
 	}
 
+	AssetType GetAssetTypeFromFileExtension(const std::filesystem::path& filepath)
+	{
+		if (!filepath.has_extension())
+			return ASSET_TYPE_NUM_TYPES;
+
+		if (filepath.extension() == ".png" ||
+			filepath.extension() == ".jpg" ||
+			filepath.extension() == ".jpeg" ||
+			filepath.extension() == ".hdr")
+			return ASSET_TYPE_TEXTURE;
+
+		if (filepath.extension() == ".gltf")
+			return ASSET_TYPE_MODEL;
+
+		return ASSET_TYPE_NUM_TYPES;
+	}
+
 	std::unique_ptr<TextureAsset> ImportTexture(const std::filesystem::path& filepath, TextureFormat format, bool gen_mips, bool is_environment_map)
 	{
 		if (!filepath.has_extension())

@@ -137,6 +137,7 @@ struct VulkanImageView
 {
 	VulkanImage image;
 	VkImageView vk_image_view = VK_NULL_HANDLE;
+	VkImageViewType vk_image_view_type = VK_IMAGE_VIEW_TYPE_MAX_ENUM;
 
 	uint32_t base_mip = 0u;
 	uint32_t num_mips = UINT32_MAX;
