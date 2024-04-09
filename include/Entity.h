@@ -17,19 +17,18 @@ protected:
 
 };
 
-class MeshObject : public Entity
+class ModelObject : public Entity
 {
 public:
-	MeshObject(const std::string& label);
-	MeshObject(RenderResourceHandle mesh_handle, const MaterialAsset& material, const glm::mat4& transform, const std::string& label);
+	ModelObject(const std::string& label);
+	ModelObject(AssetHandle model_handle, const glm::mat4& transform, const std::string& label);
 
 	virtual void Update(float dt) override;
 	virtual void Render() override;
 	virtual void RenderUI() override;
 
 private:
-	RenderResourceHandle m_mesh_handle = {};
-	MaterialAsset m_material;
+	AssetHandle m_model_asset_handle;
 
 	glm::mat4 m_transform = glm::identity<glm::mat4>();
 	glm::vec3 m_translation = glm::vec3(0.0f);
@@ -58,14 +57,14 @@ class AreaLight : public Entity
 {
 public:
 	AreaLight(const std::string& label);
-	AreaLight(RenderResourceHandle texture_handle, const glm::mat4& transform, const glm::vec3& color, float intensity, bool two_sided, const std::string& label);
+	AreaLight(AssetHandle texture_asset_handle, const glm::mat4& transform, const glm::vec3& color, float intensity, bool two_sided, const std::string& label);
 
 	virtual void Update(float dt) override;
 	virtual void Render() override;
 	virtual void RenderUI() override;
 
 private:
-	RenderResourceHandle m_texture_handle = {};
+	AssetHandle m_texture_asset_handle;
 
 	glm::mat4 m_transform = glm::identity<glm::mat4>();
 	glm::vec3 m_translation = glm::vec3(0.0f);
