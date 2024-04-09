@@ -3,7 +3,7 @@
 
 #include <filesystem>
 
-typedef ResourceHandle_t AssetHandle_t;
+using AssetHandle = ResourceHandle_t;
 
 enum AssetType
 {
@@ -23,33 +23,42 @@ enum AssetLoadState
 
 struct Asset
 {
-	AssetHandle_t handle;
+	virtual ~Asset() {}
+
 	AssetType type = ASSET_TYPE_NUM_TYPES;
+	AssetHandle handle;
 	AssetLoadState load_state = ASSET_LOAD_STATE_NONE;
 
 	std::filesystem::path filepath;
-	TextureHandle_t preview_render_handle;
+	RenderResourceHandle preview_texture_render_handle;
 };
 
 struct TextureAsset : Asset
 {
-	TextureHandle_t gpu_texture_handle;
+	virtual ~TextureAsset() {}
+
+	RenderResourceHandle texture_render_handle;
+	TextureFormat format = TEXTURE_FORMAT_UNDEFINED;
+	bool mips = true;
+	bool is_environment_map = false;
 };
 
 struct MaterialAsset : Asset
 {
-	TextureHandle_t albedo_texture_handle;
-	TextureHandle_t normal_texture_handle;
-	TextureHandle_t metallic_roughness_texture_handle;
+	virtual ~MaterialAsset() {}
+
+	RenderResourceHandle tex_albedo_render_handle;
+	RenderResourceHandle tex_normal_render_handle;
+	RenderResourceHandle tex_metal_rough_render_handle;
 
 	glm::vec4 albedo_factor = glm::vec4(1.0f);
 	float metallic_factor = 1.0f;
 	float roughness_factor = 1.0f;
 
 	bool has_clearcoat = false;
-	TextureHandle_t clearcoat_alpha_texture_handle;
-	TextureHandle_t clearcoat_normal_texture_handle;
-	TextureHandle_t clearcoat_roughness_texture_handle;
+	RenderResourceHandle tex_cc_alpha_render_handle;
+	RenderResourceHandle tex_cc_normal_render_handle;
+	RenderResourceHandle tex_cc_rough_render_handle;
 
 	float clearcoat_alpha_factor = 1.0f;
 	float clearcoat_roughness_factor = 1.0f;
@@ -57,10 +66,12 @@ struct MaterialAsset : Asset
 
 struct ModelAsset : Asset
 {
+	virtual ~ModelAsset() {}
+
 	struct Node
 	{
 		std::vector<std::string> mesh_names;
-		std::vector<MeshHandle_t> mesh_handles;
+		std::vector<RenderResourceHandle> mesh_render_handles;
 		std::vector<MaterialAsset> materials;
 		std::vector<uint32_t> children;
 

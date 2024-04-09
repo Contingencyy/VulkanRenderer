@@ -159,7 +159,7 @@ namespace Renderer
 		VulkanDescriptorAllocation view_descriptor;
 		VulkanSampler sampler;
 
-		TextureHandle_t next;
+		RenderResourceHandle next;
 
 		VkDescriptorSet imgui_descriptor_set = VK_NULL_HANDLE;
 
@@ -358,7 +358,7 @@ namespace Renderer
 
 		struct IBL
 		{
-			TextureHandle_t brdf_lut_handle;
+			RenderResourceHandle brdf_lut_handle;
 		} ibl;
 
 		Frame per_frame[Vulkan::MAX_FRAMES_IN_FLIGHT];
@@ -368,23 +368,23 @@ namespace Renderer
 		uint32_t num_area_lights;
 
 		// Default resources
-		TextureHandle_t default_white_texture_handle;
-		TextureHandle_t default_normal_texture_handle;
+		RenderResourceHandle default_white_texture_handle;
+		RenderResourceHandle default_normal_texture_handle;
 		
-		TextureHandle_t ltc_matrices_texture_handle;
-		TextureHandle_t ltc_ggx_fresnel_sphere_clipping_texture_handle;
+		RenderResourceHandle ltc_matrices_texture_handle;
+		RenderResourceHandle ltc_ggx_fresnel_sphere_clipping_texture_handle;
 
-		TextureHandle_t white_furnace_skybox_handle;
+		RenderResourceHandle white_furnace_skybox_handle;
 
 		VulkanSampler default_sampler;
 		VulkanSampler ibl_sampler;
 
-		MeshHandle_t unit_quad_mesh_handle;
-		MeshHandle_t unit_cube_mesh_handle;
+		RenderResourceHandle unit_quad_mesh_handle;
+		RenderResourceHandle unit_cube_mesh_handle;
 
 		GPUMaterial default_gpu_material;
 
-		TextureHandle_t skybox_texture_handle;
+		RenderResourceHandle skybox_texture_handle;
 		RenderSettings settings;
 
 		struct Statistics
@@ -904,7 +904,7 @@ namespace Renderer
 		}
 	}
 
-	static TextureHandle_t GenerateIBLCubemaps(TextureHandle_t src_texture_handle)
+	static RenderResourceHandle GenerateIBLCubemaps(RenderResourceHandle src_texture_handle)
 	{
 		VulkanCommandBuffer command_buffer = Vulkan::CommandPool::AllocateCommandBuffer(data->command_pools.graphics_compute);
 		Vulkan::CommandBuffer::BeginRecording(command_buffer);
@@ -913,7 +913,7 @@ namespace Renderer
 		VK_ASSERT(unit_cube_mesh && "Unit cube mesh is invalid");
 
 		Texture* hdr_equirect_texture = data->texture_slotmap.Find(src_texture_handle);
-		TextureHandle_t hdr_cubemap_handle, irradiance_cubemap_handle, prefiltered_cubemap_handle;
+		RenderResourceHandle hdr_cubemap_handle, irradiance_cubemap_handle, prefiltered_cubemap_handle;
 		Texture* hdr_cubemap, *irradiance_cubemap, *prefiltered_cubemap;
 
 		std::vector<VulkanImageView> temporary_image_views;
@@ -1928,7 +1928,7 @@ namespace Renderer
 		}
 	}
 
-	TextureHandle_t CreateTexture(const CreateTextureArgs& args)
+	RenderResourceHandle CreateTexture(const CreateTextureArgs& args)
 	{
 		VulkanCommandBuffer command_buffer = Vulkan::CommandPool::AllocateCommandBuffer(data->command_pools.graphics_compute);
 		Vulkan::CommandBuffer::BeginRecording(command_buffer);
@@ -1985,13 +1985,13 @@ namespace Renderer
 		Vulkan::CommandBuffer::Reset(command_buffer);
 		Vulkan::CommandPool::FreeCommandBuffer(data->command_pools.graphics_compute, command_buffer);
 
-		TextureHandle_t texture_handle = data->texture_slotmap.Emplace(image, view, view_descriptor, data->default_sampler);
+		RenderResourceHandle texture_handle = data->texture_slotmap.Emplace(image, view, view_descriptor, data->default_sampler);
 
 		// If the texture is  an environment map, further processing is required
 		// Generate textures required for image-based lighting from the HDR equirectangular texture
 		if (args.is_environment_map)
 		{
-			TextureHandle_t original_texture_handle = texture_handle;
+			RenderResourceHandle original_texture_handle = texture_handle;
 
 			// Generate IBL cubemaps from the original equirectangular cubemap
 			texture_handle = GenerateIBLCubemaps(original_texture_handle);
@@ -2003,37 +2003,37 @@ namespace Renderer
 		return texture_handle;
 	}
 
-	void DestroyTexture(TextureHandle_t handle)
+	void DestroyTexture(RenderResourceHandle handle)
 	{
 		while (VK_RESOURCE_HANDLE_VALID(handle))
 		{
 			VK_ASSERT(VK_RESOURCE_HANDLE_VALID(handle) && "Tried to destroy a texture with an invalid texture handle");
 
-			TextureHandle_t next_handle = data->texture_slotmap.Find(handle)->next;
+			RenderResourceHandle next_handle = data->texture_slotmap.Find(handle)->next;
 			data->texture_slotmap.Delete(handle);
 			handle = next_handle;
 		}
 	}
 
-	void ImGuiImage(TextureHandle_t handle, float width, float height)
+	void ImGuiImage(RenderResourceHandle texture_handle, float width, float height)
 	{
-		const Texture* texture = data->texture_slotmap.Find(handle);
+		const Texture* texture = data->texture_slotmap.Find(texture_handle);
 		if (!texture || !texture->imgui_descriptor_set)
 			texture = data->texture_slotmap.Find(data->default_white_texture_handle);
 
 		ImGui::Image(texture->imgui_descriptor_set, { width, height });
 	}
 
-	void ImGuiImageButton(TextureHandle_t handle, float width, float height)
+	void ImGuiImageButton(RenderResourceHandle texture_handle, float width, float height)
 	{
-		const Texture* texture = data->texture_slotmap.Find(handle);
+		const Texture* texture = data->texture_slotmap.Find(texture_handle);
 		if (!texture || !texture->imgui_descriptor_set)
 			texture = data->texture_slotmap.Find(data->default_white_texture_handle);
 
 		ImGui::ImageButton(texture->imgui_descriptor_set, { width, height });
 	}
 
-	MeshHandle_t CreateMesh(const CreateMeshArgs& args)
+	RenderResourceHandle CreateMesh(const CreateMeshArgs& args)
 	{
 		// Determine vertex and index buffer byte size
 		VkDeviceSize vb_size = args.vertices_bytes.size();
@@ -2096,12 +2096,12 @@ namespace Renderer
 		);
 	}
 
-	void DestroyMesh(MeshHandle_t handle)
+	void DestroyMesh(RenderResourceHandle handle)
 	{
 		data->mesh_slotmap.Delete(handle);
 	}
 
-	void SubmitMesh(MeshHandle_t mesh_handle, const MaterialAsset& material, const glm::mat4& transform)
+	void SubmitMesh(RenderResourceHandle mesh_handle, const MaterialAsset& material, const glm::mat4& transform)
 	{
 		DrawList::Entry& entry = data->draw_list.GetNextEntry();
 		// Get the mesh from the slotmap. If it does not exist/is invalid, use the unit cube mesh as a default placeholder
@@ -2118,15 +2118,15 @@ namespace Renderer
 		entry.gpu_material = data->default_gpu_material;
 
 		// Write material data to the material UBO
-		Texture* albedo_texture = data->texture_slotmap.Find(material.albedo_texture_handle);
+		Texture* albedo_texture = data->texture_slotmap.Find(material.tex_albedo_render_handle);
 		if (albedo_texture)
 			entry.gpu_material.albedo_texture_index = albedo_texture->view_descriptor.descriptor_offset;
 
-		Texture* normal_texture = data->texture_slotmap.Find(material.normal_texture_handle);
+		Texture* normal_texture = data->texture_slotmap.Find(material.tex_normal_render_handle);
 		if (normal_texture)
 			entry.gpu_material.normal_texture_index = normal_texture->view_descriptor.descriptor_offset;
 
-		Texture* metallic_roughness_texture = data->texture_slotmap.Find(material.metallic_roughness_texture_handle);
+		Texture* metallic_roughness_texture = data->texture_slotmap.Find(material.tex_metal_rough_render_handle);
 		if (metallic_roughness_texture)
 			entry.gpu_material.metallic_roughness_texture_index = metallic_roughness_texture->view_descriptor.descriptor_offset;
 
@@ -2136,15 +2136,15 @@ namespace Renderer
 
 		entry.gpu_material.has_clearcoat = material.has_clearcoat ? 1 : 0;
 
-		Texture* clearcoat_alpha_texture = data->texture_slotmap.Find(material.clearcoat_alpha_texture_handle);
+		Texture* clearcoat_alpha_texture = data->texture_slotmap.Find(material.tex_cc_alpha_render_handle);
 		if (clearcoat_alpha_texture)
 			entry.gpu_material.clearcoat_alpha_texture_index = clearcoat_alpha_texture->view_descriptor.descriptor_offset;
 
-		Texture* clearcoat_normal_texture = data->texture_slotmap.Find(material.clearcoat_normal_texture_handle);
+		Texture* clearcoat_normal_texture = data->texture_slotmap.Find(material.tex_cc_normal_render_handle);
 		if (clearcoat_normal_texture)
 			entry.gpu_material.clearcoat_normal_texture_index = clearcoat_normal_texture->view_descriptor.descriptor_offset;
 
-		Texture* clearcoat_roughness_texture = data->texture_slotmap.Find(material.clearcoat_roughness_texture_handle);
+		Texture* clearcoat_roughness_texture = data->texture_slotmap.Find(material.tex_cc_rough_render_handle);
 		if (clearcoat_roughness_texture)
 			entry.gpu_material.clearcoat_roughness_texture_index = clearcoat_roughness_texture->view_descriptor.descriptor_offset;
 
@@ -2174,7 +2174,7 @@ namespace Renderer
 		data->num_pointlights++;*/
 	}
 
-	void SubmitAreaLight(TextureHandle_t texture_handle, const glm::mat4& transform, const glm::vec3& color, float intensity, bool two_sided)
+	void SubmitAreaLight(RenderResourceHandle texture_handle, const glm::mat4& transform, const glm::vec3& color, float intensity, bool two_sided)
 	{
 		VK_ASSERT(data->num_area_lights < MAX_AREA_LIGHTS && "Exceeded the maximum amount of area lights");
 

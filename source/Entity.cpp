@@ -10,11 +10,11 @@ Entity::Entity(const std::string& label)
 }
 
 MeshObject::MeshObject(const std::string& label)
-	: MeshObject(MeshHandle_t(), MaterialAsset(), glm::identity<glm::mat4>(), label)
+	: MeshObject(RenderResourceHandle(), MaterialAsset(), glm::identity<glm::mat4>(), label)
 {
 }
 
-MeshObject::MeshObject(MeshHandle_t mesh_handle, const MaterialAsset& material, const glm::mat4& transform, const std::string& label)
+MeshObject::MeshObject(RenderResourceHandle mesh_handle, const MaterialAsset& material, const glm::mat4& transform, const std::string& label)
 	: Entity(label), m_mesh_handle(mesh_handle), m_material(material), m_transform(transform)
 {
 	glm::vec3 skew(0.0f);
@@ -79,26 +79,26 @@ void MeshObject::RenderUI()
 			float texture_preview_width = std::min(ImGui::GetWindowSize().x, 256.0f);
 			float texture_preview_height = std::min(ImGui::GetWindowSize().y, 256.0f);
 
-			if (VK_RESOURCE_HANDLE_VALID(m_material.albedo_texture_handle))
-				Renderer::ImGuiImage(m_material.albedo_texture_handle, texture_preview_width, texture_preview_height);
+			if (VK_RESOURCE_HANDLE_VALID(m_material.tex_albedo_render_handle))
+				Renderer::ImGuiImage(m_material.tex_albedo_render_handle, texture_preview_width, texture_preview_height);
 			ImGui::ColorEdit3("Albedo factor", &m_material.albedo_factor.x, ImGuiColorEditFlags_DisplayRGB);
 
-			if (VK_RESOURCE_HANDLE_VALID(m_material.normal_texture_handle))
-				Renderer::ImGuiImage(m_material.normal_texture_handle, texture_preview_width, texture_preview_height);
+			if (VK_RESOURCE_HANDLE_VALID(m_material.tex_normal_render_handle))
+				Renderer::ImGuiImage(m_material.tex_normal_render_handle, texture_preview_width, texture_preview_height);
 
-			if (VK_RESOURCE_HANDLE_VALID(m_material.metallic_roughness_texture_handle))
-				Renderer::ImGuiImage(m_material.metallic_roughness_texture_handle, texture_preview_width, texture_preview_height);
+			if (VK_RESOURCE_HANDLE_VALID(m_material.tex_metal_rough_render_handle))
+				Renderer::ImGuiImage(m_material.tex_metal_rough_render_handle, texture_preview_width, texture_preview_height);
 			ImGui::SliderFloat("Metallic factor", &m_material.metallic_factor, 0.0f, 1.0f);
 			ImGui::SliderFloat("Roughness factor", &m_material.roughness_factor, 0.0f, 1.0f);
 
 			ImGui::Checkbox("Clearcoat", &m_material.has_clearcoat);
-			if (VK_RESOURCE_HANDLE_VALID(m_material.clearcoat_alpha_texture_handle))
-				Renderer::ImGuiImage(m_material.clearcoat_alpha_texture_handle, texture_preview_width, texture_preview_height);
+			if (VK_RESOURCE_HANDLE_VALID(m_material.tex_cc_alpha_render_handle))
+				Renderer::ImGuiImage(m_material.tex_cc_alpha_render_handle, texture_preview_width, texture_preview_height);
 			ImGui::SliderFloat("Clearcoat alpha factor", &m_material.clearcoat_alpha_factor, 0.0f, 1.0f);
-			if (VK_RESOURCE_HANDLE_VALID(m_material.clearcoat_normal_texture_handle))
-				Renderer::ImGuiImage(m_material.clearcoat_normal_texture_handle, texture_preview_width, texture_preview_height);
-			if (VK_RESOURCE_HANDLE_VALID(m_material.clearcoat_roughness_texture_handle))
-				Renderer::ImGuiImage(m_material.clearcoat_roughness_texture_handle, texture_preview_width, texture_preview_height);
+			if (VK_RESOURCE_HANDLE_VALID(m_material.tex_cc_normal_render_handle))
+				Renderer::ImGuiImage(m_material.tex_cc_normal_render_handle, texture_preview_width, texture_preview_height);
+			if (VK_RESOURCE_HANDLE_VALID(m_material.tex_cc_rough_render_handle))
+				Renderer::ImGuiImage(m_material.tex_cc_rough_render_handle, texture_preview_width, texture_preview_height);
 			ImGui::SliderFloat("Clearcoat roughness factor", &m_material.clearcoat_roughness_factor, 0.0f, 1.0f);
 
 			ImGui::Unindent(10.0f);
@@ -140,11 +140,11 @@ void MeshObject::RenderUI()
 //}
 
 AreaLight::AreaLight(const std::string& label)
-	: AreaLight(TextureHandle_t(), glm::identity<glm::mat4>(), glm::vec3(1.0f), 5.0f, true, label)
+	: AreaLight(RenderResourceHandle(), glm::identity<glm::mat4>(), glm::vec3(1.0f), 5.0f, true, label)
 {
 }
 
-AreaLight::AreaLight(TextureHandle_t texture_handle, const glm::mat4& transform, const glm::vec3& color, float intensity, bool two_sided, const std::string& label)
+AreaLight::AreaLight(RenderResourceHandle texture_handle, const glm::mat4& transform, const glm::vec3& color, float intensity, bool two_sided, const std::string& label)
 	: Entity(label), m_texture_handle(texture_handle), m_transform(transform), m_color(color), m_intensity(intensity), m_two_sided(two_sided)
 {
 	glm::vec3 skew(0.0f);

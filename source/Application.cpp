@@ -30,10 +30,10 @@ namespace Application
 
 		Scene active_scene;
 
-		AssetHandle_t tex_kermit;
-		AssetHandle_t tex_hdr;
-		AssetHandle_t sponza_mesh;
-		AssetHandle_t model_mesh;
+		AssetHandle tex_kermit;
+		AssetHandle tex_hdr;
+		AssetHandle sponza_mesh;
+		AssetHandle model_mesh;
 	} static *data;
 
 	const uint32_t DEFAULT_WINDOW_WIDTH = 1280;
@@ -91,9 +91,9 @@ namespace Application
 
 	static void SpawnModelNodeEntity(ModelAsset* model_asset, const ModelAsset::Node& node, const glm::mat4& node_transform)
 	{
-		for (uint32_t i = 0; i < node.mesh_handles.size(); ++i)
+		for (uint32_t i = 0; i < node.mesh_render_handles.size(); ++i)
 		{
-			data->active_scene.AddEntity<MeshObject>(node.mesh_handles[i], node.materials[i], node_transform, node.mesh_names[i]);
+			data->active_scene.AddEntity<MeshObject>(node.mesh_render_handles[i], node.materials[i], node_transform, node.mesh_names[i]);
 		}
 
 		for (uint32_t i = 0; i < node.children.size(); ++i)
@@ -105,7 +105,7 @@ namespace Application
 		}
 	}
 
-	static void SpawnModelEntity(AssetHandle_t model_handle, const glm::mat4& transform)
+	static void SpawnModelEntity(AssetHandle model_handle, const glm::mat4& transform)
 	{
 		ModelAsset* model_asset = AssetManager::GetAsset<ModelAsset>(model_handle);
 		if (!model_asset)
@@ -130,12 +130,12 @@ namespace Application
 		Renderer::Init(data->window, data->window_width, data->window_height);
 
 		AssetManager::Init("assets");
-		data->tex_kermit = AssetManager::LoadTexture("assets\\textures\\kermit.png", TEXTURE_FORMAT_RGBA8_UNORM, true, false);
+		data->tex_kermit = AssetManager::ImportTexture("assets\\textures\\kermit.png", TEXTURE_FORMAT_RGBA8_UNORM, true, false);
 		
-		data->tex_hdr = AssetManager::LoadTexture("assets\\textures\\hdr\\Env_Golden_Bay.hdr", TEXTURE_FORMAT_RGBA32_SFLOAT, true, true);
+		data->tex_hdr = AssetManager::ImportTexture("assets\\textures\\hdr\\Env_Golden_Bay.hdr", TEXTURE_FORMAT_RGBA32_SFLOAT, true, true);
 
-		data->sponza_mesh = AssetManager::LoadGLTF("assets\\models\\gltf\\SponzaOld\\Sponza.gltf");
-		data->model_mesh = AssetManager::LoadGLTF("assets\\models\\gltf\\ClearCoatSphere\\ClearcoatSphere.gltf");
+		data->sponza_mesh = AssetManager::ImportModel("assets\\models\\gltf\\SponzaOld\\Sponza.gltf");
+		data->model_mesh = AssetManager::ImportModel("assets\\models\\gltf\\ClearCoatSphere\\ClearcoatSphere.gltf");
 
 		glm::mat4 transform = glm::scale(glm::identity<glm::mat4>(), glm::vec3(1.0f));
 		SpawnModelEntity(data->sponza_mesh, transform);
@@ -145,12 +145,12 @@ namespace Application
 		glm::mat4 area_light_transform = glm::translate(glm::identity<glm::mat4>(), glm::vec3(7.0f, 1.25f, -0.25f));
 		area_light_transform = glm::rotate(area_light_transform, glm::radians(-90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 		area_light_transform = glm::scale(area_light_transform, glm::vec3(2.5f, 1.5f, 1.0f));
-		data->active_scene.AddEntity<AreaLight>(AssetManager::GetAsset<TextureAsset>(data->tex_kermit)->gpu_texture_handle, area_light_transform, glm::vec3(1.0f, 0.95f, 0.8f), 5.0f, true, "AreaLight0");
+		data->active_scene.AddEntity<AreaLight>(AssetManager::GetAsset<TextureAsset>(data->tex_kermit)->texture_render_handle, area_light_transform, glm::vec3(1.0f, 0.95f, 0.8f), 5.0f, true, "AreaLight0");
 
 		area_light_transform = glm::translate(glm::identity<glm::mat4>(), glm::vec3(-8.0f, 1.25f, -0.25f));
 		area_light_transform = glm::rotate(area_light_transform, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 		area_light_transform = glm::scale(area_light_transform, glm::vec3(2.5f, 1.5f, 1.0f));
-		data->active_scene.AddEntity<AreaLight>(TextureHandle_t(), area_light_transform, glm::vec3(1.0f, 0.95f, 0.8f), 5.0f, true, "AreaLight1");
+		data->active_scene.AddEntity<AreaLight>(RenderResourceHandle(), area_light_transform, glm::vec3(1.0f, 0.95f, 0.8f), 5.0f, true, "AreaLight1");
 
 		is_running = true;
 	}
@@ -220,7 +220,7 @@ namespace Application
 		Renderer::BeginFrameInfo frame_info = {};
 		frame_info.camera_view = data->active_scene.GetActiveCamera().GetView();
 		frame_info.camera_vfov = data->active_scene.GetActiveCamera().GetVerticalFOV();
-		frame_info.skybox_texture_handle = AssetManager::GetAsset<TextureAsset>(data->tex_hdr)->gpu_texture_handle;
+		frame_info.skybox_texture_handle = AssetManager::GetAsset<TextureAsset>(data->tex_hdr)->texture_render_handle;
 		Renderer::BeginFrame(frame_info);
 
 		data->active_scene.Render();

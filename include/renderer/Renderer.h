@@ -17,7 +17,7 @@ namespace Renderer
 		// The camera's vertical FOV, in degrees
 		float camera_vfov;
 
-		TextureHandle_t skybox_texture_handle;
+		RenderResourceHandle skybox_texture_handle;
 	};
 
 	void BeginFrame(const BeginFrameInfo& frame_info);
@@ -39,10 +39,10 @@ namespace Renderer
 		std::string name = "Unnamed";
 	};
 
-	TextureHandle_t CreateTexture(const CreateTextureArgs& args);
-	void DestroyTexture(TextureHandle_t handle);
-	void ImGuiImage(TextureHandle_t handle, float width, float height);
-	void ImGuiImageButton(TextureHandle_t handle, float width, float height);
+	RenderResourceHandle CreateTexture(const CreateTextureArgs& args);
+	void DestroyTexture(RenderResourceHandle handle);
+	void ImGuiImage(RenderResourceHandle texture_handle, float width, float height);
+	void ImGuiImageButton(RenderResourceHandle texture_handle, float width, float height);
 
 	struct CreateMeshArgs
 	{
@@ -57,11 +57,11 @@ namespace Renderer
 		std::string name = "Unnamed";
 	};
 
-	MeshHandle_t CreateMesh(const CreateMeshArgs& args);
-	void DestroyMesh(MeshHandle_t handle);
-	void SubmitMesh(MeshHandle_t mesh_handle, const MaterialAsset& material, const glm::mat4& transform);
+	RenderResourceHandle CreateMesh(const CreateMeshArgs& args);
+	void DestroyMesh(RenderResourceHandle handle);
+	void SubmitMesh(RenderResourceHandle mesh_handle, const MaterialAsset& material, const glm::mat4& transform);
 	
 	void SubmitPointlight(const glm::vec3& pos, const glm::vec3& color, float intensity);
-	void SubmitAreaLight(TextureHandle_t texture_handle, const glm::mat4& transform, const glm::vec3& color, float intensity, bool two_sided);
+	void SubmitAreaLight(RenderResourceHandle texture_handle, const glm::mat4& transform, const glm::vec3& color, float intensity, bool two_sided);
 
 }

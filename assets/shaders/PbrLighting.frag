@@ -477,7 +477,7 @@ void main()
 		case DEBUG_RENDER_MODE_CLEARCOAT_NORMAL:
 		{
 			if (material.has_clearcoat == 1)
-				color = pixel.normal_coat;
+				color = abs(pixel.normal_coat);
 			else
 				color = vec3(1.0, 0.0, 1.0);
 			break;

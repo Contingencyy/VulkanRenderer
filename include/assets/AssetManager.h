@@ -11,14 +11,14 @@ namespace AssetManager
 
 	void RenderUI();
 
-	AssetHandle_t LoadTexture(const std::filesystem::path& filepath, TextureFormat format, bool gen_mips, bool is_environment_map);
-	AssetHandle_t LoadGLTF(const std::filesystem::path& filepath);
+	AssetHandle ImportTexture(const std::filesystem::path& filepath, TextureFormat format, bool gen_mips, bool is_hdr_environment);
+	AssetHandle ImportMaterial(std::unique_ptr<MaterialAsset> material_asset);
+	AssetHandle ImportModel(const std::filesystem::path& filepath);
 
-	Asset* GetAssetEx(AssetHandle_t handle);
+	bool IsAssetImported(AssetHandle handle);
+	bool IsAssetLoaded(AssetHandle handle);
+
 	template<typename T>
-	T* GetAsset(AssetHandle_t handle)
-	{
-		return static_cast<T*>(GetAssetEx(handle));
-	}
+	T* GetAsset(AssetHandle handle);
 
 }

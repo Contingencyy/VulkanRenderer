@@ -1,7 +1,7 @@
 #pragma once
+#include "Shared.glsl.h"
 
-using TextureHandle_t = ResourceHandle_t;
-using MeshHandle_t = ResourceHandle_t;
+using RenderResourceHandle = ResourceHandle_t;
 
 /*
 	----------------------------------------------------------------------------------------------
