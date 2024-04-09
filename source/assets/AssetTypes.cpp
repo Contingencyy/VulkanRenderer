@@ -9,7 +9,6 @@ std::string AssetTypeToString(AssetType type)
 	{
 	case ASSET_TYPE_TEXTURE: return "Texture";
 	case ASSET_TYPE_MATERIAL: return "Material";
-	case ASSET_TYPE_MESH: return "Mesh";
 	case ASSET_TYPE_MODEL: return "Model";
 	}
 
@@ -47,10 +46,6 @@ void TextureAsset::RenderTooltip()
 	}
 }
 
-void TextureAsset::RenderUI()
-{
-}
-
 void MaterialAsset::RenderTooltip()
 {
 	if (ImGui::BeginTooltip())
@@ -63,30 +58,6 @@ void MaterialAsset::RenderTooltip()
 	}
 }
 
-void MaterialAsset::RenderUI()
-{
-}
-
-void MeshAsset::RenderTooltip()
-{
-	if (ImGui::BeginTooltip())
-	{
-		ImGui::Text("Type: %s", AssetTypeToString(type).c_str());
-		ImGui::Text("Handle: %u", handle);
-		ImGui::Text("State: %s", AssetLoadStateToString(load_state).c_str());
-
-		ImGui::Text("Vertex count: %u", num_vertices);
-		ImGui::Text("Index count: %u", num_indices);
-		ImGui::Text("Triangle count: %u", num_triangles);
-
-		ImGui::EndTooltip();
-	}
-}
-
-void MeshAsset::RenderUI()
-{
-}
-
 void ModelAsset::RenderTooltip()
 {
 	if (ImGui::BeginTooltip())
@@ -95,13 +66,6 @@ void ModelAsset::RenderTooltip()
 		ImGui::Text("Handle: %u", handle);
 		ImGui::Text("State: %s", AssetLoadStateToString(load_state).c_str());
 
-		ImGui::Text("Mesh count: %u", mesh_assets.size());
-		ImGui::Text("Material count: %u", material_assets.size());
-
 		ImGui::EndTooltip();
 	}
-}
-
-void ModelAsset::RenderUI()
-{
 }

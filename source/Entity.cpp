@@ -1,7 +1,6 @@
 #include "Precomp.h"
 #include "Entity.h"
 #include "renderer/Renderer.h"
-#include "assets/AssetManager.h"
 
 #include "imgui/imgui.h"
 
@@ -10,13 +9,13 @@ Entity::Entity(const std::string& label)
 {
 }
 
-ModelObject::ModelObject(const std::string& label)
-	: ModelObject(AssetHandle(), glm::identity<glm::mat4>(), label)
+MeshObject::MeshObject(const std::string& label)
+	: MeshObject(RenderResourceHandle(), MaterialAsset(), glm::identity<glm::mat4>(), label)
 {
 }
 
-ModelObject::ModelObject(AssetHandle model_asset_handle, const glm::mat4& transform, const std::string& label)
-	: Entity(label), m_model_asset_handle(model_asset_handle), m_transform(transform)
+MeshObject::MeshObject(RenderResourceHandle mesh_handle, const MaterialAsset& material, const glm::mat4& transform, const std::string& label)
+	: Entity(label), m_mesh_handle(mesh_handle), m_material(material), m_transform(transform)
 {
 	glm::vec3 skew(0.0f);
 	glm::vec4 perspective(0.0f);
@@ -27,48 +26,16 @@ ModelObject::ModelObject(AssetHandle model_asset_handle, const glm::mat4& transf
 	m_rotation = glm::degrees(m_rotation);
 }
 
-void ModelObject::Update(float dt)
+void MeshObject::Update(float dt)
 {
 }
 
-static void SubmitModelNode(const ModelAsset* model_asset, const ModelAsset::Node& node, const glm::mat4& transform)
+void MeshObject::Render()
 {
-	for (const uint32_t mesh_index : node.mesh_indices)
-	{
-		const MeshAsset& mesh = model_asset->mesh_assets[mesh_index];
-		const MaterialAsset& material = model_asset->material_assets[mesh.material_index];
-
-		Renderer::SubmitMesh(mesh.mesh_render_handle, material, transform);
-	}
+	Renderer::SubmitMesh(m_mesh_handle, m_material, m_transform);
 }
 
-void ModelObject::Render()
-{
-	ModelAsset* model_asset = AssetManager::GetAsset<ModelAsset>(m_model_asset_handle);
-	if (!model_asset)
-	{
-		Renderer::SubmitMesh(RenderResourceHandle(), MaterialAsset(), m_transform);
-		return;
-	}
-
-	for (const uint32_t root_node_index : model_asset->root_nodes)
-	{
-		ModelAsset::Node& current_node = model_asset->nodes[root_node_index];
-		glm::mat4 current_transform = m_transform * current_node.transform;
-
-		SubmitModelNode(model_asset, current_node, current_transform);
-
-		for (const uint32_t child_node_index : model_asset->nodes[root_node_index].children)
-		{
-			current_node = model_asset->nodes[child_node_index];
-			current_transform = current_transform * current_node.transform;
-
-			SubmitModelNode(model_asset, current_node, current_transform);
-		}
-	}
-}
-
-void ModelObject::RenderUI()
+void MeshObject::RenderUI()
 {
 	if (ImGui::CollapsingHeader(m_label.c_str()))
 	{
@@ -112,7 +79,7 @@ void ModelObject::RenderUI()
 			float texture_preview_width = std::min(ImGui::GetWindowSize().x, 256.0f);
 			float texture_preview_height = std::min(ImGui::GetWindowSize().y, 256.0f);
 
-			/*if (VK_RESOURCE_HANDLE_VALID(m_material.tex_albedo_render_handle))
+			if (VK_RESOURCE_HANDLE_VALID(m_material.tex_albedo_render_handle))
 				Renderer::ImGuiImage(m_material.tex_albedo_render_handle, texture_preview_width, texture_preview_height);
 			ImGui::ColorEdit3("Albedo factor", &m_material.albedo_factor.x, ImGuiColorEditFlags_DisplayRGB);
 
@@ -132,7 +99,7 @@ void ModelObject::RenderUI()
 				Renderer::ImGuiImage(m_material.tex_cc_normal_render_handle, texture_preview_width, texture_preview_height);
 			if (VK_RESOURCE_HANDLE_VALID(m_material.tex_cc_rough_render_handle))
 				Renderer::ImGuiImage(m_material.tex_cc_rough_render_handle, texture_preview_width, texture_preview_height);
-			ImGui::SliderFloat("Clearcoat roughness factor", &m_material.clearcoat_roughness_factor, 0.0f, 1.0f);*/
+			ImGui::SliderFloat("Clearcoat roughness factor", &m_material.clearcoat_roughness_factor, 0.0f, 1.0f);
 
 			ImGui::Unindent(10.0f);
 		}
@@ -173,12 +140,12 @@ void ModelObject::RenderUI()
 //}
 
 AreaLight::AreaLight(const std::string& label)
-	: AreaLight(AssetHandle(), glm::identity<glm::mat4>(), glm::vec3(1.0f), 5.0f, true, label)
+	: AreaLight(RenderResourceHandle(), glm::identity<glm::mat4>(), glm::vec3(1.0f), 5.0f, true, label)
 {
 }
 
-AreaLight::AreaLight(AssetHandle texture_asset_handle, const glm::mat4& transform, const glm::vec3& color, float intensity, bool two_sided, const std::string& label)
-	: Entity(label), m_texture_asset_handle(texture_asset_handle), m_transform(transform), m_color(color), m_intensity(intensity), m_two_sided(two_sided)
+AreaLight::AreaLight(RenderResourceHandle texture_handle, const glm::mat4& transform, const glm::vec3& color, float intensity, bool two_sided, const std::string& label)
+	: Entity(label), m_texture_handle(texture_handle), m_transform(transform), m_color(color), m_intensity(intensity), m_two_sided(two_sided)
 {
 	glm::vec3 skew(0.0f);
 	glm::vec4 perspective(0.0f);
@@ -195,13 +162,7 @@ void AreaLight::Update(float dt)
 
 void AreaLight::Render()
 {
-	RenderResourceHandle texture_render_handle = RenderResourceHandle();
-
-	TextureAsset* texture_asset = AssetManager::GetAsset<TextureAsset>(m_texture_asset_handle);
-	if (texture_asset)
-		texture_render_handle = texture_asset->texture_render_handle;
-
-	Renderer::SubmitAreaLight(texture_render_handle, m_transform, m_color, m_intensity, m_two_sided);
+	Renderer::SubmitAreaLight(m_texture_handle, m_transform, m_color, m_intensity, m_two_sided);
 }
 
 void AreaLight::RenderUI()
@@ -241,13 +202,8 @@ void AreaLight::RenderUI()
 			float texture_preview_width = std::min(ImGui::GetWindowSize().x, 256.0f);
 			float texture_preview_height = std::min(ImGui::GetWindowSize().y, 256.0f);
 
-			RenderResourceHandle texture_render_handle = RenderResourceHandle();
-
-			TextureAsset* texture_asset = AssetManager::GetAsset<TextureAsset>(m_texture_asset_handle);
-			if (texture_asset)
-				texture_render_handle = texture_asset->texture_render_handle;
-
-			Renderer::ImGuiImage(texture_render_handle, texture_preview_width, texture_preview_height);
+			if (VK_RESOURCE_HANDLE_VALID(m_texture_handle))
+				Renderer::ImGuiImage(m_texture_handle, texture_preview_width, texture_preview_height);
 
 			ImGui::ColorEdit3("Color", &m_color[0], ImGuiColorEditFlags_DisplayRGB);
 			ImGui::DragFloat("Intensity", &m_intensity, 0.01f, 0.0f, 10000.0f, "%.2f");

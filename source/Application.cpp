@@ -89,6 +89,37 @@ namespace Application
 		}
 	}
 
+	static void SpawnModelNodeEntity(ModelAsset* model_asset, const ModelAsset::Node& node, const glm::mat4& node_transform)
+	{
+		for (uint32_t i = 0; i < node.mesh_render_handles.size(); ++i)
+		{
+			data->active_scene.AddEntity<MeshObject>(node.mesh_render_handles[i], node.materials[i], node_transform, node.mesh_names[i]);
+		}
+
+		for (uint32_t i = 0; i < node.children.size(); ++i)
+		{
+			const ModelAsset::Node& child_node = model_asset->nodes[node.children[i]];
+			glm::mat4 child_transform = node_transform * child_node.transform;
+
+			SpawnModelNodeEntity(model_asset, child_node, child_transform);
+		}
+	}
+
+	static void SpawnModelEntity(AssetHandle model_handle, const glm::mat4& transform)
+	{
+		ModelAsset* model_asset = AssetManager::GetAsset<ModelAsset>(model_handle);
+		if (!model_asset)
+			return;
+
+		for (uint32_t i = 0; i < model_asset->root_nodes.size(); ++i)
+		{
+			const ModelAsset::Node& root_node = model_asset->nodes[model_asset->root_nodes[i]];
+			glm::mat4 root_transform = transform * root_node.transform;
+		
+			SpawnModelNodeEntity(model_asset, root_node, root_transform);
+		}
+	}
+
 	void Init()
 	{
 		data = new Data();
@@ -107,10 +138,9 @@ namespace Application
 		data->model_mesh = AssetManager::ImportModel("assets\\models\\gltf\\ClearCoatSphere\\ClearcoatSphere.gltf");
 
 		glm::mat4 transform = glm::scale(glm::identity<glm::mat4>(), glm::vec3(1.0f));
-		data->active_scene.AddEntity<ModelObject>(data->sponza_mesh, transform, "Sponza");
-
+		SpawnModelEntity(data->sponza_mesh, transform);
 		transform = glm::scale(glm::translate(glm::identity<glm::mat4>(), glm::vec3(-2.5f, 1.25f, -0.25f)), glm::vec3(1.0f));
-		data->active_scene.AddEntity<ModelObject>(data->model_mesh, transform, "Model");
+		SpawnModelEntity(data->model_mesh, transform);
 
 		glm::mat4 area_light_transform = glm::translate(glm::identity<glm::mat4>(), glm::vec3(7.0f, 1.25f, -0.25f));
 		area_light_transform = glm::rotate(area_light_transform, glm::radians(-90.0f), glm::vec3(0.0f, 1.0f, 0.0f));

@@ -318,12 +318,12 @@ namespace AssetImporter
 		return material_assets;
 	}
 
-	static std::vector<MeshAsset> LoadGLTFMeshes(const std::filesystem::path& filepath, cgltf_data* gltf_data)
+	static std::vector<RenderResourceHandle> LoadGLTFMeshes(const std::filesystem::path& filepath, cgltf_data* gltf_data)
 	{
 		// Determine how many meshes we have in total
 		uint32_t num_meshes = GetGLTFMeshCount(gltf_data);
 		uint32_t mesh_handle_index_current = 0;
-		std::vector<MeshAsset> mesh_assets(num_meshes);
+		std::vector<RenderResourceHandle> mesh_render_handles(num_meshes);
 
 		for (uint32_t i = 0; i < gltf_data->meshes_count; ++i)
 		{
@@ -416,33 +416,12 @@ namespace AssetImporter
 
 				uint32_t total_bytes_vertices = mesh_args.num_vertices * mesh_args.vertex_stride;
 				mesh_args.vertices_bytes = std::span<uint8_t>(reinterpret_cast<uint8_t*>(vertices.data()), total_bytes_vertices);
-				
-				std::string mesh_name;
-				if (gltf_mesh.name)
-					mesh_name = filepath.string() + gltf_mesh.name + std::to_string(j);
-				else
-					mesh_name = filepath.string() + "_mesh" + std::to_string(i) + "_prim" + std::to_string(j);
 
-				MeshAsset mesh_asset = {};
-				mesh_asset.type = ASSET_TYPE_MESH;
-				mesh_asset.handle = MakeAssetHandleFromFilepath(mesh_name);
-				mesh_asset.load_state = ASSET_LOAD_STATE_LOADED;
-				mesh_asset.filepath = filepath;
-				mesh_asset.preview_texture_render_handle = RenderResourceHandle();
-				
-				mesh_asset.mesh_render_handle = Renderer::CreateMesh(mesh_args);
-				mesh_asset.num_vertices = mesh_args.num_vertices;
-				mesh_asset.num_indices = mesh_args.num_indices;
-				mesh_asset.num_triangles = mesh_args.num_indices / 3;
-
-				uint32_t mat_index = CGLTFGetIndex<cgltf_material>(gltf_data->materials, gltf_prim.material);
-				mesh_asset.material_index = mat_index;
-
-				mesh_assets[mesh_handle_index_current++] = mesh_asset;
+				mesh_render_handles[mesh_handle_index_current++] = Renderer::CreateMesh(mesh_args);
 			}
 		}
 		
-		return mesh_assets;
+		return mesh_render_handles;
 	}
 
 	static std::vector<uint32_t> ParseGLTFRootNodeIndices(cgltf_data* gltf_data)
@@ -461,7 +440,8 @@ namespace AssetImporter
 		return root_node_indices;
 	}
 
-	static std::vector<ModelAsset::Node> ParseGLTFNodes(const std::filesystem::path& filepath, cgltf_data* gltf_data, const std::vector<MeshAsset>& mesh_assets)
+	static std::vector<ModelAsset::Node> ParseGLTFNodes(const std::filesystem::path& filepath, cgltf_data* gltf_data,
+		const std::vector<MaterialAsset>& material_assets, const std::vector<RenderResourceHandle>& mesh_render_handles)
 	{
 		// Create all nodes
 		std::vector<ModelAsset::Node> model_nodes(gltf_data->nodes_count);
@@ -479,21 +459,25 @@ namespace AssetImporter
 
 			if (gltf_node.mesh)
 			{
-				model_node.node_mesh_labels.resize(gltf_node.mesh->primitives_count);
-				model_node.mesh_indices.resize(gltf_node.mesh->primitives_count);
+				model_node.mesh_names.resize(gltf_node.mesh->primitives_count);
+				model_node.mesh_render_handles.resize(gltf_node.mesh->primitives_count);
+				model_node.materials.resize(gltf_node.mesh->primitives_count);
 
 				for (uint32_t j = 0; j < gltf_node.mesh->primitives_count; ++j)
 				{
 					cgltf_primitive& gltf_prim = gltf_node.mesh->primitives[j];
 
 					if (gltf_node.name)
-						model_node.node_mesh_labels[j] = gltf_node.name + std::to_string(j);
+						model_node.mesh_names[j] = gltf_node.name + std::to_string(j);
 					else
-						model_node.node_mesh_labels[j] = filepath.string() + std::to_string(j);
+						model_node.mesh_names[j] = filepath.string() + std::to_string(j);
 
 					uint32_t mesh_handle_index = CGLTFGetIndex<cgltf_mesh>(gltf_data->meshes, gltf_node.mesh) +
 						CGLTFGetIndex<cgltf_primitive>(gltf_node.mesh->primitives, &gltf_prim);
-					model_node.mesh_indices[j] = mesh_handle_index;
+					model_node.mesh_render_handles[j] = mesh_render_handles[mesh_handle_index];
+
+					uint32_t material_handle_index = CGLTFGetIndex<cgltf_material>(gltf_data->materials, gltf_prim.material);
+					model_node.materials[j] = material_assets[material_handle_index];
 				}
 			}
 		}
@@ -622,12 +606,12 @@ namespace AssetImporter
 	{
 		ReadGLTFResult gltf = ReadGLTFModel(model_asset.filepath);
 
-		model_asset.material_assets = LoadGLTFMaterials(model_asset.filepath, gltf.data);
-		model_asset.mesh_assets = LoadGLTFMeshes(model_asset.filepath, gltf.data);
+		std::vector<MaterialAsset> material_assets = LoadGLTFMaterials(model_asset.filepath, gltf.data);
+		std::vector<RenderResourceHandle> mesh_render_handles = LoadGLTFMeshes(model_asset.filepath, gltf.data);
 
 		model_asset.load_state = ASSET_LOAD_STATE_LOADED;
 		model_asset.root_nodes = ParseGLTFRootNodeIndices(gltf.data);
-		model_asset.nodes = ParseGLTFNodes(model_asset.filepath, gltf.data, model_asset.mesh_assets);
+		model_asset.nodes = ParseGLTFNodes(model_asset.filepath, gltf.data, material_assets, mesh_render_handles);
 		model_asset.preview_texture_render_handle = RenderResourceHandle();
 
 		cgltf_free(gltf.data);

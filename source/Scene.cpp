@@ -37,9 +37,9 @@ void Scene::RenderUI()
 			{
 				if (ImGui::BeginMenu("New Entity"))
 				{
-					if (ImGui::MenuItem("Model"))
+					if (ImGui::MenuItem("Mesh"))
 					{
-						AddEntity<ModelObject>("Model");
+						AddEntity<MeshObject>("Mesh");
 					}
 					if (ImGui::MenuItem("AreaLight"))
 					{
