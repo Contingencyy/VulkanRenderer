@@ -21,11 +21,6 @@ namespace AssetManager
 		ImVec2 asset_thumbnail_base_padding = { 16.0f, 16.0f };
 	} static *data;
 
-	static AssetHandle AssetHandleFromFilepath(const std::filesystem::path& filepath)
-	{
-		return AssetHandle(std::hash<std::filesystem::path>{}(filepath));
-	}
-
 	static void RenderAssetBrowserUI()
 	{
 		if (ImGui::BeginMenuBar())
@@ -46,12 +41,6 @@ namespace AssetManager
 			}
 
 			data->current_dir = new_path;
-
-			/*if (ImGui::Button("Back"))
-			{
-				if (data->current_dir.has_parent_path())
-					data->current_dir = data->current_dir.parent_path();
-			}*/
 
 			ImGui::EndMenuBar();
 		}
@@ -78,10 +67,13 @@ namespace AssetManager
 			Renderer::ImGuiImageButton(preview_texture_render_handle, data->asset_thumbnail_base_size.x, data->asset_thumbnail_base_size.y);
 			ImGui::PopStyleColor();
 
-			if (ImGui::IsItemHovered() &&
-				ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+			if (ImGui::IsItemHovered())
 			{
-				if (item.is_directory())
+				if (iter != data->assets.end())
+					iter->second->RenderTooltip();
+
+				if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) &&
+					item.is_directory())
 				{
 					data->current_dir /= item.path().filename();
 				}

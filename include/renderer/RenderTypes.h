@@ -44,20 +44,8 @@ enum TextureUsageFlags
 	TEXTURE_USAGE_COPY_DST = (1 << 7)
 };
 
-inline bool IsHDRFormat(TextureFormat format)
-{
-	switch (format)
-	{
-	case TEXTURE_FORMAT_RGBA8_UNORM:
-	case TEXTURE_FORMAT_RGBA8_SRGB:
-	case TEXTURE_FORMAT_D32_SFLOAT:
-		return false;
-	case TEXTURE_FORMAT_RGBA16_SFLOAT:
-	case TEXTURE_FORMAT_RGBA32_SFLOAT:
-	case TEXTURE_FORMAT_RG16_SFLOAT:
-		return true;
-	}
-}
+std::string TextureDimensionToString(TextureDimension dim);
+std::string TextureFormatToString(TextureFormat format);
 
 struct TextureCreateInfo
 {

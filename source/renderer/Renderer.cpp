@@ -167,6 +167,7 @@ namespace Renderer
 		explicit Texture(VulkanImage image, VulkanImageView view, VulkanDescriptorAllocation descriptor, VulkanSampler sampler)
 			: image(image), view(view), view_descriptor(descriptor), sampler(sampler)
 		{
+			// TODO: This check should be for Texture2D, not layers == 1
 			if (view.num_layers == 1)
 				imgui_descriptor_set = Vulkan::AddImGuiTexture(image.vk_image, view.vk_image_view, sampler.vk_sampler);
 		}

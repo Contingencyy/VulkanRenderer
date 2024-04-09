@@ -130,7 +130,7 @@ namespace Application
 		Renderer::Init(data->window, data->window_width, data->window_height);
 
 		AssetManager::Init("assets");
-		data->tex_kermit = AssetManager::ImportTexture("assets\\textures\\kermit.png", TEXTURE_FORMAT_RGBA8_UNORM, true, false);
+		data->tex_kermit = AssetManager::ImportTexture("assets\\textures\\kermit.png", TEXTURE_FORMAT_RGBA8_SRGB, true, false);
 		
 		data->tex_hdr = AssetManager::ImportTexture("assets\\textures\\hdr\\Env_Golden_Bay.hdr", TEXTURE_FORMAT_RGBA32_SFLOAT, true, true);
 

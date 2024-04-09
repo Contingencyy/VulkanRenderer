@@ -9,7 +9,6 @@ enum AssetType
 {
 	ASSET_TYPE_TEXTURE,
 	ASSET_TYPE_MATERIAL,
-	ASSET_TYPE_MESH,
 	ASSET_TYPE_MODEL,
 	ASSET_TYPE_NUM_TYPES
 };
@@ -21,9 +20,14 @@ enum AssetLoadState
 	ASSET_LOAD_STATE_LOADED
 };
 
+std::string AssetTypeToString(AssetType type);
+std::string AssetLoadStateToString(AssetLoadState load_state);
+
 struct Asset
 {
 	virtual ~Asset() {}
+	
+	virtual void RenderTooltip() = 0;
 
 	AssetType type = ASSET_TYPE_NUM_TYPES;
 	AssetHandle handle;
@@ -37,6 +41,8 @@ struct TextureAsset : Asset
 {
 	virtual ~TextureAsset() {}
 
+	virtual void RenderTooltip();
+
 	RenderResourceHandle texture_render_handle;
 	TextureFormat format = TEXTURE_FORMAT_UNDEFINED;
 	bool mips = true;
@@ -46,6 +52,8 @@ struct TextureAsset : Asset
 struct MaterialAsset : Asset
 {
 	virtual ~MaterialAsset() {}
+
+	virtual void RenderTooltip();
 
 	RenderResourceHandle tex_albedo_render_handle;
 	RenderResourceHandle tex_normal_render_handle;
@@ -67,6 +75,8 @@ struct MaterialAsset : Asset
 struct ModelAsset : Asset
 {
 	virtual ~ModelAsset() {}
+
+	virtual void RenderTooltip();
 
 	struct Node
 	{
