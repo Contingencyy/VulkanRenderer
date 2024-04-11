@@ -129,6 +129,11 @@ namespace Application
 		Input::Init(data->window);
 		Renderer::Init(data->window, data->window_width, data->window_height);
 
+		// Maybe importing an asset should not assume anything about its usage
+		// But loading should, and it will return the actual loaded asset instance
+		// That way we can import e.g. an environment equirect map as the file without making any assumptions as to how its used
+		// And then e.g. the scene can call LoadAsset on it to make it into an actual asset instance with specific settings it was loaded with
+
 		AssetManager::Init("assets");
 		data->tex_kermit = AssetManager::ImportTexture("assets\\textures\\kermit.png", TEXTURE_FORMAT_RGBA8_SRGB, true, false);
 		
