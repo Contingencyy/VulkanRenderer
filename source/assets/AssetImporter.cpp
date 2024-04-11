@@ -1,10 +1,9 @@
 #include "Precomp.h"
 #include "assets/AssetImporter.h"
 #include "assets/AssetManager.h"
+#include "FileIO.h"
 #include "renderer/Renderer.h"
 
-#define STB_IMAGE_IMPLEMENTATION
-#include "stb/stb_image.h"
 #define CGLTF_IMPLEMENTATION
 #include "cgltf/cgltf.h"
 #include "mikkt/mikktspace.h"
@@ -130,40 +129,6 @@ namespace AssetImporter
 		UserData m_user_data = {};
 
 	} static s_tangent_calculator;
-
-	struct ReadImageResult
-	{
-		int32_t width;
-		int32_t height;
-		int32_t num_components;
-		int32_t component_size;
-
-		uint8_t* pixels;
-	};
-
-	static ReadImageResult ReadImage(const std::filesystem::path& filepath)
-	{
-		ReadImageResult result = {};
-
-		bool hdr = stbi_is_hdr(filepath.string().c_str());
-		stbi_set_flip_vertically_on_load(hdr);
-		stbi_info(filepath.string().c_str(), &result.width, &result.height, &result.num_components);
-
-		if (hdr)
-		{
-			result.pixels = (uint8_t*)stbi_loadf(filepath.string().c_str(), &result.width, &result.height, &result.num_components, STBI_rgb_alpha);
-			result.num_components = 4;
-			result.component_size = 4;
-		}
-		else
-		{
-			result.pixels = (uint8_t*)stbi_load(filepath.string().c_str(), &result.width, &result.height, &result.num_components, STBI_rgb_alpha);
-			result.num_components = 4;
-			result.component_size = 1;
-		}
-
-		return result;
-	}
 
 	static uint32_t GetGLTFMeshCount(cgltf_data* gltf_data)
 	{
@@ -600,7 +565,7 @@ namespace AssetImporter
 
 	void LoadTexture(TextureAsset& texture_asset)
 	{
-		ReadImageResult image = ReadImage(texture_asset.filepath);
+		FileIO::ReadImageResult image = FileIO::ReadImage(texture_asset.filepath);
 
 		Renderer::CreateTextureArgs texture_args = {};
 		texture_args.width = (uint32_t)image.width;
@@ -608,15 +573,13 @@ namespace AssetImporter
 		texture_args.src_stride = (uint32_t)(image.num_components * image.component_size);
 		texture_args.format = texture_asset.format;
 		uint32_t total_image_byte_size = texture_args.width * texture_args.height * texture_args.src_stride;
-		texture_args.pixel_bytes = std::span<uint8_t>(image.pixels, total_image_byte_size);
+		texture_args.pixel_bytes = std::span<uint8_t>(image.pixel_data.begin(), image.pixel_data.end());
 		texture_args.generate_mips = texture_asset.mips;
 		texture_args.is_environment_map = texture_asset.is_environment_map;
 
 		texture_asset.load_state = ASSET_LOAD_STATE_LOADED;
 		texture_asset.texture_render_handle = Renderer::CreateTexture(texture_args);
 		texture_asset.preview_texture_render_handle = texture_asset.texture_render_handle;
-
-		stbi_image_free(image.pixels);
 	}
 
 	bool RenderImportModelDialogue(const std::filesystem::path& filepath)

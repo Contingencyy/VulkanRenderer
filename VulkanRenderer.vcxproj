@@ -184,6 +184,7 @@
     <ClCompile Include="source\assets\AssetTypes.cpp" />
     <ClCompile Include="source\Camera.cpp" />
     <ClCompile Include="source\Entity.cpp" />
+    <ClCompile Include="source\FileIO.cpp" />
     <ClCompile Include="source\Input.cpp" />
     <ClCompile Include="source\Logger.cpp" />
     <ClCompile Include="source\Main.cpp" />
@@ -223,6 +224,7 @@
     <ClInclude Include="include\assets\AssetTypes.h" />
     <ClInclude Include="include\Camera.h" />
     <ClInclude Include="include\Entity.h" />
+    <ClInclude Include="include\FileIO.h" />
     <ClInclude Include="include\Input.h" />
     <ClInclude Include="include\Logger.h" />
     <ClInclude Include="include\Precomp.h" />
