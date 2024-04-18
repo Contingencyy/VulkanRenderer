@@ -75,11 +75,24 @@ bool TraceShadowRay(vec3 ray_origin, vec3 ray_dir, float tmax)
 	return occluded;
 }
 
-vec3 IntegrateEdgeVec(vec3 v1, vec3 v2)
+mat3 GetMinvMatrix(float NoV, float roughness, vec2 uv)
+{
+	// Fetch matrix
+	vec4 ltc1 = SampleTexture(ltc1_index, materials[material_index].sampler_index, uv);
+	return mat3(
+		vec3(ltc1.x, 0.0f, ltc1.y),
+		vec3(0.0f,   1.0f, 0.0f),
+		vec3(ltc1.z, 0.0f, ltc1.w)
+	);
+}
+
+vec3 IntegrateEdgeSpecular(vec3 v1, vec3 v2)
 {
     float x = dot(v1, v2);
     float y = abs(x);
-
+	
+	// NOTE: Cubic rational fit, acos does not have enough precision and causes artifacts with high intensity lights and smooth surfaces
+	// Source: https://advances.realtimerendering.com/s2016/s2016_ltc_rnd.pdf (slide 71)
     float a = 0.8543985 + (0.4965155 + 0.0145206 * y) * y;
     float b = 3.4175940 + (4.1616724 + y) * y;
     float v = a / b;
@@ -89,24 +102,38 @@ vec3 IntegrateEdgeVec(vec3 v1, vec3 v2)
     return cross(v1, v2) * theta_sintheta;
 }
 
+vec3 IntegrateEdgeDiffuse(vec3 v1, vec3 v2)
+{
+	float x = dot(v1, v2);
+	float y = abs(x);
+
+	float theta_sintheta = 1.5708 + (-0.879406 + 0.308609 * y) * y;
+	if (x < 0.0)
+	{
+		theta_sintheta = PI * inversesqrt(max(1.0 - x * x, 1e-7)) - theta_sintheta;
+	}
+
+	return cross(v1, v2) * theta_sintheta;
+}
+
 // Uses Linearly Transformed Cosines approach
-vec3 AreaLightIrradiance(ViewInfo view, PixelInfo pixel, mat3 Minv, vec3 area_light_verts[4], bool two_sided)
+vec3 AreaLightIrradiance(ViewInfo view, vec3 pos_world, vec3 normal, mat3 Minv, vec3 area_light_verts[4], bool two_sided)
 {
 	// Orthonormal basis around surface normal
-	vec3 T1 = normalize(view.dir - pixel.normal * dot(view.dir, pixel.normal));
-    vec3 T2 = cross(pixel.normal, T1);
+	vec3 T1 = normalize(view.dir - normal * dot(view.dir, normal));
+    vec3 T2 = cross(normal, T1);
 
 	// Rotate area light in (T1, T2, N) basis
-    Minv = Minv * transpose(mat3(T1, T2, pixel.normal));
+    Minv = Minv * transpose(mat3(T1, T2, normal));
 
 	vec3 L[4];
-	L[0] = Minv * (area_light_verts[0] - pixel.pos_world);
-	L[1] = Minv * (area_light_verts[1] - pixel.pos_world);
-	L[2] = Minv * (area_light_verts[2] - pixel.pos_world);
-	L[3] = Minv * (area_light_verts[3] - pixel.pos_world);
+	L[0] = Minv * (area_light_verts[0] - pos_world);
+	L[1] = Minv * (area_light_verts[1] - pos_world);
+	L[2] = Minv * (area_light_verts[2] - pos_world);
+	L[3] = Minv * (area_light_verts[3] - pos_world);
 
 	// Check if the surface point is behind the light
-	vec3 dir = area_light_verts[0] - pixel.pos_world;
+	vec3 dir = area_light_verts[0] - pos_world;
 	vec3 light_normal = cross(area_light_verts[1] - area_light_verts[0], area_light_verts[3] - area_light_verts[0]);
 	bool back_face = (dot(dir, light_normal) < 0.0f);
 
@@ -116,10 +143,10 @@ vec3 AreaLightIrradiance(ViewInfo view, PixelInfo pixel, mat3 Minv, vec3 area_li
 	L[3] = normalize(L[3]);
 
 	vec3 vsum = vec3(0.0);
-	vsum += IntegrateEdgeVec(L[0], L[1]);
-	vsum += IntegrateEdgeVec(L[1], L[2]);
-	vsum += IntegrateEdgeVec(L[2], L[3]);
-	vsum += IntegrateEdgeVec(L[3], L[0]);
+	vsum += IntegrateEdgeSpecular(L[0], L[1]);
+	vsum += IntegrateEdgeSpecular(L[1], L[2]);
+	vsum += IntegrateEdgeSpecular(L[2], L[3]);
+	vsum += IntegrateEdgeSpecular(L[3], L[0]);
 
 	// Form factor of the area light polygon
 	float len = length(vsum);
@@ -135,7 +162,6 @@ vec3 AreaLightIrradiance(ViewInfo view, PixelInfo pixel, mat3 Minv, vec3 area_li
 
 	// Fetch form factor for the horizon clipping
 	float scale = SampleTexture(ltc2_index, materials[material_index].sampler_index, uv_form_factor).w;
-
 	float sum = len * scale;
 	if (!back_face && !two_sided)
 	{
@@ -158,95 +184,52 @@ vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 
 	vec3 indirect_diffuse = vec3(0.0f);
 	vec3 indirect_specular = vec3(0.0f);
+	
+	// --------------------------------------------------------------------------------------------------
+	// -------------------------- Direct illumination from area lights ----------------------------------
+	// --------------------------------------------------------------------------------------------------
 
-	// Direct lighting
 	if (settings.use_direct_light == 1)
 	{
-//		for (uint i = 0; i < num_pointlights; ++i)
-//		{
-//			PointlightData pointlight = pointlights[i];
-//			vec3 light_color = pointlight.color * pointlight.intensity;
-//
-//			vec3 light_dir = normalize(pointlight.pos - pixel.pos_world);
-//			vec3 dist_to_light = vec3(length(pointlight.pos - pixel.pos_world));
-//			vec3 dist_attenuation = clamp(1.0 / (falloff.x + (falloff.y * dist_to_light) + (falloff.z * (dist_to_light * dist_to_light))), 0.0, 1.0);
-//			
-//			float NoL = clamp(dot(pixel.normal, light_dir), 0.0, 1.0);
-//
-//			if (NoL > 0.0)
-//			{
-//				bool occluded = TraceShadowRay(pixel.pos_world + light_dir * 0.01f, light_dir, dist_to_light.x);
-//
-//				if (!occluded)
-//				{
-//					vec3 H = normalize(view.dir + light_dir);
-//			
-//					float NoH = clamp(dot(pixel.normal, H), 0.0, 1.0);
-//					float NoV = abs(dot(pixel.normal, view.dir)) + 1e-5;
-//					float LoH = clamp(dot(light_dir, H), 0.0, 1.0);
-//					float LoV = clamp(dot(light_dir, view.dir), 0.0, 1.0);
-//
-//					vec3 kD = vec3(0.0);
-//					vec3 Fr = SpecularLobe(pixel.metallic, pixel.roughness, pixel.f0, NoL, NoH, NoV, LoH, kD);
-//					vec3 Fd = DiffuseLobe(pixel.roughness, pixel.albedo, NoL, NoV, LoH, LoV, pixel.normal, view.dir);
-//
-//					vec3 color = (kD * Fd) + Fr;
-//
-//					if (pixel.has_coat)
-//					{
-//						float NoLc = clamp(dot(pixel.normal_coat, light_dir), 0.0, 1.0);
-//						float NoHc = clamp(dot(pixel.normal_coat, H), 0.0, 1.0);
-//						float NoVc = abs(dot(pixel.normal_coat, view.dir)) + 1e-5;
-//
-//						vec3 Fcc = vec3(0.0);
-//						vec3 Frc = ClearCoatLobe(pixel.roughness_coat, pixel.alpha_coat, pixel.f0, NoLc, NoHc, NoVc, LoH, Fcc);
-//						vec3 attenuation = 1.0 - Fcc;
-//
-//						color *= attenuation * NoL;
-//						color += Frc * NoLc;
-//
-//						Lo += color * light_color * dist_attenuation;
-//					}
-//					else
-//					{
-//						Lo += color * light_color * NoL * dist_attenuation;
-//					}
-//				}
-//			}
-//		}
-
-		// --------------------------------------------------------------------------------------------------
-		// -------------------------- Direct illumination from area lights ----------------------------------
-		// --------------------------------------------------------------------------------------------------
-
 		vec2 uv = vec2(pixel.roughness, sqrt(1.0 - NoV));
 		uv = uv * LUT_SCALE + LUT_BIAS;
 
-		// Fetch matrix
-		vec4 ltc1 = SampleTexture(ltc1_index, materials[material_index].sampler_index, uv);
+		mat3 Minv = GetMinvMatrix(NoV, pixel.roughness, uv);
 		vec4 ltc2 = SampleTexture(ltc2_index, materials[material_index].sampler_index, uv);
-
-		mat3 Minv = mat3(
-			vec3(ltc1.x, 0.0f, ltc1.y),
-			vec3(0.0f,   1.0f, 0.0f),
-			vec3(ltc1.z, 0.0f, ltc1.w)
-		);
 
 		for (uint i = 0; i < num_area_lights; ++i)
 		{
 			GPUAreaLight area_light = area_lights[i];
-			vec3 area_light_color = vec3(area_light.color_red, area_light.color_green, area_light.color_blue);
-			//vec4 area_light_texture = SampleTextureLod(area_light.texture_index, materials[material_index].sampler_index, uv, 0.0f);
-
-			//vec3 area_light_color = vec3(area_light.color_red, area_light.color_green, area_light.color_blue);
+			vec3 area_light_radiance = area_light.intensity * vec3(area_light.color_red, area_light.color_green, area_light.color_blue);
 			vec3 area_light_verts[4] = { area_light.vert0, area_light.vert1, area_light.vert2, area_light.vert3 };
 
-			vec3 diffuse = AreaLightIrradiance(view, pixel, mat3(1), area_light_verts, area_light.two_sided);
-			diffuse *= pixel.albedo * area_light_color * area_light.intensity;
+			vec3 diffuse = AreaLightIrradiance(view, pixel.pos_world, pixel.normal, mat3(1), area_light_verts, area_light.two_sided);
+			diffuse *= pixel.albedo;
 
-			vec3 specular = AreaLightIrradiance(view, pixel, Minv, area_light_verts, area_light.two_sided);
+			vec3 specular = AreaLightIrradiance(view, pixel.pos_world, pixel.normal, Minv, area_light_verts, area_light.two_sided);
 			specular *= pixel.f0 * ltc2.x + (1.0f - pixel.f0) * ltc2.y;
-			specular *= area_light_color * area_light.intensity;
+
+			if (pixel.has_coat)
+			{
+				float NoVc = max(dot(pixel.normal_coat, view.dir), 0.0);
+				vec3 Fcc = F_SchlickRoughness(NoVc, pixel.f0, pixel.roughness_coat);
+				vec3 attenuation = 1.0 - pixel.alpha_coat * Fcc;
+
+				// UV for Minv needs to be different here than the base layer
+				vec2 uv_coat = vec2(pixel.roughness_coat, sqrt(1.0 - NoVc));
+				uv_coat = uv_coat * LUT_SCALE + LUT_BIAS;
+
+				mat3 Minv_coat = GetMinvMatrix(NoVc, pixel.roughness_coat, uv_coat);
+				vec3 specular_coat = AreaLightIrradiance(view, pixel.pos_world, pixel.normal_coat, Minv_coat, area_light_verts, area_light.two_sided);
+
+				diffuse *= attenuation;
+				specular *= attenuation;
+
+				specular += pixel.alpha_coat * Fcc * specular_coat;
+			}
+
+			diffuse *= area_light_radiance;
+			specular *= area_light_radiance;
 
 			direct_diffuse += diffuse;
 			direct_specular += specular;
@@ -275,12 +258,13 @@ vec3 ShadePixel(ViewInfo view, PixelInfo pixel)
 		// Take into account clearcoat layer for IBL
 		if (settings.use_ibl_clearcoat == 1 && pixel.has_coat)
 		{
-			vec3 Fcc = F_SchlickRoughness(max(dot(pixel.normal_coat, view.dir), 0.0), pixel.f0, pixel.roughness_coat);
+			float NoVc = max(dot(pixel.normal_coat, view.dir), 0.0);
+			vec3 Fcc = F_SchlickRoughness(NoVc, pixel.f0, pixel.roughness_coat);
 			vec3 attenuation = 1.0 - pixel.alpha_coat * Fcc;
 
 			vec3 Rc = reflect(-view.dir, pixel.normal_coat);
 			vec3 reflection_coat = SampleTextureCubeLod(push.prefiltered_cubemap_index, push.prefiltered_sampler_index, Rc, pixel.roughness_coat * push.num_prefiltered_mips).rgb;
-			vec2 env_brdf_coat = SampleTexture(push.brdf_lut_index, push.brdf_lut_sampler_index, vec2(max(dot(pixel.normal_coat, view.dir), 0.0), pixel.roughness_coat)).rg;
+			vec2 env_brdf_coat = SampleTexture(push.brdf_lut_index, push.brdf_lut_sampler_index, vec2(NoVc, pixel.roughness_coat)).rg;
 			
 			// Take into account energy lost in the clearcoat layer by adjusting the base layer
 			diffuse *= attenuation;
