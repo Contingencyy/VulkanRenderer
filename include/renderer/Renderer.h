@@ -61,7 +61,6 @@ namespace Renderer
 	void DestroyMesh(RenderResourceHandle handle);
 	void SubmitMesh(RenderResourceHandle mesh_handle, const MaterialAsset& material, const glm::mat4& transform);
 	
-	void SubmitPointlight(const glm::vec3& pos, const glm::vec3& color, float intensity);
 	void SubmitAreaLight(RenderResourceHandle texture_handle, const glm::mat4& transform, const glm::vec3& color, float intensity, bool two_sided);
 
 }

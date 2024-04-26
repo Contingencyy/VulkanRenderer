@@ -2171,22 +2171,6 @@ namespace Renderer
 		frame->ubos.material_ubo.WriteBuffer(sizeof(GPUMaterial) * entry.index, sizeof(GPUMaterial), &entry.gpu_material);
 	}
 
-	void SubmitPointlight(const glm::vec3& pos, const glm::vec3& color, float intensity)
-	{
-		return;
-		/*VK_ASSERT(data->num_light_sources < MAX_LIGHT_SOURCES && "Exceeded the maximum amount of point lights");
-
-		GPULightSource pointlight = {
-			.pos = pos,
-			.intensity = intensity,
-			.color = color
-		};
-
-		Frame* frame = GetFrameCurrent();
-		frame->ubos.light_ubo.WriteBuffer(sizeof(PointlightData) * data->num_pointlights, sizeof(PointlightData), &pointlight);
-		data->num_pointlights++;*/
-	}
-
 	void SubmitAreaLight(RenderResourceHandle texture_handle, const glm::mat4& transform, const glm::vec3& color, float intensity, bool two_sided)
 	{
 		VK_ASSERT(data->num_area_lights < MAX_AREA_LIGHTS && "Exceeded the maximum amount of area lights");
